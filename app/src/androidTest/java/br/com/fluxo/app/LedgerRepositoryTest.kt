@@ -37,6 +37,58 @@ class LedgerRepositoryTest {
         supportedBanks.forEach { repository.setBankEnabled(it.packageName, false) }
     }
 
+    @Test fun backupRoundTripPreservesCorrectionsBudgetsAndTombstones() = runBlocking {
+        enableCapture()
+        repository.ingest("backup-live", bank, 100, "Pix recebido R$ 10,00", "alias-backup", 100)
+        val corrected = repository.transactions.value.single().copy(category = Category.FOOD, description = "Alimentação")
+        repository.save(corrected)
+        repository.ingest("backup-gone", bank, 101, "Pix enviado R$ 20,00")
+        repository.delete(repository.transactions.value.first { it.sourceKey == "backup-gone" }.id)
+        val budget = Budget("2026-09", Category.FOOD, 20000)
+        repository.saveBudget(budget)
+        val payload = repository.exportBackupPayload()
+        assertEquals(BackupSummary(1, 1, 1), repository.inspectBackupPayload(payload))
+        repository.clear()
+        repository.restoreBackupPayload(payload)
+        assertFalse(repository.captureEnabled.value)
+        assertEquals(corrected, repository.transactions.value.single())
+        assertEquals(listOf(budget), repository.budgets.value)
+        enableCapture()
+        repository.ingest("backup-gone", bank, 101, "Pix enviado R$ 20,00")
+        repository.ingest("new-post", bank, 102, "Pix recebido R$ 80,00", "alias-backup", 102)
+        assertEquals(listOf(corrected), repository.transactions.value)
+    }
+
+    @Test fun invalidBackupCannotReplaceExistingHistory() = runBlocking {
+        repository.save(manualTransaction())
+        val before = repository.transactions.value
+        val original = repository.exportBackupPayload()
+        val wrongVersion = org.json.JSONObject(original.toString(Charsets.UTF_8)).put("version", 99).toString().toByteArray()
+        val wrongMoney = org.json.JSONObject(original.toString(Charsets.UTF_8)).also {
+            it.getJSONArray("transactions").getJSONObject(0).put("amount_cents", 1.5)
+        }.toString().toByteArray()
+        val deep = ("[".repeat(100) + "]".repeat(100)).toByteArray()
+        listOf(wrongVersion, wrongMoney, original.copyOf(20), deep).forEach { payload ->
+            var failed = false
+            try { repository.restoreBackupPayload(payload) } catch (_: Exception) { failed = true }
+            assertTrue(failed)
+            assertEquals(before, repository.transactions.value)
+        }
+    }
+
+    @Test fun encryptedBackupRoundTripsOnAndroidProvider() = runBlocking {
+        repository.save(manualTransaction())
+        val payload = repository.exportBackupPayload()
+        val password = "senha de teste segura".toCharArray()
+        val encrypted = br.com.fluxo.core.BackupCipher.encrypt(payload, password)
+        assertArrayEquals(payload, br.com.fluxo.core.BackupCipher.decrypt(encrypted, password))
+        var failed = false
+        try { br.com.fluxo.core.BackupCipher.decrypt(encrypted, "senha incorreta".toCharArray()) }
+        catch (_: java.security.GeneralSecurityException) { failed = true }
+        assertTrue(failed)
+        password.fill('\u0000')
+    }
+
     @Test fun captureRequiresBothGlobalEnableAndSelectedBank() = runBlocking {
         repository.ingest("paused", bank, 1L, "Pix recebido R$ 10,00")
         repository.setCaptureEnabled(true)

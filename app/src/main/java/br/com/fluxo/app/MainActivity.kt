@@ -308,6 +308,7 @@ private fun EmptyState(title: String, description: String) {
 @Composable
 private fun SettingsScreen(capture: Boolean, banks: Set<String>, access: Boolean, model: LedgerViewModel, transactions: List<Transaction>) {
     val context = LocalContext.current
+    val backupActions = rememberBackupActions()
     var clear by rememberSaveable { mutableStateOf(false) }
     var settingsError by remember { mutableStateOf(false) }
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -331,6 +332,7 @@ private fun SettingsScreen(capture: Boolean, banks: Set<String>, access: Boolean
         item { CaptureHealthCard(access, capture, banks) }
         item { HorizontalDivider() }
         item { ExportCsvCard(transactions) }
+        item { BackupCard(backupActions) }
         item { Text("Privacidade e cobertura", style = MaterialTheme.typography.titleMedium) }
         item { Text("Dados no armazenamento privado do aplicativo. Sem login, servidor ou backup automático. A proteção depende também do bloqueio e da segurança do aparelho.\n\nBancos podem omitir valores, mudar mensagens ou não notificar. Revise registros ambíguos. Pagamentos de fatura não devem virar novas compras. Totais não substituem o extrato bancário.") }
         item { OutlinedButton(onClick = { clear = true }, colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Apagar todos os lançamentos") } }

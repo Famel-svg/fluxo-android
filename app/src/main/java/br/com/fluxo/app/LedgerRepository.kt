@@ -63,6 +63,23 @@ class LedgerRepository(context: Context) {
 
     suspend fun refresh() = withContext(Dispatchers.IO) { mutex.withLock { readAll() } }
 
+    suspend fun exportBackupPayload(): ByteArray = withContext(Dispatchers.IO) {
+        mutex.withLock { LedgerBackup.export(database.readableDatabase) }
+    }
+
+    fun inspectBackupPayload(payload: ByteArray): BackupSummary = LedgerBackup.validate(payload).summary
+
+    suspend fun restoreBackupPayload(payload: ByteArray) = withContext(Dispatchers.IO) {
+        val validated = LedgerBackup.validate(payload)
+        mutex.withLock {
+            // Device permissions and bank selection are not imported. Consent stays local.
+            setCaptureEnabled(false)
+            LedgerBackup.restore(database.writableDatabase, validated)
+            _captureError.value = null
+            readAll()
+        }
+    }
+
     /** A fallback identity belongs to one active notification lifecycle, never to an amount. */
     suspend fun ingest(
         sourceKey: String, bankPackage: String, occurredAt: Long, text: String,
