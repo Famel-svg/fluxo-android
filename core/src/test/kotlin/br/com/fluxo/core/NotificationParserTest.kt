@@ -78,6 +78,20 @@ class NotificationParserTest {
         }
     }
 
+    @Test fun `questions collection requests and ineffective Pix require review`() {
+        listOf(
+            "Pix enviado? Confira como acompanhar R$ 50,00",
+            "Pix recebido não efetivado R$ 50,00",
+            "Pix recebido não foi efetivado R$ 50,00",
+            "Cobrança Pix recebido R$ 50,00",
+            "Pedido de pagamento Pix recebido R$ 50,00",
+            "Compra aprovada R$ 50,00",
+        ).forEach {
+            assertEquals(it, ReviewStatus.REVIEW, NotificationParser.parse(it)?.status)
+        }
+        assertEquals(PaymentMethod.UNKNOWN, NotificationParser.parse("Compra aprovada R$ 50,00")?.method)
+    }
+
     @Test fun `unicode whitespace and uppercase preserve correct amount`() {
         val result = requireNotNull(NotificationParser.parse("PIX\nRECEBIDO R$\u00a01.000,99"))
         assertEquals(100099L, result.amountCents)

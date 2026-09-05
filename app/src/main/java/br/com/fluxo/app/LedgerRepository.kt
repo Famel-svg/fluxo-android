@@ -37,11 +37,13 @@ class LedgerRepository(context: Context) {
     private val _captureError = MutableStateFlow<String?>(null)
     val captureError: StateFlow<String?> = _captureError
 
+    @Synchronized
     fun setCaptureEnabled(value: Boolean) {
         preferences.edit().putBoolean("enabled", value).apply()
         _captureEnabled.value = value
     }
 
+    @Synchronized
     fun setBankEnabled(packageName: String, enabled: Boolean) {
         require(supportedBanks.any { it.packageName == packageName })
         val selected = if (enabled) _enabledBanks.value + packageName else _enabledBanks.value - packageName
@@ -75,7 +77,7 @@ class LedgerRepository(context: Context) {
         }
 
     suspend fun save(transaction: Transaction) = withContext(Dispatchers.IO) {
-        require(transaction.amountCents == null || transaction.amountCents > 0) { "Informe um valor positivo." }
+        require(transaction.amountCents?.let { it > 0 } != false) { "Informe um valor positivo." }
         require(transaction.status != ReviewStatus.CONFIRMED ||
             (transaction.amountCents != null && transaction.direction != Direction.UNKNOWN)) {
             "Confirme o valor e a direção do lançamento."

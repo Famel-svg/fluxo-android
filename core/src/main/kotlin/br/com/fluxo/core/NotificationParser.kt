@@ -11,7 +11,8 @@ object NotificationParser {
     private val marketing = Regex("\\b(oferta|promocao|aproveite|contrate|ganhe|cashback|pre-aprovad[oa]|simule|receba|limite disponivel|limite aprovado)\\b")
     private val unconfirmed = Regex("\\b(recusad[oa]|negad[oa]|cancelad[oa]|agendad[oa]|agendamento|pendente|processando|em processamento|nao autorizad[oa]|nao realizad[oa]|nao conclu[ií]d[oa]|nao aprovad[oa]|falhou|falha|tentativa|solicitacao|solicitad[oa]|aguardando|vencimento|vencera)\\b")
     private val settlement = Regex("\\b(fatura|estorno|devolucao|reembolso|contestacao)\\b")
-    private val notExecuted = Regex("\\b(nao (?:foi |foi possivel )?(?:enviad[oa]|recebid[oa]|efetuad[oa]|realizad[oa]|concluid[oa]|autorizad[oa]|aprovad[oa]|enviar|realizar)|sera (?:enviad[oa]|recebid[oa]|debitad[oa]|creditad[oa]))\\b")
+    private val notExecuted = Regex("\\b(nao (?:foi |foi possivel )?(?:enviad[oa]|recebid[oa]|efetuad[oa]|efetivad[oa]|realizad[oa]|concluid[oa]|autorizad[oa]|aprovad[oa]|enviar|realizar)|sera (?:enviad[oa]|recebid[oa]|debitad[oa]|creditad[oa]))\\b")
+    private val collection = Regex("\\b(cobranca|pedido de pagamento|lembrete de pagamento)\\b")
     private val incoming = Regex("\\b(recebeu|recebido|recebida|creditado|creditada|credito em conta|entrou na sua conta)\\b")
     private val outgoing = Regex("\\b(enviou|enviado|enviada|debitado|debitada|pagou|pagamento realizado|pagamento efetuado|transferencia realizada|transferencia efetuada)\\b")
     private val completedPurchase = Regex("\\b(compra (?:no (?:credito|debito) )?(?:aprovada|realizada|efetuada)|comprou|pagamento aprovado)\\b")
@@ -45,6 +46,8 @@ object NotificationParser {
             else -> Direction.UNKNOWN
         }
         val reason = when {
+            '?' in normalized -> "Mensagem contém pergunta; confirme se houve movimentação."
+            collection.containsMatchIn(normalized) -> "Cobrança ou pedido de pagamento não comprova movimentação."
             unconfirmed.containsMatchIn(normalized) || notExecuted.containsMatchIn(normalized) -> "Evento pendente, recusado ou agendado; confirme a movimentação."
             settlement.containsMatchIn(normalized) -> "Fatura, estorno ou devolução exige classificação manual."
             amounts.size > 1 -> "Mais de um valor monetário; selecione o valor da transação."
