@@ -189,7 +189,7 @@ class LedgerRepositoryTest {
         assertEquals(edited, reopened.transactions.value.single())
         assertEquals(Budget("2026-09", Category.TRANSPORT, 50000), reopened.budgets.value.single())
         context.openOrCreateDatabase("fluxo.db", Context.MODE_PRIVATE, null).use { db ->
-            assertEquals(2, db.version)
+            assertEquals(3, db.version)
             db.rawQuery("SELECT category, amount_cents FROM transactions WHERE id = 'old'", null).use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals("TRANSPORT", cursor.getString(0))
@@ -200,6 +200,104 @@ class LedgerRepositoryTest {
                 assertEquals(1, cursor.getInt(0))
             }
         }
+        migrated.clear()
+    }
+
+    @Test fun notificationStateChangeReopensReviewAndIdenticalRedeliveryKeepsIt() = runBlocking {
+        enableCapture()
+        repository.ingest("updated", bank, 100L, "Pix pendente R$ 50,00", observedAt = 100L)
+        repository.ingest("updated", bank, 100L, "Pix enviado R$ 50,00", observedAt = 200L)
+        val updated = repository.transactions.value.single()
+        assertEquals(5000L, updated.amountCents)
+        assertEquals(Direction.EXPENSE, updated.direction)
+        assertEquals(ReviewStatus.REVIEW, updated.status)
+        assertTrue(updated.reason.startsWith("Notificação atualizada"))
+        repository.ingest("updated", bank, 100L, "Pix enviado R$ 50,00", observedAt = 300L)
+        assertEquals(updated, repository.transactions.value.single())
+    }
+
+    @Test fun cancellationRemovesPreviouslyConfirmedTransactionFromConfirmedTotals() = runBlocking {
+        enableCapture()
+        repository.ingest("cancel", bank, 100L, "Pix enviado R$ 50,00", observedAt = 100L)
+        assertEquals(ReviewStatus.CONFIRMED, repository.transactions.value.single().status)
+        repository.ingest("cancel", bank, 100L, "Pix enviado cancelado R$ 50,00", observedAt = 300L)
+        assertEquals(ReviewStatus.REVIEW, repository.transactions.value.single().status)
+        assertTrue(repository.transactions.value.single().reason.contains("recusado"))
+        // Older callback must not restore a previous state or amount.
+        repository.ingest("cancel", bank, 100L, "Pix enviado R$ 90,00", observedAt = 200L)
+        assertEquals(5000L, repository.transactions.value.single().amountCents)
+        assertEquals(ReviewStatus.REVIEW, repository.transactions.value.single().status)
+    }
+
+    @Test fun changedPayloadCannotOverwriteManualCorrectionOrResurrectDeletion() = runBlocking {
+        enableCapture()
+        repository.ingest("protected", bank, 100L, "Pix recebido R$ 10,00")
+        val manual = repository.transactions.value.single().copy(amountCents = 1500L, description = "Correção humana")
+        repository.save(manual)
+        repository.ingest("protected", bank, 100L, "Pix enviado R$ 90,00", observedAt = 200L)
+        assertEquals(manual, repository.transactions.value.single())
+        repository.delete(manual.id)
+        repository.ingest("protected", bank, 100L, "Pix enviado R$ 90,00", observedAt = 300L)
+        assertTrue(repository.transactions.value.isEmpty())
+    }
+
+    @Test fun fallbackAliasKeepsChangingPostTimesTogetherUntilRemoval() = runBlocking {
+        enableCapture()
+        repository.ingest("post-100", bank, 100L, "Pix recebido R$ 10,00", "active-key", 100L)
+        repository.ingest("post-200", bank, 200L, "Pix recebido R$ 10,00", "active-key", 200L)
+        assertEquals(1, repository.transactions.value.size)
+        assertEquals(100L, repository.transactions.value.single().occurredAt)
+        assertEquals(ReviewStatus.CONFIRMED, repository.transactions.value.single().status)
+        repository.ingest("post-300", bank, 300L, "Pix recebido R$ 20,00", "active-key", 300L)
+        assertEquals(1, repository.transactions.value.size)
+        assertEquals(ReviewStatus.REVIEW, repository.transactions.value.single().status)
+        repository.forgetNotification("active-key")
+        repository.ingest("post-400", bank, 400L, "Pix recebido R$ 20,00", "active-key", 400L)
+        assertEquals(2, repository.transactions.value.size)
+    }
+
+    @Test fun fallbackAliasSurvivesRepositoryRecreationAndClearRemovesIt() = runBlocking {
+        val context = IsolatedContext(InstrumentationRegistry.getInstrumentation().targetContext,
+            "alias_${java.util.UUID.randomUUID()}_")
+        val initial = LedgerRepository(context)
+        initial.setBankEnabled(bank, true)
+        initial.setCaptureEnabled(true)
+        initial.ingest("first", bank, 100L, "Pix recebido R$ 10,00", "same-active-key", 100L)
+        val reopened = LedgerRepository(context)
+        reopened.ingest("second", bank, 200L, "Pix recebido R$ 10,00", "same-active-key", 200L)
+        assertEquals(1, reopened.transactions.value.size)
+        assertEquals("first", reopened.transactions.value.single().sourceKey)
+        reopened.clear()
+        reopened.setCaptureEnabled(true)
+        reopened.ingest("third", bank, 300L, "Pix recebido R$ 10,00", "same-active-key", 300L)
+        assertEquals("third", reopened.transactions.value.single().sourceKey)
+        reopened.clear()
+    }
+
+    @Test fun v2MigrationProtectsExistingRowsButNewRowsCanReceiveUpdates() = runBlocking {
+        val context = IsolatedContext(InstrumentationRegistry.getInstrumentation().targetContext,
+            "migration_v2_${java.util.UUID.randomUUID()}_")
+        context.openOrCreateDatabase("fluxo.db", Context.MODE_PRIVATE, null).use { db ->
+            db.execSQL("""CREATE TABLE transactions (
+                id TEXT PRIMARY KEY NOT NULL, source_key TEXT UNIQUE, bank_package TEXT NOT NULL,
+                amount_cents INTEGER, direction TEXT NOT NULL, method TEXT NOT NULL, status TEXT NOT NULL,
+                occurred_at INTEGER NOT NULL, description TEXT NOT NULL, reason TEXT NOT NULL,
+                deleted INTEGER NOT NULL DEFAULT 0, category TEXT NOT NULL DEFAULT 'UNCATEGORIZED')""")
+            db.execSQL("CREATE TABLE budgets (month TEXT NOT NULL, category TEXT NOT NULL, limit_cents INTEGER NOT NULL, PRIMARY KEY(month, category))")
+            db.execSQL("INSERT INTO transactions VALUES ('old-v2', 'v2-key', 'com.nu.production', 12345, 'EXPENSE', 'DEBIT_CARD', 'CONFIRMED', 42, 'Antigo', '', 0, 'FOOD')")
+            db.execSQL("INSERT INTO budgets VALUES ('2026-09', 'FOOD', 50000)")
+            db.version = 2
+        }
+        val migrated = LedgerRepository(context)
+        migrated.setBankEnabled(bank, true)
+        migrated.setCaptureEnabled(true)
+        migrated.ingest("v2-key", bank, 42L, "Pix recebido R$ 10,00", observedAt = 200L)
+        assertEquals(12345L, migrated.transactions.value.single().amountCents)
+        assertEquals(Category.FOOD, migrated.transactions.value.single().category)
+        assertEquals(50000L, migrated.budgets.value.single().limitCents)
+        migrated.ingest("new-v3", bank, 300L, "Pix enviado R$ 10,00")
+        migrated.ingest("new-v3", bank, 300L, "Pix enviado cancelado R$ 10,00", observedAt = 400L)
+        assertEquals(ReviewStatus.REVIEW, migrated.transactions.value.single { it.sourceKey == "new-v3" }.status)
         migrated.clear()
     }
 

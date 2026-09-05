@@ -12,6 +12,7 @@ import br.com.fluxo.core.PaymentMethod
 import br.com.fluxo.core.ReviewStatus
 import br.com.fluxo.core.Transaction
 import java.util.UUID
+import java.security.MessageDigest
 import java.time.YearMonth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -62,24 +63,85 @@ class LedgerRepository(context: Context) {
 
     suspend fun refresh() = withContext(Dispatchers.IO) { mutex.withLock { readAll() } }
 
-    suspend fun ingest(sourceKey: String, bankPackage: String, occurredAt: Long, text: String) =
-        withContext(Dispatchers.IO) {
-            mutex.withLock {
-                if (!_captureEnabled.value || bankPackage !in _enabledBanks.value) return@withLock
-                val parsed = NotificationParser.parse(text) ?: return@withLock
-                val transaction = Transaction(
-                    id = UUID.randomUUID().toString(), sourceKey = sourceKey,
-                    bankPackage = bankPackage, amountCents = parsed.amountCents,
-                    direction = parsed.direction, method = parsed.method, status = parsed.status,
-                    occurredAt = occurredAt, description = "Movimentação detectada", reason = parsed.reason,
-                )
-                database.writableDatabase.insertWithOnConflict(
-                    "transactions", null, values(transaction), SQLiteDatabase.CONFLICT_IGNORE,
-                )
-                _captureError.value = null
-                readAll()
+    /** A fallback identity belongs to one active notification lifecycle, never to an amount. */
+    suspend fun ingest(
+        sourceKey: String, bankPackage: String, occurredAt: Long, text: String,
+        fallbackIdentity: String? = null, observedAt: Long = occurredAt,
+    ) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            if (!_captureEnabled.value || bankPackage !in _enabledBanks.value) return@withLock
+            val parsed = NotificationParser.parse(text) ?: return@withLock
+            val signature = MessageDigest.getInstance("SHA-256").digest(
+                listOf(parsed.amountCents, parsed.direction, parsed.method, parsed.status, parsed.reason)
+                    .joinToString("|").toByteArray(Charsets.UTF_8),
+            ).joinToString("") { "%02x".format(it) }
+            val db = database.writableDatabase
+            db.beginTransaction()
+            try {
+                val canonicalKey = fallbackIdentity?.let { identity ->
+                    db.query("notification_aliases", arrayOf("source_key"), "identity_key = ?",
+                        arrayOf(identity), null, null, null).use { cursor ->
+                        if (cursor.moveToFirst()) cursor.getString(0) else null
+                    }
+                } ?: sourceKey
+                var exists = false
+                db.query("transactions", arrayOf("id", "deleted", "user_modified", "observation_hash", "last_observed_at"),
+                    "source_key = ?", arrayOf(canonicalKey), null, null, null).use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        exists = true
+                        // Older callbacks, tombstones and human corrections always win over automation.
+                        if (cursor.getInt(1) == 0 && cursor.getInt(2) == 0 && observedAt >= cursor.getLong(4)) {
+                            val changed = cursor.getString(3) != signature
+                            val updates = ContentValues().apply {
+                                put("last_observed_at", observedAt)
+                                if (changed) {
+                                    put("amount_cents", parsed.amountCents)
+                                    put("direction", parsed.direction.name)
+                                    put("method", parsed.method.name)
+                                    put("status", ReviewStatus.REVIEW.name)
+                                    put("reason", "Notificação atualizada; confira a movimentação." +
+                                        parsed.reason.takeIf { it.isNotBlank() }?.let { " $it" }.orEmpty())
+                                    put("observation_hash", signature)
+                                }
+                            }
+                            db.update("transactions", updates, "id = ?", arrayOf(cursor.getString(0)))
+                        }
+                    }
+                }
+                if (!exists) {
+                    val transaction = Transaction(
+                        id = UUID.randomUUID().toString(), sourceKey = canonicalKey,
+                        bankPackage = bankPackage, amountCents = parsed.amountCents,
+                        direction = parsed.direction, method = parsed.method, status = parsed.status,
+                        occurredAt = occurredAt, description = "Movimentação detectada", reason = parsed.reason,
+                    )
+                    db.insertOrThrow("transactions", null, values(transaction).apply {
+                        put("user_modified", 0)
+                        put("observation_hash", signature)
+                        put("last_observed_at", observedAt)
+                    })
+                }
+                if (fallbackIdentity != null) {
+                    db.insertWithOnConflict("notification_aliases", null, ContentValues().apply {
+                        put("identity_key", fallbackIdentity)
+                        put("source_key", canonicalKey)
+                    }, SQLiteDatabase.CONFLICT_IGNORE)
+                }
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
             }
+            _captureError.value = null
+            readAll()
         }
+    }
+
+    /** Removing a notification ends its fallback identity; a reused Android key is a new event. */
+    suspend fun forgetNotification(identityKey: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            database.writableDatabase.delete("notification_aliases", "identity_key = ?", arrayOf(identityKey))
+        }
+    }
 
     suspend fun save(transaction: Transaction) = withContext(Dispatchers.IO) {
         require(transaction.amountCents?.let { it > 0 } != false) { "Informe um valor positivo." }
@@ -90,8 +152,8 @@ class LedgerRepository(context: Context) {
         require(transaction.description.length <= 200) { "Descrição muito longa." }
         mutex.withLock {
             val db = database.writableDatabase
-            val changed = db.update("transactions", values(transaction), "id = ? AND deleted = 0", arrayOf(transaction.id))
-            if (changed == 0) db.insertOrThrow("transactions", null, values(transaction))
+            val changed = db.update("transactions", values(transaction).apply { put("user_modified", 1) }, "id = ? AND deleted = 0", arrayOf(transaction.id))
+            if (changed == 0) db.insertOrThrow("transactions", null, values(transaction).apply { put("user_modified", 1) })
             readAll()
         }
     }
@@ -117,6 +179,7 @@ class LedgerRepository(context: Context) {
             try {
                 db.delete("transactions", null, null)
                 db.delete("budgets", null, null)
+                db.delete("notification_aliases", null, null)
                 db.setTransactionSuccessful()
             } finally {
                 db.endTransaction()
@@ -195,7 +258,7 @@ class LedgerRepository(context: Context) {
     }
 }
 
-private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "fluxo.db", null, 2) {
+private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "fluxo.db", null, 3) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
             CREATE TABLE transactions (
@@ -210,17 +273,32 @@ private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "flux
                 description TEXT NOT NULL,
                 reason TEXT NOT NULL,
                 deleted INTEGER NOT NULL DEFAULT 0,
-                category TEXT NOT NULL DEFAULT 'UNCATEGORIZED'
+                category TEXT NOT NULL DEFAULT 'UNCATEGORIZED',
+                user_modified INTEGER NOT NULL DEFAULT 0,
+                observation_hash TEXT,
+                last_observed_at INTEGER NOT NULL DEFAULT 0
             )
         """.trimIndent())
         db.execSQL("CREATE INDEX idx_transaction_date ON transactions(deleted, occurred_at)")
         createBudgets(db)
+        createNotificationAliases(db)
     }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) {
             db.execSQL("ALTER TABLE transactions ADD COLUMN category TEXT NOT NULL DEFAULT 'UNCATEGORIZED'")
             createBudgets(db)
         }
+        if (oldVersion < 3) {
+            // Older schemas did not record which fields were edited. Preserve every old row.
+            db.execSQL("ALTER TABLE transactions ADD COLUMN user_modified INTEGER NOT NULL DEFAULT 1")
+            db.execSQL("ALTER TABLE transactions ADD COLUMN observation_hash TEXT")
+            db.execSQL("ALTER TABLE transactions ADD COLUMN last_observed_at INTEGER NOT NULL DEFAULT 0")
+            createNotificationAliases(db)
+        }
+    }
+
+    private fun createNotificationAliases(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE notification_aliases (identity_key TEXT PRIMARY KEY NOT NULL, source_key TEXT NOT NULL)")
     }
 
     private fun createBudgets(db: SQLiteDatabase) {

@@ -9,27 +9,69 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.channels.Channel
 
 class BankNotificationListener : NotificationListenerService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    override fun onNotificationPosted(sbn: StatusBarNotification) {
-        val repository = (application as FluxoApplication).repository
-        if (!repository.captureEnabled.value || sbn.packageName !in repository.enabledBanks.value) return
+    private sealed interface Event {
+        data class Posted(val notification: StatusBarNotification) : Event
+        data class Removed(val identity: String) : Event
+    }
+    // Callback order matters: a removal must finish before an Android key is reused.
+    private val events = Channel<Event>(64)
+
+    override fun onCreate() {
+        super.onCreate()
         scope.launch {
-            try {
-                val candidate = extractNotification(sbn) ?: return@launch
-                repository.ingest(candidate.sourceKey, candidate.packageName, candidate.timestamp, candidate.text)
-            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                // Never log bank notification content or amounts.
-                repository.reportCaptureError()
+            for (event in events) {
+                val repository = (application as FluxoApplication).repository
+                try {
+                    when (event) {
+                        is Event.Posted -> {
+                            val candidate = extractNotification(event.notification) ?: continue
+                            repository.ingest(candidate.sourceKey, candidate.packageName, candidate.timestamp,
+                                candidate.text, candidate.fallbackIdentity, event.notification.postTime)
+                        }
+                        is Event.Removed -> repository.forgetNotification(event.identity)
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    // Never log bank notification content or amounts.
+                    repository.reportCaptureError()
+                }
             }
         }
     }
 
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        CaptureHealth.connected(true)
+    }
+
+    override fun onListenerDisconnected() {
+        CaptureHealth.connected(false)
+        super.onListenerDisconnected()
+    }
+
+    override fun onNotificationPosted(sbn: StatusBarNotification) {
+        val repository = (application as FluxoApplication).repository
+        if (!repository.captureEnabled.value || sbn.packageName !in repository.enabledBanks.value) return
+        CaptureHealth.observed(sbn.packageName, System.currentTimeMillis())
+        if (!events.trySend(Event.Posted(sbn)).isSuccess) repository.reportCaptureError()
+    }
+
+    override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        if (supportedBanks.none { it.packageName == sbn.packageName }) return
+        if (!events.trySend(Event.Removed(notificationIdentity(sbn))).isSuccess) {
+            (application as FluxoApplication).repository.reportCaptureError()
+        }
+    }
+
     override fun onDestroy() {
+        CaptureHealth.connected(false)
+        events.close()
         scope.cancel()
         super.onDestroy()
     }
@@ -41,6 +83,7 @@ internal class NotificationCandidate(
     val packageName: String,
     val timestamp: Long,
     val text: String,
+    val fallbackIdentity: String? = null,
 )
 
 internal fun extractNotification(sbn: StatusBarNotification): NotificationCandidate? {
@@ -52,10 +95,17 @@ internal fun extractNotification(sbn: StatusBarNotification): NotificationCandid
     // Some banks repeat the title as body; avoid introducing duplicate monetary values.
     val text = listOf(title, body).filter { it.isNotBlank() }.distinct().joinToString("\n")
     if (text.isBlank()) return null
-    // Preserved original timestamps make redelivery and notification updates idempotent.
+    // Original timestamps identify normal updates. When absent, a persisted lifecycle alias
+    // resolves changing postTime. A missed removal/reused key remains ambiguous and needs review.
     val timestamp = sbn.notification.`when`.takeIf { it > 0L } ?: sbn.postTime
     val identity = "${sbn.packageName}|${sbn.key}|$timestamp"
     val sourceKey = MessageDigest.getInstance("SHA-256").digest(identity.toByteArray(Charsets.UTF_8))
         .joinToString("") { "%02x".format(it) }
-    return NotificationCandidate(sourceKey, sbn.packageName, timestamp, text)
+    return NotificationCandidate(sourceKey, sbn.packageName, timestamp, text,
+        notificationIdentity(sbn).takeIf { sbn.notification.`when` <= 0L })
 }
+
+/** Hash only platform identity; never persist or log raw notification content. */
+internal fun notificationIdentity(sbn: StatusBarNotification): String =
+    MessageDigest.getInstance("SHA-256").digest("${sbn.packageName}|${sbn.key}".toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }

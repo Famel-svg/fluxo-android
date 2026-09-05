@@ -81,6 +81,22 @@ class NotificationExtractionTest {
         assertNotEquals(first.sourceKey, otherTime.sourceKey)
     }
 
+    @Test fun missingOriginalTimeExposesStableLifecycleAliasAcrossUpdates() {
+        val first = requireNotNull(extractNotification(notification(
+            title = "Pix recebido", body = "R$ 10,00", originalTime = 0L, postTime = 100L,
+        )))
+        val update = requireNotNull(extractNotification(notification(
+            title = "Pix recebido", body = "R$ 10,00", originalTime = 0L, postTime = 200L,
+        )))
+        val distinct = requireNotNull(extractNotification(notification(
+            title = "Pix recebido", body = "R$ 10,00", originalTime = 0L, postTime = 200L, id = 2,
+        )))
+        assertNotNull(first.fallbackIdentity)
+        assertEquals(first.fallbackIdentity, update.fallbackIdentity)
+        assertNotEquals(first.fallbackIdentity, distinct.fallbackIdentity)
+        assertNull(extractNotification(notification(title = "Pix recebido", originalTime = 100L))?.fallbackIdentity)
+    }
+
     private fun notification(
         title: String? = null,
         body: String? = null,
