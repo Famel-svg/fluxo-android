@@ -42,6 +42,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import br.com.fluxo.core.Direction
+import br.com.fluxo.core.Budget
+import br.com.fluxo.core.Category
+import br.com.fluxo.core.TransactionSearch
 import br.com.fluxo.core.PaymentMethod
 import br.com.fluxo.core.ReviewStatus
 import br.com.fluxo.core.Transaction
@@ -74,6 +77,7 @@ class MainActivity : ComponentActivity() {
 class LedgerViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = (application as FluxoApplication).repository
     val transactions = repository.transactions
+    val budgets = repository.budgets
     val captureEnabled = repository.captureEnabled
     val enabledBanks = repository.enabledBanks
     val captureError = repository.captureError
@@ -103,6 +107,9 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
     }
     fun save(transaction: Transaction, onSuccess: () -> Unit) = edit(onSuccess) { repository.save(transaction) }
     fun delete(id: String, onSuccess: () -> Unit) = edit(onSuccess) { repository.delete(id) }
+    fun saveBudget(budget: Budget, onSuccess: () -> Unit) = edit(onSuccess) { repository.saveBudget(budget) }
+    fun deleteBudget(month: String, category: Category, onSuccess: () -> Unit) = edit(onSuccess) { repository.deleteBudget(month, category) }
+    fun resetEditError() { _editError.value = null }
     fun clear() = execute { repository.clear() }
     fun capture(enabled: Boolean) = execute { repository.setCaptureEnabled(enabled) }
     fun bank(packageName: String, enabled: Boolean) = execute { repository.setBankEnabled(packageName, enabled) }
@@ -146,6 +153,7 @@ private fun notificationAccess(): Boolean {
 @Composable
 private fun FluxoScreen(model: LedgerViewModel = viewModel()) {
     val transactions by model.transactions.collectAsStateWithLifecycle()
+    val budgets by model.budgets.collectAsStateWithLifecycle()
     val capture by model.captureEnabled.collectAsStateWithLifecycle()
     val banks by model.enabledBanks.collectAsStateWithLifecycle()
     val captureError by model.captureError.collectAsStateWithLifecycle()
@@ -154,6 +162,7 @@ private fun FluxoScreen(model: LedgerViewModel = viewModel()) {
     val access = notificationAccess()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var filter by rememberSaveable { mutableIntStateOf(0) }
+    var allMonths by rememberSaveable { mutableStateOf(false) }
     var monthText by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
     val month = YearMonth.parse(monthText)
     var editingId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -167,21 +176,22 @@ private fun FluxoScreen(model: LedgerViewModel = viewModel()) {
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             NavigationBar {
-                listOf("Resumo", "Lançamentos", "Ajustes").forEachIndexed { index, name ->
-                    NavigationBarItem(selected = tab == index, onClick = { tab = index }, label = { Text(name) }, icon = { Icon(listOf(Icons.Default.Dashboard, Icons.AutoMirrored.Filled.ReceiptLong, Icons.Default.Settings)[index], null) })
+                listOf("Resumo", "Lançamentos", "Planejamento", "Ajustes").forEachIndexed { index, name ->
+                    NavigationBarItem(selected = tab == index, onClick = { tab = index }, label = { Text(name) }, icon = { Icon(listOf(Icons.Default.Dashboard, Icons.AutoMirrored.Filled.ReceiptLong, Icons.Default.PieChart, Icons.Default.Settings)[index], null) })
                 }
             }
         },
-        floatingActionButton = { if (tab != 2) FloatingActionButton(onClick = { adding = true }) { Icon(Icons.Default.Add, "Adicionar lançamento") } }
+        floatingActionButton = { if (tab < 2) FloatingActionButton(onClick = { model.resetEditError(); adding = true }) { Icon(Icons.Default.Add, "Adicionar lançamento") } }
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 800.dp).fillMaxWidth()) {
                 if (captureError != null) Text(captureError.orEmpty(), modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-                if (tab != 2) MonthPicker(month, { monthText = month.minusMonths(1).toString() }, { monthText = month.plusMonths(1).toString() })
+                if (tab != 3 && !(tab == 1 && allMonths)) MonthPicker(month, { monthText = month.minusMonths(1).toString() }, { monthText = month.plusMonths(1).toString() })
                 when (tab) {
-                    0 -> Dashboard(monthly, capture && access && banks.isNotEmpty(), { tab = 2 }, { filter = 0; tab = 1 }, { filter = 3; tab = 1 }, { editingId = it.id })
-                    1 -> Transactions(monthly, filter, { filter = it }, { editingId = it.id })
-                    else -> SettingsScreen(capture, banks, access, model)
+                    0 -> Dashboard(monthly, capture && access && banks.isNotEmpty(), { tab = 3 }, { filter = 0; allMonths = false; tab = 1 }, { filter = 3; allMonths = false; tab = 1 }, { model.resetEditError(); editingId = it.id })
+                    1 -> Transactions(if (allMonths) transactions else monthly, filter, { filter = it }, allMonths, { allMonths = it }, { model.resetEditError(); editingId = it.id })
+                    2 -> PlanningScreen(transactions, budgets, month, saving, editError, model::resetEditError, model::saveBudget, model::deleteBudget)
+                    else -> SettingsScreen(capture, banks, access, model, transactions)
                 }
             }
         }
@@ -242,16 +252,33 @@ private fun Metric(title: String, value: String, icon: androidx.compose.ui.graph
 }
 
 @Composable
-private fun Transactions(rows: List<Transaction>, filter: Int, setFilter: (Int) -> Unit, edit: (Transaction) -> Unit) {
-    val filtered = rows.filter { when (filter) { 1 -> it.direction == Direction.INCOME; 2 -> it.direction == Direction.EXPENSE; 3 -> it.status == ReviewStatus.REVIEW; else -> true } }
-    Column {
-        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+private fun Transactions(rows: List<Transaction>, filter: Int, setFilter: (Int) -> Unit, allMonths: Boolean, setAllMonths: (Boolean) -> Unit, edit: (Transaction) -> Unit) {
+    var query by rememberSaveable { mutableStateOf("") }
+    var bank by rememberSaveable { mutableStateOf<String?>(null) }
+    var method by rememberSaveable { mutableStateOf<PaymentMethod?>(null) }
+    var category by rememberSaveable { mutableStateOf<Category?>(null) }
+    var advanced by rememberSaveable { mutableStateOf(false) }
+    val filtered = remember(rows, filter, query, bank, method, category) {
+        TransactionSearch.filter(rows.filter { when (filter) { 1 -> it.direction == Direction.INCOME; 2 -> it.direction == Direction.EXPENSE; 3 -> it.status == ReviewStatus.REVIEW; else -> true } }, query, bank, method, category).sortedByDescending { it.occurredAt }
+    }
+    LazyColumn(contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 100.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item { OutlinedTextField(query, { query = it }, label = { Text("Buscar descrição, banco ou categoria") }, modifier = Modifier.fillMaxWidth(), singleLine = true) }
+        item { Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("Todos", "Entradas", "Saídas", "Revisar").forEachIndexed { index, label -> FilterChip(selected = filter == index, onClick = { setFilter(index) }, label = { Text(label) }) }
+        } }
+        item { FilterChip(selected = allMonths, onClick = { setAllMonths(!allMonths) }, label = { Text("Todos os meses") }) }
+        item { TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) "Ocultar filtros" else "Banco, meio e categoria") } }
+        if (advanced) {
+            item { Choice("Banco", bank, listOf<String?>(null, "manual") + supportedBanks.map { it.packageName }, { it?.let(::bankName) ?: "Todos" }) { bank = it } }
+            item { Choice("Meio", method, listOf<PaymentMethod?>(null) + PaymentMethod.entries, { it?.label() ?: "Todos" }) { method = it } }
+            item { Choice("Categoria", category, listOf<Category?>(null) + Category.entries, { it?.label ?: "Todas" }) { category = it } }
         }
-        LazyColumn(contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 100.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (filtered.isEmpty()) item { EmptyState("Nenhum lançamento", "Não há registros neste mês para o filtro selecionado.") }
-            items(filtered, key = { it.id }) { TransactionRow(it, edit) }
-        }
+        item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("${filtered.size} lançamento(s)")
+            TextButton(onClick = { query = ""; bank = null; method = null; category = null; setFilter(0); setAllMonths(false) }) { Text("Limpar filtros") }
+        } }
+        if (filtered.isEmpty()) item { EmptyState("Nenhum lançamento", "Nenhum registro corresponde aos filtros. Altere a busca ou escolha Todos os meses.") }
+        items(filtered, key = { it.id }) { TransactionRow(it, edit) }
     }
 }
 
@@ -262,6 +289,7 @@ private fun TransactionRow(row: Transaction, edit: (Transaction) -> Unit) {
             Text(bankName(row.bankPackage) + " · " + row.direction.label(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Text(money(row.amountCents), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             Text(row.description.ifBlank { row.method.label() }, style = MaterialTheme.typography.bodyMedium)
+            Text(row.category.label, style = MaterialTheme.typography.labelMedium)
             Text(row.method.label() + " · " + Instant.ofEpochMilli(row.occurredAt).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm", ptBr)), style = MaterialTheme.typography.labelMedium)
             if (row.status == ReviewStatus.REVIEW) Text("Revisar · ${row.reason.ifBlank { "Confirme valor e classificação" }}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         }
@@ -278,7 +306,7 @@ private fun EmptyState(title: String, description: String) {
 }
 
 @Composable
-private fun SettingsScreen(capture: Boolean, banks: Set<String>, access: Boolean, model: LedgerViewModel) {
+private fun SettingsScreen(capture: Boolean, banks: Set<String>, access: Boolean, model: LedgerViewModel, transactions: List<Transaction>) {
     val context = LocalContext.current
     var clear by rememberSaveable { mutableStateOf(false) }
     var settingsError by remember { mutableStateOf(false) }
@@ -301,11 +329,12 @@ private fun SettingsScreen(capture: Boolean, banks: Set<String>, access: Boolean
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(bank.name, Modifier.weight(1f)); Switch(checked = bank.packageName in banks, onCheckedChange = { model.bank(bank.packageName, it) }, modifier = Modifier.semantics { contentDescription = "Permitir notificações de ${bank.name}" }) }
         }
         item { HorizontalDivider() }
+        item { ExportCsvCard(transactions) }
         item { Text("Privacidade e cobertura", style = MaterialTheme.typography.titleMedium) }
         item { Text("Dados no armazenamento privado do aplicativo. Sem login, servidor ou backup automático. A proteção depende também do bloqueio e da segurança do aparelho.\n\nBancos podem omitir valores, mudar mensagens ou não notificar. Revise registros ambíguos. Pagamentos de fatura não devem virar novas compras. Totais não substituem o extrato bancário.") }
         item { OutlinedButton(onClick = { clear = true }, colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Apagar todos os lançamentos") } }
     }
-    if (clear) AlertDialog(onDismissRequest = { clear = false }, title = { Text("Apagar todo o histórico?") }, text = { Text("Esta ação apaga permanentemente todos os lançamentos e os identificadores usados para evitar duplicatas. Não é possível desfazer. A captura será pausada. Após reativá-la, notificações futuras poderão gerar novos registros.") }, confirmButton = { TextButton(onClick = { model.clear(); clear = false }) { Text("Apagar definitivamente") } }, dismissButton = { TextButton(onClick = { clear = false }) { Text("Cancelar") } })
+    if (clear) AlertDialog(onDismissRequest = { clear = false }, title = { Text("Apagar todo o histórico?") }, text = { Text("Esta ação apaga permanentemente todos os lançamentos, os limites de orçamento e os identificadores usados para evitar duplicatas. Não é possível desfazer. A captura será pausada. Após reativá-la, notificações futuras poderão gerar novos registros.") }, confirmButton = { TextButton(onClick = { model.clear(); clear = false }) { Text("Apagar definitivamente") } }, dismissButton = { TextButton(onClick = { clear = false }) { Text("Cancelar") } })
 }
 
 @Composable
@@ -315,6 +344,7 @@ private fun TransactionEditor(existing: Transaction?, saving: Boolean, editError
     var direction by rememberSaveable(existing?.id) { mutableStateOf(existing?.direction ?: Direction.EXPENSE) }
     var method by rememberSaveable(existing?.id) { mutableStateOf(existing?.method ?: PaymentMethod.UNKNOWN) }
     var bank by rememberSaveable(existing?.id) { mutableStateOf(existing?.bankPackage ?: "manual") }
+    var category by rememberSaveable(existing?.id) { mutableStateOf(existing?.category ?: Category.UNCATEGORIZED) }
     var date by rememberSaveable(existing?.id) { mutableStateOf((existing?.let { Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate() } ?: LocalDate.now()).format(DateTimeFormatter.ofPattern("dd/MM/uuuu"))) }
     var deleting by rememberSaveable { mutableStateOf(false) }
     val cents = remember(amount) { runCatching { require(amount.matches(Regex("[0-9]+([,.][0-9]{1,2})?"))); BigDecimal(amount.replace(',', '.')).movePointRight(2).longValueExact().also { require(it > 0) } }.getOrNull() }
@@ -329,6 +359,7 @@ private fun TransactionEditor(existing: Transaction?, saving: Boolean, editError
             Choice("Direção", direction, Direction.entries, { it.label() }) { direction = it }
             Choice("Meio", method, PaymentMethod.entries, { it.label() }) { method = it }
             Choice("Banco", bank, listOf("manual") + supportedBanks.map { it.packageName }, ::bankName) { bank = it }
+            Choice("Categoria", category, Category.entries, { it.label }) { category = it }
             if (method == PaymentMethod.CREDIT_CARD) Text("Compras no crédito ficam separadas das saídas de caixa.", style = MaterialTheme.typography.bodySmall)
             if (existing != null) TextButton(enabled = !saving, onClick = { deleting = true }) { Text("Excluir lançamento", color = MaterialTheme.colorScheme.error) }
         }
@@ -336,13 +367,13 @@ private fun TransactionEditor(existing: Transaction?, saving: Boolean, editError
         val validDate = parsedDate ?: return@TextButton
         val originalDate = existing?.let { Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate() }
         val occurred = if (existing != null && originalDate == validDate) existing.occurredAt else validDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        onSave(Transaction(existing?.id ?: UUID.randomUUID().toString(), existing?.sourceKey, bank, cents, direction, method, ReviewStatus.CONFIRMED, occurred, description.ifBlank { "Lançamento manual" }, ""))
+        onSave(Transaction(existing?.id ?: UUID.randomUUID().toString(), existing?.sourceKey, bank, cents, direction, method, ReviewStatus.CONFIRMED, occurred, description.ifBlank { "Lançamento manual" }, "", category))
     }) { Text(if (saving) "Salvando…" else "Salvar e confirmar") } }, dismissButton = { TextButton(enabled = !saving, onClick = onDismiss) { Text("Cancelar") } })
     if (deleting && existing != null) AlertDialog(onDismissRequest = { if (!saving) deleting = false }, title = { Text("Excluir lançamento?") }, text = { Text(editError ?: "O lançamento será removido dos totais. Sua notificação original não recriará este registro.") }, confirmButton = { TextButton(enabled = !saving, onClick = { onDelete(existing.id) }) { Text(if (saving) "Excluindo…" else "Excluir") } }, dismissButton = { TextButton(enabled = !saving, onClick = { deleting = false }) { Text("Cancelar") } })
 }
 
 @Composable
-private fun <T> Choice(label: String, selected: T, options: List<T>, display: (T) -> String, change: (T) -> Unit) {
+internal fun <T> Choice(label: String, selected: T, options: List<T>, display: (T) -> String, change: (T) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) { Text("$label: ${display(selected)}", modifier = Modifier.weight(1f)); Icon(Icons.Default.ArrowDropDown, null) }
