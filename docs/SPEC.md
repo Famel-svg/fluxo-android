@@ -47,3 +47,6 @@ Risco principal alto: bancos podem ocultar valores, mudar texto ou não emitir n
 - https://developer.android.com/reference/android/service/notification/NotificationListenerService
 - https://developer.android.com/develop/ui/compose
 - https://developer.android.com/build/releases/about-agp
+- https://play.google.com/store/apps/details?id=com.c6bank.app
+- https://play.google.com/store/apps/details?id=com.nu.production
+- https://play.google.com/store/apps/details?id=com.itau

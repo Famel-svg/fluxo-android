@@ -20,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -155,7 +156,8 @@ private fun FluxoScreen(model: LedgerViewModel = viewModel()) {
     var filter by rememberSaveable { mutableIntStateOf(0) }
     var monthText by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
     val month = YearMonth.parse(monthText)
-    var editing by remember { mutableStateOf<Transaction?>(null) }
+    var editingId by rememberSaveable { mutableStateOf<String?>(null) }
+    val editing = transactions.firstOrNull { it.id == editingId }
     var adding by rememberSaveable { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(model) { model.events.collect { snackbar.showSnackbar(it) } }
@@ -166,7 +168,7 @@ private fun FluxoScreen(model: LedgerViewModel = viewModel()) {
         bottomBar = {
             NavigationBar {
                 listOf("Resumo", "Lançamentos", "Ajustes").forEachIndexed { index, name ->
-                    NavigationBarItem(selected = tab == index, onClick = { tab = index }, label = { Text(name) }, icon = { Icon(listOf(Icons.Default.Dashboard, Icons.Default.ReceiptLong, Icons.Default.Settings)[index], null) })
+                    NavigationBarItem(selected = tab == index, onClick = { tab = index }, label = { Text(name) }, icon = { Icon(listOf(Icons.Default.Dashboard, Icons.AutoMirrored.Filled.ReceiptLong, Icons.Default.Settings)[index], null) })
                 }
             }
         },
@@ -177,14 +179,14 @@ private fun FluxoScreen(model: LedgerViewModel = viewModel()) {
                 if (captureError != null) Text(captureError.orEmpty(), modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
                 if (tab != 2) MonthPicker(month, { monthText = month.minusMonths(1).toString() }, { monthText = month.plusMonths(1).toString() })
                 when (tab) {
-                    0 -> Dashboard(monthly, capture && access && banks.isNotEmpty(), { tab = 2 }, { filter = 0; tab = 1 }, { filter = 3; tab = 1 }, { editing = it })
-                    1 -> Transactions(monthly, filter, { filter = it }, { editing = it })
+                    0 -> Dashboard(monthly, capture && access && banks.isNotEmpty(), { tab = 2 }, { filter = 0; tab = 1 }, { filter = 3; tab = 1 }, { editingId = it.id })
+                    1 -> Transactions(monthly, filter, { filter = it }, { editingId = it.id })
                     else -> SettingsScreen(capture, banks, access, model)
                 }
             }
         }
     }
-    if (adding || editing != null) TransactionEditor(editing, saving, editError, onDismiss = { adding = false; editing = null }, onSave = { model.save(it) { adding = false; editing = null } }, onDelete = { model.delete(it) { editing = null } })
+    if (adding || editing != null) TransactionEditor(editing, saving, editError, onDismiss = { adding = false; editingId = null }, onSave = { model.save(it) { adding = false; editingId = null } }, onDelete = { model.delete(it) { editingId = null } })
 }
 
 @Composable

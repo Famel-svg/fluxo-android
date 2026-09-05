@@ -16,20 +16,10 @@ class BankNotificationListener : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val repository = (application as FluxoApplication).repository
         if (!repository.captureEnabled.value || sbn.packageName !in repository.enabledBanks.value) return
-        if (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
-        val extras = sbn.notification.extras
-        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
-        val body = (extras.getCharSequence(Notification.EXTRA_BIG_TEXT)
-            ?: extras.getCharSequence(Notification.EXTRA_TEXT))?.toString().orEmpty()
-        if (title.isBlank() && body.isBlank()) return
-        // Notification.when identifies the original event when updates preserve it.
-        val timestamp = sbn.notification.`when`.takeIf { it > 0L } ?: sbn.postTime
-        val identity = "${sbn.packageName}|${sbn.key}|$timestamp"
-        val sourceKey = MessageDigest.getInstance("SHA-256").digest(identity.toByteArray())
-            .joinToString("") { "%02x".format(it) }
         scope.launch {
             try {
-                repository.ingest(sourceKey, sbn.packageName, timestamp, "$title\n$body")
+                val candidate = extractNotification(sbn) ?: return@launch
+                repository.ingest(candidate.sourceKey, candidate.packageName, candidate.timestamp, candidate.text)
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
@@ -43,4 +33,29 @@ class BankNotificationListener : NotificationListenerService() {
         scope.cancel()
         super.onDestroy()
     }
+}
+
+/** Transient input only: raw text is never persisted or logged. */
+internal class NotificationCandidate(
+    val sourceKey: String,
+    val packageName: String,
+    val timestamp: Long,
+    val text: String,
+)
+
+internal fun extractNotification(sbn: StatusBarNotification): NotificationCandidate? {
+    if (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return null
+    val extras = sbn.notification.extras
+    val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().trim()
+    val body = (extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.takeUnless { it.isBlank() }
+        ?: extras.getCharSequence(Notification.EXTRA_TEXT))?.toString().orEmpty().trim()
+    // Some banks repeat the title as body; avoid introducing duplicate monetary values.
+    val text = listOf(title, body).filter { it.isNotBlank() }.distinct().joinToString("\n")
+    if (text.isBlank()) return null
+    // Preserved original timestamps make redelivery and notification updates idempotent.
+    val timestamp = sbn.notification.`when`.takeIf { it > 0L } ?: sbn.postTime
+    val identity = "${sbn.packageName}|${sbn.key}|$timestamp"
+    val sourceKey = MessageDigest.getInstance("SHA-256").digest(identity.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
+    return NotificationCandidate(sourceKey, sbn.packageName, timestamp, text)
 }
