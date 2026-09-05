@@ -12,6 +12,8 @@ Controle financeiro Android pessoal, offline, com leitura consentida de notifica
 Pesquisa, critérios de aceite e divisão entre agentes: [plano da versão 0.2](docs/PLAN_0.2.md).
 
 Auditoria posterior: [comparação de 10 apps e plano de 18 melhorias](docs/research/2026-09-05-mercado-e-auditoria.md), com fontes consultadas em 05/09/2026, achados de código e critérios de aceite. As melhorias desse relatório são propostas; não fazem parte da versão 0.2.
+
+Implementação dos próximos incrementos: [lista priorizada e spec de cada item](docs/specs/README.md). O índice distingue propostas, execução e validação.
 Atualizar o APK sobre a mesma assinatura migra SQLite v1→v2 preservando lançamentos e identificadores de duplicata. Não desinstale o app para atualizar se quiser manter seus dados.
 
 ## Coordenação das próximas edições

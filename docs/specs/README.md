@@ -1,0 +1,37 @@
+# Lista de melhorias e especificações
+
+Specs de cada incremento derivadas da auditoria de 05/09/2026. Estados abaixo distinguem proposta de implementação. Não há promessa de entrega simultânea; dependências de domínio são obrigatórias.
+
+| ID | Melhoria/spec | Estado |
+|---|---|---|
+| M01 | [Parser conservador](M01-captura-conservadora.md) | Em validação |
+| M02 | [Atualizações e duplicatas](M02-atualizacoes-idempotentes.md) | Em validação |
+| M03 | [Diagnóstico da captura](M03-diagnostico-captura.md) | Em validação |
+| M04 | [Corpus e matriz de validação](M04-corpus-bancos.md) | Proposto; validação real depende de amostras consentidas |
+| M05 | [Backup criptografado restaurável](M05-backup-restauracao.md) | Em implementação |
+| M06 | [Contas e transferências próprias](M06-contas-transferencias.md) | Proposto |
+| M07 | [Cartões, faturas e parcelas](M07-cartoes-faturas-parcelas.md) | Proposto |
+| M08 | [Estornos e reembolsos](M08-estornos-vinculados.md) | Proposto |
+| M09 | [Importação CSV e OFX](M09-importacao-arquivos.md) | Proposto |
+| M10 | [Regras locais de categorias](M10-regras-categorias.md) | Proposto |
+| M11 | [Recorrências e lembretes](M11-recorrencias-lembretes.md) | Proposto |
+| M12 | [Projeção 30/60/90 dias](M12-projecao-caixa.md) | Proposto |
+| M13 | [Categorias próprias, tags e lotes](M13-categorias-tags-lotes.md) | Proposto |
+| M14 | [Metas e reservas](M14-metas-reservas.md) | Proposto |
+| M15 | [Relatórios de caixa e consumo](M15-relatorios-competencia.md) | Proposto |
+| M16 | [Bloqueio, modo discreto e acessibilidade](M16-privacidade-acessibilidade.md) | Proposto |
+| M17 | [CI, migrações e distribuição](M17-qualidade-distribuicao.md) | Parcial: CI instrumentado configurado |
+| M18 | [Nuvem, compartilhamento, Open Finance e IA](M18-integracoes-opcionais.md) | Proposto; decisões externas pendentes |
+
+## Ordem de execução
+
+1. M01–M04: confiabilidade e evidência da captura.
+2. M05–M08: recuperação, contas, cartões e estornos.
+3. M09, M13, M10, M11: reduzir trabalho manual, sem dependências circulares.
+4. M12, M14, M15: planejamento sobre domínio consistente.
+5. M16/M17 acompanham incrementos. M18 depende de necessidade, provedor e custo definidos.
+
+## Coordenação e controle
+
+Ruflo obrigatório em cada incremento; executores em worktrees isoladas, máximo quatro agentes incluindo coordenador. Configurações `.agents/` e `.claude-flow/` somente locais. Root integra, testa e envia commits ao GitHub privado. Teste real bancário depende de amostras consentidas; nenhum resultado será inventado.
+
