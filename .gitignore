@@ -14,18 +14,14 @@ captures/
 
 # Codex local configuration
 .codex/
-# Claude Flow runtime data
-.claude-flow/data/
-.claude-flow/logs/
+# Local agent configuration and skills
+.claude-flow/
+.agents/
 # Environment variables
 .env.local
 .env.*.local
 
 # Ruflo local secrets and runtime data
-.claude-flow/sessions/
-.claude-flow/*
-!.claude-flow/config.yaml
-!.claude-flow/.gitignore
 .swarm/
 .claude/
 .worktrees/

@@ -47,5 +47,6 @@ Guardar somente decisões técnicas e resumos sem dados pessoais.
 Runtime, logs, sessões, bancos de memória, caches e worktrees ficam fora do Git.
 Não mudar modelo, permissões globais, sandbox ou provedor como efeito colateral.
 MCP pode exigir recarregar a sessão Codex; CLI Ruflo funciona como alternativa explícita.
-Configuração local MCP é .codex/config.toml; template versionado em .agents/config.toml.
+Configuração local MCP é .codex/config.toml; .agents/ e .claude-flow/ são locais e ignoradas pelo Git.
+Em checkout novo, inicializar Ruflo conforme docs/RUFLO.md antes de procurar skills locais.
 Guia de instalação/reprodução: docs/RUFLO.md.

@@ -15,7 +15,7 @@ Auditoria posterior: [comparação de 10 apps e plano de 18 melhorias](docs/rese
 Atualizar o APK sobre a mesma assinatura migra SQLite v1→v2 preservando lançamentos e identificadores de duplicata. Não desinstale o app para atualizar se quiser manter seus dados.
 
 ## Coordenação das próximas edições
-Ruflo 3.38.21 inicializado para coordenar tarefas e agentes Codex. Instruções em [AGENTS.md](AGENTS.md), reprodução e limites em [docs/RUFLO.md](docs/RUFLO.md). Runtime local não acompanha o Git; configuração e skills acompanham.
+Ruflo 3.38.21 inicializado para coordenar tarefas e agentes Codex. Instruções em [AGENTS.md](AGENTS.md), reprodução e limites em [docs/RUFLO.md](docs/RUFLO.md). Configurações, skills e runtime em `.agents/` e `.claude-flow/` permanecem locais e ignorados pelo Git.
 
 ## Escopo entregue
 - Especificação, arquitetura, critérios de aceite e plano de testes em `docs/`.
