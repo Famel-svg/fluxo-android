@@ -36,4 +36,3 @@ Sem promessas de rentabilidade ou aplicação automática. Dados financeiros rea
 ## Evidência
 
 Estado de execução mantido no [índice](README.md). Base e justificativa: [auditoria competitiva](../research/2026-09-05-mercado-e-auditoria.md).
-

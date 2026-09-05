@@ -2,6 +2,16 @@
 
 Controle financeiro Android pessoal, offline, com leitura consentida de notificações de C6 Bank, Nubank e Itaú. Interface em português. Pix recebido/enviado, compras no crédito/débito, lançamentos manuais e revisão de mensagens ambíguas.
 
+## Versão 0.3 — captura e recuperação
+
+- Pendências e mensagens com oferta anexada recebem revisão conservadora.
+- Atualizações de notificações reabrem revisão sem sobrescrever correções manuais ou exclusões; migração SQLite v3 preserva legado.
+- Ajustes mostra diagnóstico do serviço e última observação por banco nesta sessão.
+- Backup protegido por senha permite restaurar lançamentos, orçamentos e identificadores contra duplicatas. Permissões e seleção de bancos continuam locais; restauração pausa captura.
+- 32 testes JVM e 42 Android aprovados localmente. CI passou a executar testes instrumentados em emulador.
+
+Backup não substitui validação bancária real. Guarde senha e arquivo separadamente; sem a senha, não há recuperação. Contas/cartões completos e demais incrementos seguem nos [specs](docs/specs/README.md).
+
 ## Novidades da versão 0.2
 - Categorias editáveis em cada lançamento; registros anteriores começam em Sem categoria.
 - Planejamento mensal com limite por categoria, gasto, restante/excesso e comparação com mês anterior.

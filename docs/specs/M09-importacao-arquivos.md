@@ -36,4 +36,3 @@ Sem login bancário automatizado nem importação silenciosa. Dados financeiros 
 ## Evidência
 
 Estado de execução mantido no [índice](README.md). Base e justificativa: [auditoria competitiva](../research/2026-09-05-mercado-e-auditoria.md).
-

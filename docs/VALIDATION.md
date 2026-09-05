@@ -1,5 +1,21 @@
 # Validação das entregas
 
+## Versão 0.3.0 — 2026-09-05
+
+Implementação: M01, M02, M03 e M05; M04 tem roteiro e M17 ganhou execução instrumentada no CI. Demais specs continuam propostas. Ruflo coordenou; três agentes trabalharam em worktrees até atingir limite de uso, depois coordenador revisou e concluiu integração localmente.
+
+- JVM: 32 testes aprovados (15 parser, 5 planejamento, 5 CSV, 7 cifra).
+- Android: 42 testes aprovados em execução integral, 0 falhas/ignorados, Pixel 9 Pro API37. Incluem migração, notificações atualizadas, aliases, correções humanas, tombstones, backup e diagnóstico UI.
+- Lint: sem erros. APK debug compilado e instalado.
+- Execução inicial encontrou texto esperado corrompido no novo teste; codificação corrigida, 17 testes de repository passaram e depois suíte integral de 42 passou. Não foi ocultada falha.
+- Fluxo manual no emulador: criar backup via seletor Android, informar/repetir senha sintética, salvar, abrir arquivo, verificar prévia, confirmar restauração e observar captura pausada. Usou base vazia; roundtrip com registros/categorias/tombstones/orçamentos foi instrumentado.
+- Certificado local v0.3 comparado ao APK da release v0.2: mesmo SHA-256 `0fc1435e14e34a078ed4db17d777888aa87d04c2a02cd7e29904f322dcd8e933`.
+- `.agents/` e `.claude-flow/` ausentes do índice Git e cobertas pelo `.gitignore`; cópias locais mantidas.
+
+Backup usa envelope versionado AES-GCM e PBKDF2-HMAC-SHA256, executados fora da UI. JSON validado antes da transação, com limites de tamanho, profundidade, tipos e referências. O formato cobre SQLite v3; novas entidades futuras precisam evoluir formato/migração. Isso não constitui auditoria criptográfica externa. Referências: [OWASP armazenamento criptográfico](https://cheatsheetseries.owasp.org/cheatsheets/Cryptographic_Storage_Cheat_Sheet.html), [parâmetros PBKDF2](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html).
+
+Limites: não houve teste bancário real, aparelho físico ou ensaio assistivo completo. Alias sem `when` depende do ciclo de notificação; callback de remoção perdido ou chave/horário alterados continuam ambíguos. Mudança detectada exige revisão, não reconciliação contábil automática. Permissões e bancos selecionados não vêm do backup, e captura fica pausada após restaurar.
+
 ## Versão 0.2.0 — 2026-09-05
 Estado: cinco melhorias implementadas, APK compilado e validação local concluída.
 

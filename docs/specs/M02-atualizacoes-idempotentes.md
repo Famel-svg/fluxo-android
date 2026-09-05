@@ -1,6 +1,6 @@
 # M02 — Atualizações e duplicatas
 
-Estado: **Em validação**. Spec final; implementação só considerada concluída com evidência registrada.
+Estado: **Implementado e validado, com limites de identidade documentados**. Spec final; implementação só considerada concluída com evidência registrada.
 
 ## Problema
 
@@ -36,4 +36,3 @@ Não fundir eventos por valor/horário. Remoção perdida/chave reutilizada cont
 ## Evidência
 
 Estado de execução mantido no [índice](README.md). Base e justificativa: [auditoria competitiva](../research/2026-09-05-mercado-e-auditoria.md).
-

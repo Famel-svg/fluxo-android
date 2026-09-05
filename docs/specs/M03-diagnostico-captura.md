@@ -1,6 +1,6 @@
 # M03 — Diagnóstico da captura
 
-Estado: **Em validação**. Spec final; implementação só considerada concluída com evidência registrada.
+Estado: **Implementado e validado**. Spec final; implementação só considerada concluída com evidência registrada.
 
 ## Problema
 
@@ -36,4 +36,3 @@ Não prometer histórico integral ou detectar transação nunca notificada. Dado
 ## Evidência
 
 Estado de execução mantido no [índice](README.md). Base e justificativa: [auditoria competitiva](../research/2026-09-05-mercado-e-auditoria.md).
-

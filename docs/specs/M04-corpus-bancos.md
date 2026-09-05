@@ -36,4 +36,3 @@ Não inventar resultado real nem percentual de precisão. Dados financeiros reai
 ## Evidência
 
 Estado de execução mantido no [índice](README.md). Base e justificativa: [auditoria competitiva](../research/2026-09-05-mercado-e-auditoria.md).
-

@@ -4,11 +4,11 @@ Specs de cada incremento derivadas da auditoria de 05/09/2026. Estados abaixo di
 
 | ID | Melhoria/spec | Estado |
 |---|---|---|
-| M01 | [Parser conservador](M01-captura-conservadora.md) | Em validação |
-| M02 | [Atualizações e duplicatas](M02-atualizacoes-idempotentes.md) | Em validação |
-| M03 | [Diagnóstico da captura](M03-diagnostico-captura.md) | Em validação |
+| M01 | [Parser conservador](M01-captura-conservadora.md) | Implementado; 15 testes do parser |
+| M02 | [Atualizações e duplicatas](M02-atualizacoes-idempotentes.md) | Implementado; migração e regressões validadas |
+| M03 | [Diagnóstico da captura](M03-diagnostico-captura.md) | Implementado; 3 testes de interface |
 | M04 | [Corpus e matriz de validação](M04-corpus-bancos.md) | Proposto; validação real depende de amostras consentidas |
-| M05 | [Backup criptografado restaurável](M05-backup-restauracao.md) | Em implementação |
+| M05 | [Backup criptografado restaurável](M05-backup-restauracao.md) | Implementado para SQLite v3; cifra e restauração validadas |
 | M06 | [Contas e transferências próprias](M06-contas-transferencias.md) | Proposto |
 | M07 | [Cartões, faturas e parcelas](M07-cartoes-faturas-parcelas.md) | Proposto |
 | M08 | [Estornos e reembolsos](M08-estornos-vinculados.md) | Proposto |
@@ -35,3 +35,4 @@ Specs de cada incremento derivadas da auditoria de 05/09/2026. Estados abaixo di
 
 Ruflo obrigatório em cada incremento; executores em worktrees isoladas, máximo quatro agentes incluindo coordenador. Configurações `.agents/` e `.claude-flow/` somente locais. Root integra, testa e envia commits ao GitHub privado. Teste real bancário depende de amostras consentidas; nenhum resultado será inventado.
 
+Primeiro lote: 32 testes JVM e 42 Android aprovados, lint sem erros. M04 possui [roteiro](../CAPTURE_VALIDATION_MATRIX.md), mas teste bancário real continua pendente. M17 executa instrumentação no CI; assinatura release própria ainda não entregue. M06–M16 não marcados como implementados continuam backlog. Os agentes atingiram limite de uso durante execução; coordenador revisou e concluiu localmente os arquivos de captura e backup.

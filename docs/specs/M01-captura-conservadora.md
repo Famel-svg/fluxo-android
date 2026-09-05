@@ -1,6 +1,6 @@
 # M01 — Parser conservador
 
-Estado: **Em validação**. Spec final; implementação só considerada concluída com evidência registrada.
+Estado: **Implementado e validado**. Spec final; implementação só considerada concluída com evidência registrada.
 
 ## Problema
 
@@ -36,4 +36,3 @@ Não interpretar linguagem bancária universalmente nem afirmar cobertura real. 
 ## Evidência
 
 Estado de execução mantido no [índice](README.md). Base e justificativa: [auditoria competitiva](../research/2026-09-05-mercado-e-auditoria.md).
-

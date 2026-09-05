@@ -153,7 +153,7 @@ fun rememberBackupActions(model: BackupViewModel = viewModel()): BackupActions {
 fun BackupCard(actions: BackupActions) {
     OutlinedCard { Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Backup e recuperação", style = MaterialTheme.typography.titleMedium)
-        Text("Guarde histórico, orçamentos e identificadores contra duplicatas em arquivo criptografado. Diferente do CSV, permite restaurar o aplicativo. Limite: 16 MiB e 50 mil registros por tabela.")
+        Text("Guarde histórico, orçamentos e identificadores contra duplicatas em arquivo criptografado. Diferente do CSV, permite restaurar o aplicativo. Até 50 mil lançamentos e arquivo de 16 MiB.")
         val enabled = !actions.state.busy && actions.state.mode == null && actions.state.preview == null
         OutlinedButton(onClick = actions.export, enabled = enabled) { Text("Criar backup protegido") }
         OutlinedButton(onClick = actions.import, enabled = enabled) { Text("Restaurar backup") }

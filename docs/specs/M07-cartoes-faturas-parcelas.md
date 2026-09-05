@@ -36,4 +36,3 @@ Não inferir total de compra a partir de uma parcela sem informação. Dados fin
 ## Evidência
 
 Estado de execução mantido no [índice](README.md). Base e justificativa: [auditoria competitiva](../research/2026-09-05-mercado-e-auditoria.md).
-
