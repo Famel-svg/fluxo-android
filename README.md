@@ -12,6 +12,9 @@ Controle financeiro Android pessoal, offline, com leitura consentida de notifica
 Pesquisa, critérios de aceite e divisão entre agentes: [plano da versão 0.2](docs/PLAN_0.2.md).
 Atualizar o APK sobre a mesma assinatura migra SQLite v1→v2 preservando lançamentos e identificadores de duplicata. Não desinstale o app para atualizar se quiser manter seus dados.
 
+## Coordenação das próximas edições
+Ruflo 3.38.21 inicializado para coordenar tarefas e agentes Codex. Instruções em [AGENTS.md](AGENTS.md), reprodução e limites em [docs/RUFLO.md](docs/RUFLO.md). Runtime local não acompanha o Git; configuração e skills acompanham.
+
 ## Escopo entregue
 - Especificação, arquitetura, critérios de aceite e plano de testes em `docs/`.
 - Backend embarcado Kotlin/SQLite: valores inteiros em centavos, captura seletiva, deduplicação, correções e exclusões preservadas.

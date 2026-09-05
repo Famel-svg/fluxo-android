@@ -11,3 +11,21 @@ local.properties
 !.env.example
 captures/
 *.hprof
+
+# Codex local configuration
+.codex/
+# Claude Flow runtime data
+.claude-flow/data/
+.claude-flow/logs/
+# Environment variables
+.env.local
+.env.*.local
+
+# Ruflo local secrets and runtime data
+.claude-flow/sessions/
+.claude-flow/*
+!.claude-flow/config.yaml
+!.claude-flow/.gitignore
+.swarm/
+.claude/
+.worktrees/

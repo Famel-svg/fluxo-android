@@ -1,0 +1,23 @@
+# Ruflo 3.38.21 — coordenação local do Fluxo
+version: "3.0.0"
+swarm:
+  topology: hierarchical
+  maxAgents: 4
+  autoScale: false
+  coordinationStrategy: specialized
+memory:
+  backend: hybrid
+  enableHNSW: true
+  persistPath: .claude-flow/data
+  cacheSize: 100
+  agentScopes:
+    enabled: true
+    defaultScope: project
+neural:
+  enabled: false
+hooks:
+  enabled: true
+  autoExecute: false
+mcp:
+  autoStart: false
+  port: 3000
