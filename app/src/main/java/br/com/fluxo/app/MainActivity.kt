@@ -328,6 +328,7 @@ private fun SettingsScreen(capture: Boolean, banks: Set<String>, access: Boolean
         items(supportedBanks, key = { it.packageName }) { bank ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(bank.name, Modifier.weight(1f)); Switch(checked = bank.packageName in banks, onCheckedChange = { model.bank(bank.packageName, it) }, modifier = Modifier.semantics { contentDescription = "Permitir notificações de ${bank.name}" }) }
         }
+        item { CaptureHealthCard(access, capture, banks) }
         item { HorizontalDivider() }
         item { ExportCsvCard(transactions) }
         item { Text("Privacidade e cobertura", style = MaterialTheme.typography.titleMedium) }
