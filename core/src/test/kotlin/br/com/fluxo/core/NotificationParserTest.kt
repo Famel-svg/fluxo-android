@@ -52,6 +52,56 @@ class NotificationParserTest {
         }
     }
 
+    @Test fun `analysis and contextual negations override positive movement words`() {
+        listOf(
+            "Pix recebido em análise R$ 25,00",
+            "Compra aprovada no crédito sob análise R$ 25,00",
+            "Compra aprovada no débito em verificação R$ 25,00",
+            "Pix recebido não confirmado R$ 25,00",
+            "Pix recebido não foi confirmado R$ 25,00",
+            "Pix recebido não foi ainda confirmado R$ 25,00",
+            "Pix enviado ainda não está confirmado R$ 25,00",
+            "Compra aprovada no crédito sem confirmação R$ 25,00",
+            "Você não recebeu Pix R$ 25,00",
+            "Você nunca enviou Pix R$ 25,00",
+            "Você jamais pagou no débito esta compra R$ 25,00",
+            "Pix recebido, mas nem foi efetivado R$ 25,00",
+        ).forEach { text ->
+            val result = requireNotNull(NotificationParser.parse(text))
+            assertEquals(text, 2500L, result.amountCents)
+            assertEquals(text, ReviewStatus.REVIEW, result.status)
+            assertTrue(text, result.reason.isNotBlank())
+        }
+    }
+
+    @Test fun `promotional footers preserve possible transactions for review`() {
+        mapOf(
+            "Compra aprovada no crédito R$ 75,12. Aproveite nossas ofertas!" to PaymentMethod.CREDIT_CARD,
+            "Ganhe cashback! Compra aprovada no débito R$ 75,12" to PaymentMethod.DEBIT_CARD,
+            "Pix recebido R$ 75,12. Conheça esta promoção" to PaymentMethod.PIX,
+            "Pix enviado R$ 75,12. Simule seu empréstimo" to PaymentMethod.PIX,
+        ).forEach { (text, method) ->
+            val result = requireNotNull(NotificationParser.parse(text))
+            assertEquals(text, 7512L, result.amountCents)
+            assertEquals(text, method, result.method)
+            assertEquals(text, ReviewStatus.REVIEW, result.status)
+            assertTrue(text, result.reason.contains("oferta"))
+        }
+        val multiple = requireNotNull(NotificationParser.parse(
+            "Compra aprovada no crédito R$ 75,12. Ganhe cashback de R$ 5,00",
+        ))
+        assertNull(multiple.amountCents)
+        assertEquals(ReviewStatus.REVIEW, multiple.status)
+    }
+
+    @Test fun `isolated promotions without movement evidence remain ignored`() {
+        listOf(
+            "Aproveite cashback na compra no crédito de R$ 75,12",
+            "Receba um Pix de R$ 25,00 nesta promoção",
+            "Limite aprovado para compra no crédito R$ 500,00",
+        ).forEach { assertNull(it, NotificationParser.parse(it)) }
+    }
+
     @Test fun `invalid numeric amounts are never partially parsed`() {
         listOf("0,00", "-1,00", "+1,00", "1.23,45", "1,2", "1,234", "100", "1.00", "9.223.372.036.854.775.808,00", "1,00,25").forEach {
             val result = requireNotNull(NotificationParser.parse("Pix recebido R$ $it"))

@@ -16,6 +16,11 @@ object NotificationParser {
     private val incoming = Regex("\\b(recebeu|recebido|recebida|creditado|creditada|credito em conta|entrou na sua conta)\\b")
     private val outgoing = Regex("\\b(enviou|enviado|enviada|debitado|debitada|pagou|pagamento realizado|pagamento efetuado|transferencia realizada|transferencia efetuada)\\b")
     private val completedPurchase = Regex("\\b(compra (?:no (?:credito|debito) )?(?:aprovada|realizada|efetuada)|comprou|pagamento aprovado)\\b")
+    private val underReview = Regex("\\b(em analise|sob analise|em verificacao|aguardando confirmacao)\\b")
+    // Limit the context to one clause; negation may precede auxiliaries and adverbs.
+    private val negatedMovement = Regex(
+        """\b(?:nao|nunca|jamais|nem|sem)\s+(?:[a-z]+\s+){0,4}(?:confirmad[oa]|confirmacao|aprovad[oa]|aprovacao|autorizad[oa]|autorizacao|concluid[oa]|conclusao|efetivad[oa]|efetuad[oa]|realizad[oa]|enviad[oa]|recebid[oa]|creditad[oa]|debitad[oa]|recebeu|enviou|pagou|comprou)\b""",
+    )
 
     fun parse(text: String): ParsedNotification? {
         // Notification text is untrusted. Large messages need no expensive pattern work.
@@ -25,7 +30,6 @@ object NotificationParser {
             .lowercase(Locale.ROOT).replace('\u00a0', ' ')
             .replace(Regex("\\s+"), " ").trim()
         if (!financial.containsMatchIn(normalized)) return null
-        if (marketing.containsMatchIn(normalized)) return null
 
         val amounts = currency.findAll(normalized).map { it.groupValues[1].trimEnd('.') }.toList()
         val amount = amounts.singleOrNull()?.let(::toCents)
@@ -40,6 +44,9 @@ object NotificationParser {
         val method = methods.singleOrNull() ?: PaymentMethod.UNKNOWN
         val income = incoming.containsMatchIn(normalized)
         val expense = outgoing.containsMatchIn(normalized) || completedPurchase.containsMatchIn(normalized)
+        val hasMarketing = marketing.containsMatchIn(normalized)
+        // A promotional footer must not hide a possible transaction. Pure offers remain ignored.
+        if (hasMarketing && !income && !expense) return null
         val direction = when {
             income && !expense -> Direction.INCOME
             expense && !income -> Direction.EXPENSE
@@ -48,8 +55,11 @@ object NotificationParser {
         val reason = when {
             '?' in normalized -> "Mensagem contém pergunta; confirme se houve movimentação."
             collection.containsMatchIn(normalized) -> "Cobrança ou pedido de pagamento não comprova movimentação."
-            unconfirmed.containsMatchIn(normalized) || notExecuted.containsMatchIn(normalized) -> "Evento pendente, recusado ou agendado; confirme a movimentação."
+            unconfirmed.containsMatchIn(normalized) || notExecuted.containsMatchIn(normalized) ||
+                underReview.containsMatchIn(normalized) || negatedMovement.containsMatchIn(normalized) ->
+                "Evento pendente, recusado ou agendado; confirme a movimentação."
             settlement.containsMatchIn(normalized) -> "Fatura, estorno ou devolução exige classificação manual."
+            hasMarketing -> "Mensagem mistura movimentação e oferta; confirme os dados da transação."
             amounts.size > 1 -> "Mais de um valor monetário; selecione o valor da transação."
             amount == null -> "Valor ausente, inválido ou fora do limite."
             methods.size > 1 -> "Mais de uma modalidade; confirme o meio de pagamento."
