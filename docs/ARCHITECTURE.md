@@ -1,5 +1,14 @@
 # Arquitetura e contratos
 
+## Atualização 0.2
+Modelo `Transaction` recebe `category: Category = UNCATEGORIZED`. `Category` contém rótulos em português; `Budget(month, category, limitCents)` identifica limite por mês/categoria. SQLite v2 adiciona coluna com valor padrão e tabela `budgets` via migração aditiva; limpeza integral usa transação para remover ambos os conjuntos.
+
+`SpendingAnalytics.byCategory` agrega centavos em `BigInteger`, usa mês/fuso explícitos e somente despesas confirmadas. `TransactionSearch.filter` combina condições por AND e normaliza acentos/caixa. `CsvExport.write` produz UTF-8/BOM, CSV separado por ponto e vírgula com proteção de fórmulas; nenhum identificador interno ou texto bruto exportado.
+
+`PlanningScreen` usa flows de lançamentos/limites do repository; valor de mês fica congelado no diálogo durante edição. `CsvExportViewModel` mantém snapshot em memória entre escolha do destino e gravação IO; sem snapshot após morte do processo exige reiniciar exportação. Arquivo selecionado pelo sistema, sem permissão ampla de armazenamento. Contratos completos em `PLAN_0.2.md`.
+
+## Base da versão 0.1
+
 Módulo `core`: Kotlin/JVM puro, parser e modelos testáveis sem Android.
 Módulo `app`: Compose → LedgerViewModel → LedgerRepository → SQLite; NotificationListenerService → parser → repository. Um banco por processo, IO serializado via SQLite; StateFlow sinaliza atualização das telas.
 

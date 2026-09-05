@@ -2,6 +2,16 @@
 
 Controle financeiro Android pessoal, offline, com leitura consentida de notificações de C6 Bank, Nubank e Itaú. Interface em português. Pix recebido/enviado, compras no crédito/débito, lançamentos manuais e revisão de mensagens ambíguas.
 
+## Novidades da versão 0.2
+- Categorias editáveis em cada lançamento; registros anteriores começam em Sem categoria.
+- Planejamento mensal com limite por categoria, gasto, restante/excesso e comparação com mês anterior.
+- Relatório por categoria inclui despesas confirmadas no crédito e no débito; itens em revisão ficam fora.
+- Busca sem distinção de acentos e filtros combinados por banco, meio e categoria, com opção Todos os meses.
+- Exportação CSV de todo o histórico não excluído pelo seletor de arquivos Android. O arquivo não é criptografado e não é backup restaurável; escolha o destino conscientemente.
+
+Pesquisa, critérios de aceite e divisão entre agentes: [plano da versão 0.2](docs/PLAN_0.2.md).
+Atualizar o APK sobre a mesma assinatura migra SQLite v1→v2 preservando lançamentos e identificadores de duplicata. Não desinstale o app para atualizar se quiser manter seus dados.
+
 ## Escopo entregue
 - Especificação, arquitetura, critérios de aceite e plano de testes em `docs/`.
 - Backend embarcado Kotlin/SQLite: valores inteiros em centavos, captura seletiva, deduplicação, correções e exclusões preservadas.
@@ -48,6 +58,7 @@ Pix é meio de pagamento; entrada/saída é direção. Compras no cartão de cr�
 - `docs/TEST_PLAN.md`: validação automática e em aparelho.
 - `docs/ROADMAP.md`: próximos incrementos e limites do MVP.
 - `docs/VALIDATION.md`: evidências efetivamente obtidas nesta entrega.
+- `docs/PLAN_0.2.md`: pesquisa, especificação e aceite das cinco novas funções.
 
 ## Privacidade
 Sem permissão de internet, analytics ou envio de notificações. Acesso Android permite receber notificações, mas o aplicativo descarta fontes não selecionadas antes de interpretar o texto. Backup automático e transferência de dados desabilitados. Proteção usa sandbox Android e segurança do dispositivo; não há criptografia adicional do SQLite. Desinstalar apaga dados locais. Excluir um lançamento conserva identificador técnico para evitar recriação; apagar todo o histórico remove também esses identificadores e pausa captura.

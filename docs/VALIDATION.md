@@ -1,4 +1,21 @@
-# Validação da entrega 0.1.0
+# Validação das entregas
+
+## Versão 0.2.0 — 2026-09-05
+Estado: cinco melhorias implementadas, APK compilado e validação local concluída.
+
+- 22 testes JVM aprovados: parser (12), analytics/busca (5), CSV (5).
+- 29 testes Android distintos aprovados: repository/migração (11), extração (8), UI original (2), CSV/estado de exportação (4), Planejamento (3), busca/categoria integrada (1).
+- A suíte de 29 executou inicialmente com 28 aprovados e uma ambiguidade no seletor de menu do teste; seletor corrigido, teste afetado reexecutado e aprovado. Nenhum teste foi removido ou ignorado para obter sucesso.
+- Build APK e lint concluídos; lint com 0 erros e 10 avisos de dependências/extensões Kotlin.
+- Migração aditiva preservou lançamento antigo editado, valor e tombstones; reabertura confirmou categoria e orçamento persistidos.
+- Teste integrado encontrou Itaú pela busca `itau`, localizou mês anterior, categorizou lançamento e combinou filtros.
+- CSV testado com centavos exatos, UTF-8, fórmulas neutralizadas, snapshot, cancelamento, falha e perda do snapshot após reinício.
+- Ambiente: JDK 21, Gradle 8.13, compileSdk 36, Pixel 9 Pro Android 17/API 37 com páginas de 16 KB.
+
+APK 0.2.0 SHA-256: `fc96081f05b6c5fb3dc91f6ee89d8e823e625433410528ca3d9f0124f1668e03`.
+Pesquisa e critérios de aceite: `PLAN_0.2.md`. Relatórios representam despesas notificadas/registradas, não extrato completo. Templates reais dos três bancos e seletor de cada provedor de arquivos continuam dependentes do aparelho. CSV não é backup criptografado nem restauração.
+
+## Histórico da versão 0.1.0
 
 Data: 2026-09-05. Estado: MVP de desenvolvimento implementado e validado localmente; validação com bancos reais pendente.
 

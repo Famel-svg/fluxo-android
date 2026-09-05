@@ -1,15 +1,16 @@
-# Fluxo 0.1.0 — versão de desenvolvimento
+# Fluxo 0.2.0 — planejamento e portabilidade
 
-Primeiro MVP Android com backend embarcado offline e interface em português.
+Atualização Android offline com cinco melhorias pesquisadas e planejadas.
 
-- Captura consentida de notificações dos pacotes C6 Bank, Nubank e Itaú.
-- Classificação de Pix, entradas/saídas e cartão de crédito/débito; revisão para ambiguidades.
-- Resumo mensal, lançamentos manuais, edição e exclusão.
-- Dados locais, sem internet, login ou envio de notificações.
-- 30 testes aprovados localmente; lint sem erros.
+- Categorias editáveis nos lançamentos.
+- Limites mensais por categoria com restante/excesso.
+- Relatório de despesas por categoria e comparação com o mês anterior.
+- Busca sem acentos e filtros combinados, incluindo todos os meses.
+- Exportação CSV com escolha explícita do destino e proteção contra fórmulas.
+- Migração SQLite preserva o histórico existente; 51 testes distintos aprovados localmente e lint sem erros.
 
-Baixe `app-debug.apk`, instale e abra Ajustes. Selecione seus bancos, conceda acesso às notificações nas configurações Android e ative a captura.
+Baixe `app-debug.apk` e atualize sobre a versão anterior sem desinstalar. A assinatura de desenvolvimento é a mesma do APK anexado à release 0.1.0. Em Planejamento, defina seus limites; em Ajustes, exporte o histórico quando desejar.
 
-APK assinado para desenvolvimento. Templates reais dos bancos ainda precisam de validação no aparelho. Histórico parcial; não representa saldo bancário. Não há sincronização em nuvem nesta versão.
+APK assinado para desenvolvimento. Templates reais dos bancos ainda precisam de validação no aparelho. Histórico parcial; não representa saldo bancário. CSV contém dados financeiros sem criptografia; não é backup restaurável. Não há sincronização automática em nuvem.
 
-SHA-256 do APK anexado: `9a72b9937b81673caee7af240ee3256889b8b4d0f03111fbade108cd28b3983b`.
+SHA-256 do APK anexado: `fc96081f05b6c5fb3dc91f6ee89d8e823e625433410528ca3d9f0124f1668e03`.

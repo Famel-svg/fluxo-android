@@ -17,5 +17,8 @@ Sem comprar ou transferir dinheiro automaticamente. No uso normal do proprietár
 - Backup exportável e restauração explícita. Sincronização opcional exige decisão de hospedagem/custo, autenticação, isolamento de usuários e retenção antes de implementação.
 - Release assinado e distribuição privada de APK; Google Play exige revisão de permissões, política de privacidade e ficha de dados.
 
+## Incrementos executados na versão 0.2
+Categorias, busca/filtros, relatório mensal, limites por categoria e exportação CSV foram planejados e implementados em `PLAN_0.2.md`. Itens correspondentes acima deixam o backlog. Categorização é manual; captura permanece Sem categoria até revisão do usuário. Backup restaurável, recorrências, faturas completas, biometria e nuvem seguem decisões futuras.
+
 ## Fora do escopo inicial
 Movimentar dinheiro, automatizar login bancário, capturar SMS, pedir acessibilidade, prometer saldo em tempo real ou completude do extrato. Open Finance e integração bancária oficial são decisões separadas.
