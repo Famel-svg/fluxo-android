@@ -4,12 +4,15 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import br.com.fluxo.core.Budget
+import br.com.fluxo.core.Category
 import br.com.fluxo.core.Direction
 import br.com.fluxo.core.NotificationParser
 import br.com.fluxo.core.PaymentMethod
 import br.com.fluxo.core.ReviewStatus
 import br.com.fluxo.core.Transaction
 import java.util.UUID
+import java.time.YearMonth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +33,8 @@ class LedgerRepository(context: Context) {
     private val mutex = Mutex()
     private val _transactions = MutableStateFlow<List<Transaction>>(emptyList())
     val transactions: StateFlow<List<Transaction>> = _transactions
+    private val _budgets = MutableStateFlow<List<Budget>>(emptyList())
+    val budgets: StateFlow<List<Budget>> = _budgets
     private val _captureEnabled = MutableStateFlow(preferences.getBoolean("enabled", false))
     val captureEnabled: StateFlow<Boolean> = _captureEnabled
     private val _enabledBanks = MutableStateFlow(preferences.getStringSet("banks", emptySet())!!.toSet())
@@ -98,6 +103,7 @@ class LedgerRepository(context: Context) {
                 putNull("amount_cents")
                 put("description", "")
                 put("reason", "")
+                put("category", Category.UNCATEGORIZED.name)
             }, "id = ?", arrayOf(id))
             readAll()
         }
@@ -106,10 +112,46 @@ class LedgerRepository(context: Context) {
     suspend fun clear() = withContext(Dispatchers.IO) {
         mutex.withLock {
             setCaptureEnabled(false)
-            database.writableDatabase.delete("transactions", null, null)
+            val db = database.writableDatabase
+            db.beginTransaction()
+            try {
+                db.delete("transactions", null, null)
+                db.delete("budgets", null, null)
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
             _captureError.value = null
             readAll()
         }
+    }
+
+    suspend fun saveBudget(budget: Budget) = withContext(Dispatchers.IO) {
+        validateMonth(budget.month)
+        require(budget.limitCents > 0) { "Informe um limite positivo." }
+        mutex.withLock {
+            database.writableDatabase.insertWithOnConflict("budgets", null, ContentValues().apply {
+                put("month", budget.month)
+                put("category", budget.category.name)
+                put("limit_cents", budget.limitCents)
+            }, SQLiteDatabase.CONFLICT_REPLACE).also { check(it != -1L) { "Não foi possível salvar o orçamento." } }
+            readAll()
+        }
+    }
+
+    suspend fun deleteBudget(month: String, category: Category) = withContext(Dispatchers.IO) {
+        validateMonth(month)
+        mutex.withLock {
+            database.writableDatabase.delete("budgets", "month = ? AND category = ?", arrayOf(month, category.name))
+            readAll()
+        }
+    }
+
+    private fun validateMonth(month: String) {
+        val parsed = try { YearMonth.parse(month) } catch (_: java.time.format.DateTimeParseException) {
+            throw IllegalArgumentException("Informe um mês válido no formato AAAA-MM.")
+        }
+        require(parsed.toString() == month) { "Informe um mês válido no formato AAAA-MM." }
     }
 
     private fun values(t: Transaction) = ContentValues().apply {
@@ -117,6 +159,7 @@ class LedgerRepository(context: Context) {
         put("amount_cents", t.amountCents); put("direction", t.direction.name)
         put("method", t.method.name); put("status", t.status.name); put("occurred_at", t.occurredAt)
         put("description", t.description); put("reason", t.reason); put("deleted", 0)
+        put("category", t.category.name)
     }
 
     private fun readAll() {
@@ -133,14 +176,26 @@ class LedgerRepository(context: Context) {
                     status = ReviewStatus.valueOf(string("status")),
                     occurredAt = cursor.getLong(cursor.getColumnIndexOrThrow("occurred_at")),
                     description = string("description"), reason = string("reason"),
+                    category = Category.valueOf(string("category")),
+                )
+            }
+        }
+        val limits = mutableListOf<Budget>()
+        database.readableDatabase.query("budgets", null, null, null, null, null, "month DESC, category ASC").use { cursor ->
+            while (cursor.moveToNext()) {
+                limits += Budget(
+                    month = cursor.getString(cursor.getColumnIndexOrThrow("month")),
+                    category = Category.valueOf(cursor.getString(cursor.getColumnIndexOrThrow("category"))),
+                    limitCents = cursor.getLong(cursor.getColumnIndexOrThrow("limit_cents")),
                 )
             }
         }
         _transactions.value = result
+        _budgets.value = limits
     }
 }
 
-private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "fluxo.db", null, 1) {
+private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "fluxo.db", null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
             CREATE TABLE transactions (
@@ -154,12 +209,28 @@ private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "flux
                 occurred_at INTEGER NOT NULL,
                 description TEXT NOT NULL,
                 reason TEXT NOT NULL,
-                deleted INTEGER NOT NULL DEFAULT 0
+                deleted INTEGER NOT NULL DEFAULT 0,
+                category TEXT NOT NULL DEFAULT 'UNCATEGORIZED'
             )
         """.trimIndent())
         db.execSQL("CREATE INDEX idx_transaction_date ON transactions(deleted, occurred_at)")
+        createBudgets(db)
     }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        error("Migração de banco de dados não implementada: $oldVersion → $newVersion")
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE transactions ADD COLUMN category TEXT NOT NULL DEFAULT 'UNCATEGORIZED'")
+            createBudgets(db)
+        }
+    }
+
+    private fun createBudgets(db: SQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE budgets (
+                month TEXT NOT NULL,
+                category TEXT NOT NULL,
+                limit_cents INTEGER NOT NULL CHECK(limit_cents > 0),
+                PRIMARY KEY(month, category)
+            )
+        """.trimIndent())
     }
 }
