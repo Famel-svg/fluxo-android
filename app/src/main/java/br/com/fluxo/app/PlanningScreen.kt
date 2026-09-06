@@ -40,7 +40,7 @@ internal fun PlanningScreen(
     val monthBudgets = budgets.filter { it.month == month.toString() }
     val counts = remember(transactions, month) {
         transactions.filter {
-            it.status == ReviewStatus.CONFIRMED && it.direction == Direction.EXPENSE && (it.amountCents ?: 0) > 0 &&
+            it.status == ReviewStatus.CONFIRMED && it.transferId == null && it.direction == Direction.EXPENSE && (it.amountCents ?: 0) > 0 &&
                 YearMonth.from(Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault())) == month
         }.groupingBy { it.category }.eachCount()
     }

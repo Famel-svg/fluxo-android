@@ -12,6 +12,12 @@ enum class Category(val label: String) {
 
 data class Budget(val month: String, val category: Category, val limitCents: Long)
 
+enum class AccountType(val label: String) { CHECKING("Conta corrente"), SAVINGS("Poupança"), CASH("Dinheiro"), OTHER("Outra") }
+
+data class Account(val id: String, val name: String, val bankPackage: String,
+    val openingCents: Long, val openingAt: Long, val archived: Boolean = false,
+    val type: AccountType = AccountType.CHECKING)
+
 data class ParsedNotification(
     val amountCents: Long?,
     val direction: Direction,
@@ -32,4 +38,6 @@ data class Transaction(
     val description: String,
     val reason: String = "",
     val category: Category = Category.UNCATEGORIZED,
+    val accountId: String? = null,
+    val transferId: String? = null,
 )

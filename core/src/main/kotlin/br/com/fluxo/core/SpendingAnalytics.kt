@@ -16,7 +16,7 @@ object SpendingAnalytics {
         rows.forEach { row ->
             val amount = row.amountCents
             if (row.status == ReviewStatus.CONFIRMED && row.direction == Direction.EXPENSE &&
-                amount != null && amount > 0 &&
+                row.transferId == null && amount != null && amount > 0 &&
                 YearMonth.from(Instant.ofEpochMilli(row.occurredAt).atZone(zone)) == month
             ) {
                 totals[row.category] = (totals[row.category] ?: BigInteger.ZERO) + BigInteger.valueOf(amount)

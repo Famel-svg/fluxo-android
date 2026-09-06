@@ -43,6 +43,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import br.com.fluxo.core.Direction
 import br.com.fluxo.core.Budget
+import br.com.fluxo.core.Account
 import br.com.fluxo.core.Category
 import br.com.fluxo.core.TransactionSearch
 import br.com.fluxo.core.PaymentMethod
@@ -77,6 +78,7 @@ class MainActivity : ComponentActivity() {
 class LedgerViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = (application as FluxoApplication).repository
     val transactions = repository.transactions
+    val accounts = repository.accounts
     val budgets = repository.budgets
     val captureEnabled = repository.captureEnabled
     val enabledBanks = repository.enabledBanks
@@ -106,6 +108,10 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
     fun save(transaction: Transaction, onSuccess: () -> Unit) = edit(onSuccess) { repository.save(transaction) }
+    fun saveAccount(account: Account, onSuccess: () -> Unit) = edit(onSuccess) { repository.saveAccount(account) }
+    fun createTransfer(from: String, to: String, cents: Long, at: Long, onSuccess: () -> Unit) = edit(onSuccess) { repository.createTransfer(from, to, cents, at) }
+    fun linkTransfer(outgoing: String, incoming: String, onSuccess: () -> Unit) = edit(onSuccess) { repository.linkTransfer(outgoing, incoming) }
+    fun unlinkTransfer(id: String, onSuccess: () -> Unit) = edit(onSuccess) { repository.unlinkTransfer(id) }
     fun delete(id: String, onSuccess: () -> Unit) = edit(onSuccess) { repository.delete(id) }
     fun saveBudget(budget: Budget, onSuccess: () -> Unit) = edit(onSuccess) { repository.saveBudget(budget) }
     fun deleteBudget(month: String, category: Category, onSuccess: () -> Unit) = edit(onSuccess) { repository.deleteBudget(month, category) }
@@ -153,6 +159,7 @@ private fun notificationAccess(): Boolean {
 @Composable
 private fun FluxoScreen(model: LedgerViewModel = viewModel()) {
     val transactions by model.transactions.collectAsStateWithLifecycle()
+    val accounts by model.accounts.collectAsStateWithLifecycle()
     val budgets by model.budgets.collectAsStateWithLifecycle()
     val capture by model.captureEnabled.collectAsStateWithLifecycle()
     val banks by model.enabledBanks.collectAsStateWithLifecycle()
@@ -196,7 +203,9 @@ private fun FluxoScreen(model: LedgerViewModel = viewModel()) {
             }
         }
     }
-    if (adding || editing != null) TransactionEditor(editing, saving, editError, onDismiss = { adding = false; editingId = null }, onSave = { model.save(it) { adding = false; editingId = null } }, onDelete = { model.delete(it) { editingId = null } })
+    if (adding || editing != null) TransactionEditor(editing, saving, editError, accounts,
+        onUnlink = { model.unlinkTransfer(it) { editingId = null } },
+        onDismiss = { adding = false; editingId = null }, onSave = { model.save(it) { adding = false; editingId = null } }, onDelete = { model.delete(it) { editingId = null } })
 }
 
 @Composable
@@ -210,7 +219,7 @@ private fun MonthPicker(month: YearMonth, previous: () -> Unit, next: () -> Unit
 
 @Composable
 private fun Dashboard(rows: List<Transaction>, active: Boolean, settings: () -> Unit, showAll: () -> Unit, review: () -> Unit, edit: (Transaction) -> Unit) {
-    val confirmed = rows.filter { it.status == ReviewStatus.CONFIRMED }
+    val confirmed = rows.filter { it.status == ReviewStatus.CONFIRMED && it.transferId == null }
     fun total(predicate: (Transaction) -> Boolean): BigDecimal = confirmed.filter(predicate).fold(BigDecimal.ZERO) { total, row -> total + BigDecimal.valueOf(row.amountCents ?: 0, 2) }
     val income = total { it.direction == Direction.INCOME }
     val cash = total { it.direction == Direction.EXPENSE && it.method != PaymentMethod.CREDIT_CARD }
@@ -309,6 +318,9 @@ private fun EmptyState(title: String, description: String) {
 private fun SettingsScreen(capture: Boolean, banks: Set<String>, access: Boolean, model: LedgerViewModel, transactions: List<Transaction>) {
     val context = LocalContext.current
     val backupActions = rememberBackupActions()
+    val accounts by model.accounts.collectAsStateWithLifecycle()
+    val saving by model.saving.collectAsStateWithLifecycle()
+    val editError by model.editError.collectAsStateWithLifecycle()
     var clear by rememberSaveable { mutableStateOf(false) }
     var settingsError by remember { mutableStateOf(false) }
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -330,6 +342,7 @@ private fun SettingsScreen(capture: Boolean, banks: Set<String>, access: Boolean
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(bank.name, Modifier.weight(1f)); Switch(checked = bank.packageName in banks, onCheckedChange = { model.bank(bank.packageName, it) }, modifier = Modifier.semantics { contentDescription = "Permitir notificações de ${bank.name}" }) }
         }
         item { CaptureHealthCard(access, capture, banks) }
+        item { AccountsPanel(accounts, transactions, model, saving, editError) }
         item { HorizontalDivider() }
         item { ExportCsvCard(transactions) }
         item { BackupCard(backupActions) }
@@ -337,16 +350,25 @@ private fun SettingsScreen(capture: Boolean, banks: Set<String>, access: Boolean
         item { Text("Dados no armazenamento privado do aplicativo. Sem login, servidor ou backup automático. A proteção depende também do bloqueio e da segurança do aparelho.\n\nBancos podem omitir valores, mudar mensagens ou não notificar. Revise registros ambíguos. Pagamentos de fatura não devem virar novas compras. Totais não substituem o extrato bancário.") }
         item { OutlinedButton(onClick = { clear = true }, colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Apagar todos os lançamentos") } }
     }
-    if (clear) AlertDialog(onDismissRequest = { clear = false }, title = { Text("Apagar todo o histórico?") }, text = { Text("Esta ação apaga permanentemente todos os lançamentos, os limites de orçamento e os identificadores usados para evitar duplicatas. Não é possível desfazer. A captura será pausada. Após reativá-la, notificações futuras poderão gerar novos registros.") }, confirmButton = { TextButton(onClick = { model.clear(); clear = false }) { Text("Apagar definitivamente") } }, dismissButton = { TextButton(onClick = { clear = false }) { Text("Cancelar") } })
+    if (clear) AlertDialog(onDismissRequest = { clear = false }, title = { Text("Apagar todo o histórico?") }, text = { Text("Esta ação apaga permanentemente todos os lançamentos, as contas, os limites de orçamento e os identificadores usados para evitar duplicatas. Não é possível desfazer. A captura será pausada. Após reativá-la, notificações futuras poderão gerar novos registros.") }, confirmButton = { TextButton(onClick = { model.clear(); clear = false }) { Text("Apagar definitivamente") } }, dismissButton = { TextButton(onClick = { clear = false }) { Text("Cancelar") } })
 }
 
 @Composable
-private fun TransactionEditor(existing: Transaction?, saving: Boolean, editError: String?, onDismiss: () -> Unit, onSave: (Transaction) -> Unit, onDelete: (String) -> Unit) {
+private fun TransactionEditor(existing: Transaction?, saving: Boolean, editError: String?, accounts: List<Account>, onUnlink: (String) -> Unit, onDismiss: () -> Unit, onSave: (Transaction) -> Unit, onDelete: (String) -> Unit) {
+    val transferId = existing?.transferId
+    if (transferId != null) {
+        AlertDialog(onDismissRequest = { if (!saving) onDismiss() }, title = { Text("Transferência vinculada") },
+            text = { Text(editError ?: "Os dois lançamentos compõem uma transferência própria e não entram em renda/consumo. Para editar ou excluir, desvincule primeiro. Isso mantém ambos os registros e volta a tratá-los como entrada e saída comuns.") },
+            confirmButton = { TextButton(enabled = !saving, onClick = { onUnlink(transferId) }) { Text("Desvincular transferência") } },
+            dismissButton = { TextButton(enabled = !saving, onClick = onDismiss) { Text("Fechar") } })
+        return
+    }
     var amount by rememberSaveable(existing?.id) { mutableStateOf(existing?.amountCents?.let { BigDecimal.valueOf(it, 2).toPlainString().replace('.', ',') } ?: "") }
     var description by rememberSaveable(existing?.id) { mutableStateOf(existing?.description ?: "") }
     var direction by rememberSaveable(existing?.id) { mutableStateOf(existing?.direction ?: Direction.EXPENSE) }
     var method by rememberSaveable(existing?.id) { mutableStateOf(existing?.method ?: PaymentMethod.UNKNOWN) }
     var bank by rememberSaveable(existing?.id) { mutableStateOf(existing?.bankPackage ?: "manual") }
+    var accountId by rememberSaveable(existing?.id) { mutableStateOf(existing?.accountId) }
     var category by rememberSaveable(existing?.id) { mutableStateOf(existing?.category ?: Category.UNCATEGORIZED) }
     var date by rememberSaveable(existing?.id) { mutableStateOf((existing?.let { Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate() } ?: LocalDate.now()).format(DateTimeFormatter.ofPattern("dd/MM/uuuu"))) }
     var deleting by rememberSaveable { mutableStateOf(false) }
@@ -361,7 +383,9 @@ private fun TransactionEditor(existing: Transaction?, saving: Boolean, editError
             OutlinedTextField(value = date, onValueChange = { date = it }, label = { Text("Data (dd/mm/aaaa)") }, isError = parsedDate == null, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii))
             Choice("Direção", direction, Direction.entries, { it.label() }) { direction = it }
             Choice("Meio", method, PaymentMethod.entries, { it.label() }) { method = it }
-            Choice("Banco", bank, listOf("manual") + supportedBanks.map { it.packageName }, ::bankName) { bank = it }
+            Choice("Banco", bank, listOf("manual") + supportedBanks.map { it.packageName }, ::bankName) { bank = it; accountId = null }
+            if (accounts.isNotEmpty()) Choice("Conta", accountId, listOf<String?>(null) + accounts.filter { !it.archived || it.id == accountId }.map { it.id },
+                { id -> accounts.firstOrNull { it.id == id }?.name ?: "Não atribuída" }) { id -> accountId = id; accounts.firstOrNull { it.id == id }?.let { bank = it.bankPackage } }
             Choice("Categoria", category, Category.entries, { it.label }) { category = it }
             if (method == PaymentMethod.CREDIT_CARD) Text("Compras no crédito ficam separadas das saídas de caixa.", style = MaterialTheme.typography.bodySmall)
             if (existing != null) TextButton(enabled = !saving, onClick = { deleting = true }) { Text("Excluir lançamento", color = MaterialTheme.colorScheme.error) }
@@ -370,7 +394,7 @@ private fun TransactionEditor(existing: Transaction?, saving: Boolean, editError
         val validDate = parsedDate ?: return@TextButton
         val originalDate = existing?.let { Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate() }
         val occurred = if (existing != null && originalDate == validDate) existing.occurredAt else validDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        onSave(Transaction(existing?.id ?: UUID.randomUUID().toString(), existing?.sourceKey, bank, cents, direction, method, ReviewStatus.CONFIRMED, occurred, description.ifBlank { "Lançamento manual" }, "", category))
+        onSave(Transaction(existing?.id ?: UUID.randomUUID().toString(), existing?.sourceKey, bank, cents, direction, method, ReviewStatus.CONFIRMED, occurred, description.ifBlank { "Lançamento manual" }, "", category, accountId))
     }) { Text(if (saving) "Salvando…" else "Salvar e confirmar") } }, dismissButton = { TextButton(enabled = !saving, onClick = onDismiss) { Text("Cancelar") } })
     if (deleting && existing != null) AlertDialog(onDismissRequest = { if (!saving) deleting = false }, title = { Text("Excluir lançamento?") }, text = { Text(editError ?: "O lançamento será removido dos totais. Sua notificação original não recriará este registro.") }, confirmButton = { TextButton(enabled = !saving, onClick = { onDelete(existing.id) }) { Text(if (saving) "Excluindo…" else "Excluir") } }, dismissButton = { TextButton(enabled = !saving, onClick = { deleting = false }) { Text("Cancelar") } })
 }

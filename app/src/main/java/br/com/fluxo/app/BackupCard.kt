@@ -139,7 +139,7 @@ fun rememberBackupActions(model: BackupViewModel = viewModel()): BackupActions {
     state.preview?.let { preview -> AlertDialog(
         onDismissRequest = model::cancel,
         title = { Text("Substituir histórico pelo backup?") },
-        text = { Text("Arquivo verificado: ${preview.transactions} lançamento(s), ${preview.budgets} orçamento(s) e ${preview.deleted} exclusão(ões) protegida(s). O histórico atual será substituído, sem mesclar. Exporte um backup atual antes se precisar conservá-lo. A captura ficará pausada; permissões e seleção de bancos deste aparelho serão mantidas.") },
+        text = { Text("Arquivo verificado: ${preview.transactions} lançamento(s), ${preview.budgets} orçamento(s), ${preview.accounts} conta(s) e ${preview.deleted} exclusão(ões) protegida(s). O histórico atual será substituído, sem mesclar. Exporte um backup atual antes se precisar conservá-lo. A captura ficará pausada; permissões e seleção de bancos deste aparelho serão mantidas.") },
         confirmButton = { TextButton(onClick = model::restore) { Text("Substituir e restaurar") } },
         dismissButton = { TextButton(onClick = model::cancel) { Text("Cancelar") } },
     ) }

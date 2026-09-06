@@ -37,6 +37,65 @@ class LedgerRepositoryTest {
         supportedBanks.forEach { repository.setBankEnabled(it.packageName, false) }
     }
 
+    @Test fun ownTransfersConserveBalancesAndRestoreWithAccounts() = runBlocking {
+        val a = br.com.fluxo.core.Account("a", "Conta A", "manual", 100000, 0)
+        val b = br.com.fluxo.core.Account("b", "Conta B", "manual", 20000, 0, type = br.com.fluxo.core.AccountType.SAVINGS)
+        repository.saveAccount(a); repository.saveAccount(b)
+        repository.createTransfer("a", "b", 50000, 100)
+        val rows = repository.transactions.value
+        assertEquals(2, rows.size)
+        assertEquals(1, rows.map { it.transferId }.distinct().size)
+        assertEquals(java.math.BigInteger.valueOf(50000), br.com.fluxo.core.AccountBalances.observed(a, rows))
+        assertEquals(java.math.BigInteger.valueOf(70000), br.com.fluxo.core.AccountBalances.observed(b, rows))
+        val payload = repository.exportBackupPayload()
+        assertEquals(BackupSummary(2, 0, 0, 2), repository.inspectBackupPayload(payload))
+        repository.clear(); repository.restoreBackupPayload(payload)
+        assertEquals(setOf(a, b), repository.accounts.value.toSet())
+        assertEquals(rows, repository.transactions.value)
+        var rejected = false
+        try { repository.delete(rows.first().id) } catch (_: IllegalArgumentException) { rejected = true }
+        assertTrue(rejected)
+        assertEquals(2, repository.transactions.value.size)
+        repository.unlinkTransfer(rows.first().transferId!!)
+        assertTrue(repository.transactions.value.all { it.transferId == null })
+        assertEquals(2, repository.transactions.value.size)
+    }
+
+    @Test fun capturedTransferLinksWithoutAddingRowsAndHumanDecisionSurvivesRedelivery() = runBlocking {
+        repository.saveAccount(br.com.fluxo.core.Account("a", "A", bank, 10000, 0))
+        repository.saveAccount(br.com.fluxo.core.Account("b", "B", "com.c6bank.app", 0, 0))
+        enableCapture(); repository.setBankEnabled("com.c6bank.app", true)
+        repository.ingest("out", bank, 100, "Pix enviado R$ 50,00")
+        repository.ingest("in", "com.c6bank.app", 100, "Pix recebido R$ 50,00")
+        val outgoing = repository.transactions.value.first { it.sourceKey == "out" }.copy(accountId = "a")
+        val incoming = repository.transactions.value.first { it.sourceKey == "in" }.copy(accountId = "b")
+        repository.save(outgoing); repository.save(incoming)
+        repository.linkTransfer(outgoing.id, incoming.id)
+        repository.ingest("out", bank, 100, "Pix enviado R$ 50,00", observedAt = 200)
+        assertEquals(2, repository.transactions.value.size)
+        assertTrue(repository.transactions.value.all { it.transferId != null })
+        var rejected = false
+        try { repository.save(outgoing) } catch (_: IllegalArgumentException) { rejected = true }
+        assertTrue(rejected)
+    }
+
+    @Test fun legacyBackupRestoresWithoutInventingAccountsAndOrphansAreRejected() = runBlocking {
+        repository.save(manualTransaction())
+        val original = repository.transactions.value
+        val old = org.json.JSONObject(repository.exportBackupPayload().toString(Charsets.UTF_8))
+        old.remove("accounts"); old.put("version", 1); old.put("schema", 3)
+        old.getJSONArray("transactions").getJSONObject(0).apply { remove("account_id"); remove("transfer_id") }
+        repository.restoreBackupPayload(old.toString().toByteArray())
+        assertEquals(original, repository.transactions.value)
+        assertTrue(repository.accounts.value.isEmpty())
+        val orphan = org.json.JSONObject(repository.exportBackupPayload().toString(Charsets.UTF_8))
+        orphan.getJSONArray("transactions").getJSONObject(0).put("account_id", "missing")
+        var rejected = false
+        try { repository.restoreBackupPayload(orphan.toString().toByteArray()) } catch (_: IllegalArgumentException) { rejected = true }
+        assertTrue(rejected)
+        assertEquals(original, repository.transactions.value)
+    }
+
     @Test fun backupRoundTripPreservesCorrectionsBudgetsAndTombstones() = runBlocking {
         enableCapture()
         repository.ingest("backup-live", bank, 100, "Pix recebido R$ 10,00", "alias-backup", 100)
@@ -241,7 +300,7 @@ class LedgerRepositoryTest {
         assertEquals(edited, reopened.transactions.value.single())
         assertEquals(Budget("2026-09", Category.TRANSPORT, 50000), reopened.budgets.value.single())
         context.openOrCreateDatabase("fluxo.db", Context.MODE_PRIVATE, null).use { db ->
-            assertEquals(3, db.version)
+            assertEquals(4, db.version)
             db.rawQuery("SELECT category, amount_cents FROM transactions WHERE id = 'old'", null).use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals("TRANSPORT", cursor.getString(0))

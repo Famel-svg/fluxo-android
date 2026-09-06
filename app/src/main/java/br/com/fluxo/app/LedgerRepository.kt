@@ -5,6 +5,8 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import br.com.fluxo.core.Budget
+import br.com.fluxo.core.Account
+import br.com.fluxo.core.AccountType
 import br.com.fluxo.core.Category
 import br.com.fluxo.core.Direction
 import br.com.fluxo.core.NotificationParser
@@ -36,6 +38,8 @@ class LedgerRepository(context: Context) {
     val transactions: StateFlow<List<Transaction>> = _transactions
     private val _budgets = MutableStateFlow<List<Budget>>(emptyList())
     val budgets: StateFlow<List<Budget>> = _budgets
+    private val _accounts = MutableStateFlow<List<Account>>(emptyList())
+    val accounts: StateFlow<List<Account>> = _accounts
     private val _captureEnabled = MutableStateFlow(preferences.getBoolean("enabled", false))
     val captureEnabled: StateFlow<Boolean> = _captureEnabled
     private val _enabledBanks = MutableStateFlow(preferences.getStringSet("banks", emptySet())!!.toSet())
@@ -161,6 +165,8 @@ class LedgerRepository(context: Context) {
     }
 
     suspend fun save(transaction: Transaction) = withContext(Dispatchers.IO) {
+        require(transaction.transferId == null) { "Desvincule a transferência antes de editar." }
+        require(transaction.occurredAt in -62135596800000L..253402300799999L) { "Informe data entre os anos 1 e 9999." }
         require(transaction.amountCents?.let { it > 0 } != false) { "Informe um valor positivo." }
         require(transaction.status != ReviewStatus.CONFIRMED ||
             (transaction.amountCents != null && transaction.direction != Direction.UNKNOWN)) {
@@ -169,6 +175,10 @@ class LedgerRepository(context: Context) {
         require(transaction.description.length <= 200) { "Descrição muito longa." }
         mutex.withLock {
             val db = database.writableDatabase
+            checkNotTransfer(db, transaction.id)
+            transaction.accountId?.let { id ->
+                require(_accounts.value.any { it.id == id }) { "Conta não encontrada." }
+            }
             val changed = db.update("transactions", values(transaction).apply { put("user_modified", 1) }, "id = ? AND deleted = 0", arrayOf(transaction.id))
             if (changed == 0) db.insertOrThrow("transactions", null, values(transaction).apply { put("user_modified", 1) })
             readAll()
@@ -177,6 +187,7 @@ class LedgerRepository(context: Context) {
 
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
         mutex.withLock {
+            checkNotTransfer(database.writableDatabase, id)
             database.writableDatabase.update("transactions", ContentValues().apply {
                 put("deleted", 1)
                 putNull("amount_cents")
@@ -197,6 +208,7 @@ class LedgerRepository(context: Context) {
                 db.delete("transactions", null, null)
                 db.delete("budgets", null, null)
                 db.delete("notification_aliases", null, null)
+                db.delete("accounts", null, null)
                 db.setTransactionSuccessful()
             } finally {
                 db.endTransaction()
@@ -240,6 +252,7 @@ class LedgerRepository(context: Context) {
         put("method", t.method.name); put("status", t.status.name); put("occurred_at", t.occurredAt)
         put("description", t.description); put("reason", t.reason); put("deleted", 0)
         put("category", t.category.name)
+        put("account_id", t.accountId); put("transfer_id", t.transferId)
     }
 
     private fun readAll() {
@@ -257,6 +270,7 @@ class LedgerRepository(context: Context) {
                     occurredAt = cursor.getLong(cursor.getColumnIndexOrThrow("occurred_at")),
                     description = string("description"), reason = string("reason"),
                     category = Category.valueOf(string("category")),
+                    accountId = string("account_id"), transferId = string("transfer_id"),
                 )
             }
         }
@@ -272,10 +286,77 @@ class LedgerRepository(context: Context) {
         }
         _transactions.value = result
         _budgets.value = limits
+        val accountRows = mutableListOf<Account>()
+        database.readableDatabase.query("accounts", null, null, null, null, null, "name, id").use { cursor ->
+            while (cursor.moveToNext()) accountRows += Account(
+                cursor.getString(cursor.getColumnIndexOrThrow("id")), cursor.getString(cursor.getColumnIndexOrThrow("name")),
+                cursor.getString(cursor.getColumnIndexOrThrow("bank_package")), cursor.getLong(cursor.getColumnIndexOrThrow("opening_cents")),
+                cursor.getLong(cursor.getColumnIndexOrThrow("opening_at")), cursor.getInt(cursor.getColumnIndexOrThrow("archived")) == 1, AccountType.valueOf(cursor.getString(cursor.getColumnIndexOrThrow("type"))))
+        }
+        _accounts.value = accountRows
+    }
+
+    suspend fun saveAccount(account: Account) = withContext(Dispatchers.IO) { mutex.withLock {
+        require(account.id.isNotBlank() && account.id.length <= 200 && account.name.isNotBlank() && account.name.length <= 80)
+        require(account.openingAt in -62135596800000L..253402300799999L)
+        require(account.bankPackage == "manual" || supportedBanks.any { it.packageName == account.bankPackage })
+        val values = ContentValues().apply {
+            put("id", account.id); put("name", account.name.trim()); put("bank_package", account.bankPackage)
+            put("type", account.type.name); put("opening_cents", account.openingCents); put("opening_at", account.openingAt); put("archived", if (account.archived) 1 else 0)
+        }
+        val db = database.writableDatabase
+        if (db.update("accounts", values, "id = ?", arrayOf(account.id)) == 0) db.insertOrThrow("accounts", null, values)
+        readAll()
+    } }
+
+    suspend fun createTransfer(from: String, to: String, cents: Long, occurredAt: Long) = withContext(Dispatchers.IO) { mutex.withLock {
+        require(from != to && cents > 0)
+        require(occurredAt in -62135596800000L..253402300799999L)
+        val source = _accounts.value.first { it.id == from && !it.archived }
+        val target = _accounts.value.first { it.id == to && !it.archived }
+        val transfer = UUID.randomUUID().toString()
+        val db = database.writableDatabase
+        db.beginTransaction()
+        try {
+            listOf(source to Direction.EXPENSE, target to Direction.INCOME).forEach { (account, direction) ->
+                val row = Transaction(UUID.randomUUID().toString(), null, account.bankPackage, cents, direction,
+                    PaymentMethod.UNKNOWN, ReviewStatus.CONFIRMED, occurredAt, "Transferência entre contas próprias",
+                    accountId = account.id, transferId = transfer)
+                db.insertOrThrow("transactions", null, values(row).apply { put("user_modified", 1) })
+            }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+        readAll()
+    } }
+
+    suspend fun linkTransfer(outgoingId: String, incomingId: String) = withContext(Dispatchers.IO) { mutex.withLock {
+        val outgoing = _transactions.value.first { it.id == outgoingId }
+        val incoming = _transactions.value.first { it.id == incomingId }
+        require(outgoing.transferId == null && incoming.transferId == null)
+        require(outgoing.accountId != null && incoming.accountId != null && outgoing.accountId != incoming.accountId)
+        require(outgoing.direction == Direction.EXPENSE && incoming.direction == Direction.INCOME)
+        require(outgoing.status == ReviewStatus.CONFIRMED && incoming.status == ReviewStatus.CONFIRMED)
+        require(outgoing.method != PaymentMethod.CREDIT_CARD && incoming.method != PaymentMethod.CREDIT_CARD)
+        require(outgoing.amountCents != null && outgoing.amountCents == incoming.amountCents)
+        val values = ContentValues().apply { put("transfer_id", UUID.randomUUID().toString()); put("user_modified", 1) }
+        database.writableDatabase.update("transactions", values, "id IN (?, ?) AND deleted = 0", arrayOf(outgoingId, incomingId))
+        readAll()
+    } }
+
+    suspend fun unlinkTransfer(transferId: String) = withContext(Dispatchers.IO) { mutex.withLock {
+        database.writableDatabase.update("transactions", ContentValues().apply { putNull("transfer_id"); put("user_modified", 1) },
+            "transfer_id = ? AND deleted = 0", arrayOf(transferId))
+        readAll()
+    } }
+
+    private fun checkNotTransfer(db: SQLiteDatabase, id: String) {
+        db.query("transactions", arrayOf("transfer_id"), "id = ?", arrayOf(id), null, null, null).use { cursor ->
+            require(!cursor.moveToFirst() || cursor.isNull(0)) { "Desvincule a transferência antes de editar ou excluir." }
+        }
     }
 }
 
-private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "fluxo.db", null, 3) {
+private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "fluxo.db", null, 4) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
             CREATE TABLE transactions (
@@ -293,12 +374,15 @@ private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "flux
                 category TEXT NOT NULL DEFAULT 'UNCATEGORIZED',
                 user_modified INTEGER NOT NULL DEFAULT 0,
                 observation_hash TEXT,
-                last_observed_at INTEGER NOT NULL DEFAULT 0
+                last_observed_at INTEGER NOT NULL DEFAULT 0,
+                account_id TEXT,
+                transfer_id TEXT
             )
         """.trimIndent())
         db.execSQL("CREATE INDEX idx_transaction_date ON transactions(deleted, occurred_at)")
         createBudgets(db)
         createNotificationAliases(db)
+        createAccounts(db)
     }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) {
@@ -312,6 +396,15 @@ private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "flux
             db.execSQL("ALTER TABLE transactions ADD COLUMN last_observed_at INTEGER NOT NULL DEFAULT 0")
             createNotificationAliases(db)
         }
+        if (oldVersion < 4) {
+            db.execSQL("ALTER TABLE transactions ADD COLUMN account_id TEXT")
+            db.execSQL("ALTER TABLE transactions ADD COLUMN transfer_id TEXT")
+            createAccounts(db)
+        }
+    }
+
+    private fun createAccounts(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE accounts (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, bank_package TEXT NOT NULL, opening_cents INTEGER NOT NULL, opening_at INTEGER NOT NULL, archived INTEGER NOT NULL DEFAULT 0, type TEXT NOT NULL)")
     }
 
     private fun createNotificationAliases(db: SQLiteDatabase) {

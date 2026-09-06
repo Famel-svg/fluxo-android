@@ -1,5 +1,18 @@
 # Validação das entregas
 
+## Incremento M06 — 2026-09-06
+
+Contas locais com tipo, saldo inicial datado, arquivamento e atribuição a lançamentos. Transferências próprias podem ser registradas em par ou vinculadas a registros existentes, sem inflar renda/consumo. SQLite v4 aditivo; backup payload v2 aceita também payload v1/schema3.
+
+- Comando completo: `./gradlew.bat :core:test :app:assembleDebug :app:lintDebug :app:connectedDebugAndroidTest`.
+- 36 testes JVM e 47 Android aprovados, sem falhas/ignorados, Pixel 9 Pro API37. Lint sem erros; APK debug compilado.
+- Novos cenários: conservação dos saldos, exclusão do orçamento, datas futuras, soma sem overflow, vínculo sem duplicar, proteção de decisão humana, roundtrip com tipos de conta, rejeição de referências órfãs, compatibilidade de backup antigo, saldo negativo e data impossível na UI.
+- Revisão independente somente leitura por agente Codex. Corrigidos saldo incluindo movimentos futuros e modalidade Pix presumida em transferência manual. Ruflo executou init check/status/route; roteamento não equivale a execução por agentes.
+- Uma edição textual intermediária corrompeu identificadores da interface e falhou na compilação. Arquivo recuperado preservando mudanças M06, diff revisado e suíte completa reexecutada com sucesso antes do commit.
+- Não houve captura bancária real ou validação em aparelho físico neste incremento. Sugestões de transferência exigem confirmação; cobertura do saldo continua parcial.
+
+Skills aplicadas no desenvolvimento deste lote: `swarm-orchestration`, `sparc-methodology`, `mobile-android-design`; referência operacional `rafael-core/references/core.md`. Nesta retomada: `swarm-orchestration` e núcleo operacional.
+
 ## Versão 0.3.0 — 2026-09-05
 
 Implementação: M01, M02, M03 e M05; M04 tem roteiro e M17 ganhou execução instrumentada no CI. Demais specs continuam propostas. Ruflo coordenou; três agentes trabalharam em worktrees até atingir limite de uso, depois coordenador revisou e concluiu integração localmente.

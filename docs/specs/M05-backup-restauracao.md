@@ -1,6 +1,6 @@
 # M05 — Backup criptografado restaurável
 
-Estado: **Implementado e validado para SQLite v3**. Spec final; implementação só considerada concluída com evidência registrada.
+Estado: **Implementado para SQLite v4, compatível com backups v3**. Evidências em `docs/VALIDATION.md`.
 
 ## Problema
 
@@ -14,7 +14,7 @@ Arquivo protegido por senha, seletor Android, prévia e confirmação de substit
 
 Envelope AES-256-GCM, salt16/nonce12 aleatórios, PBKDF2-SHA256600000, header versionado autenticado. Payload inclui registros/tombstones/categorias/orçamentos/metadados de captura; limite16MiB.
 
-Formato entregue: payload JSON versão 1, schema SQLite 3; até 50 mil registros por tabela. Guarda aliases, hashes estruturados e proteção de edições. Seleção de bancos e permissão pertencem ao aparelho e não são importadas. Captura fica pausada após restauração; falha na gravação também pode pausá-la. Novas entidades futuras exigem evolução do formato antes de serem consideradas cobertas pelo backup.
+Formato atual: payload JSON versão 2, schema SQLite 4; até 50 mil registros por tabela. Inclui contas, tipos e transferências, além de aliases, hashes estruturados e proteção de edições. Importa também payload versão 1/schema3, com contas vazias e referências nulas. Seleção de bancos e permissão pertencem ao aparelho e não são importadas. Captura fica pausada após restauração; falha na gravação também pode pausá-la. Novas entidades futuras exigem evolução do formato antes de serem consideradas cobertas pelo backup.
 
 ## Fluxo de implementação
 

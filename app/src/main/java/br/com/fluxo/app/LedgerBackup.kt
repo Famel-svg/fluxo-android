@@ -8,20 +8,21 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.time.YearMonth
 
-data class BackupSummary(val transactions: Int, val budgets: Int, val deleted: Int)
+data class BackupSummary(val transactions: Int, val budgets: Int, val deleted: Int, val accounts: Int = 0)
 
 /** Versioned logical snapshot. Never executes SQL or table names supplied by a file. */
 internal object LedgerBackup {
     private val columns = linkedMapOf(
+        "accounts" to listOf("id", "name", "bank_package", "opening_cents", "opening_at", "archived", "type"),
         "transactions" to listOf("id", "source_key", "bank_package", "amount_cents", "direction", "method", "status",
-            "occurred_at", "description", "reason", "deleted", "category", "user_modified", "observation_hash", "last_observed_at"),
+            "occurred_at", "description", "reason", "deleted", "category", "user_modified", "observation_hash", "last_observed_at", "account_id", "transfer_id"),
         "budgets" to listOf("month", "category", "limit_cents"),
         "notification_aliases" to listOf("identity_key", "source_key"),
     )
     data class Validated(val rows: Map<String, List<ContentValues>>, val summary: BackupSummary)
 
     fun export(db: SQLiteDatabase): ByteArray {
-        val root = JSONObject().put("format", "fluxo-ledger").put("version", 1).put("schema", 3)
+        val root = JSONObject().put("format", "fluxo-ledger").put("version", 2).put("schema", 4)
         columns.forEach { (table, names) ->
             val rows = JSONArray()
             db.query(table, names.toTypedArray(), null, null, null, null, null).use { cursor ->
@@ -65,10 +66,23 @@ internal object LedgerBackup {
         }
         require(depth == 0 && !quoted)
         val root = JSONObject(json)
-        require(root.get("format") == "fluxo-ledger" && number(root, "version") == 1L && number(root, "schema") == 3L)
+        require(root.get("format") == "fluxo-ledger")
+        if (number(root, "version") == 1L && number(root, "schema") == 3L) {
+            require(root.keys().asSequence().toSet() == setOf("format", "version", "schema", "transactions", "budgets", "notification_aliases"))
+            val rows = root.getJSONArray("transactions")
+            require(rows.length() <= 50_000)
+            for (i in 0 until rows.length()) {
+                val row = rows.getJSONObject(i)
+                require(!row.has("account_id") && !row.has("transfer_id"))
+                row.put("account_id", JSONObject.NULL).put("transfer_id", JSONObject.NULL)
+            }
+            root.put("accounts", JSONArray()).put("version", 2).put("schema", 4)
+        }
+        require(number(root, "version") == 2L && number(root, "schema") == 4L)
         require(root.keys().asSequence().toSet() == columns.keys + setOf("format", "version", "schema"))
         val allRows = linkedMapOf<String, List<ContentValues>>()
         val sourceKeys = mutableSetOf<String>()
+        val accountIds = mutableSetOf<String>()
         var deleted = 0
         columns.forEach { (table, names) ->
             val rows = root.getJSONArray(table)
@@ -78,6 +92,15 @@ internal object LedgerBackup {
                 val row = rows.getJSONObject(i)
                 require(row.keys().asSequence().toSet() == names.toSet())
                 when (table) {
+                    "accounts" -> {
+                        require(accountIds.add(string(row, "id", 200).also { require(it.isNotBlank()) }))
+                        require(string(row, "name", 80).isNotBlank())
+                        val bank = string(row, "bank_package", 200)
+                        require(bank == "manual" || supportedBanks.any { it.packageName == bank })
+                        number(row, "opening_cents")
+                        require(number(row, "opening_at") in -62135596800000L..253402300799999L)
+                        flag(row, "archived"); AccountType.valueOf(string(row, "type"))
+                    }
                     "transactions" -> {
                         require(identities.add(string(row, "id", 200).also { require(it.isNotBlank()) }))
                         optionalString(row, "source_key", 256)?.let { require(sourceKeys.add(it)) }
@@ -95,6 +118,8 @@ internal object LedgerBackup {
                         require(number(row, "last_observed_at") >= 0)
                         string(row, "description", 200); string(row, "reason", 1000)
                         optionalString(row, "observation_hash", 64)?.let { require(it.matches(Regex("[a-f0-9]{64}"))) }
+                        optionalString(row, "account_id", 200)?.let { require(it in accountIds) }
+                        optionalString(row, "transfer_id", 200)?.let { require(it.isNotBlank()) }
                     }
                     "budgets" -> {
                         val month = string(row, "month", 20)
@@ -118,8 +143,16 @@ internal object LedgerBackup {
                 } } }
             }
         }
+        allRows.getValue("transactions").filter { it.getAsString("transfer_id") != null }.groupBy { it.getAsString("transfer_id") }.values.forEach { pair ->
+            require(pair.size == 2)
+            require(pair.all { it.getAsLong("deleted") == 0L && it.getAsLong("user_modified") == 1L && it.getAsString("status") == "CONFIRMED" &&
+                it.getAsString("account_id") != null && it.getAsString("method") != "CREDIT_CARD" })
+            require(pair.map { it.getAsString("account_id") }.toSet().size == 2)
+            require(pair.map { it.getAsString("direction") }.toSet() == setOf("INCOME", "EXPENSE"))
+            require(pair[0].getAsLong("amount_cents") == pair[1].getAsLong("amount_cents"))
+        }
         return Validated(allRows, BackupSummary(allRows.getValue("transactions").size - deleted,
-            allRows.getValue("budgets").size, deleted))
+            allRows.getValue("budgets").size, deleted, accountIds.size))
     }
 
     fun restore(db: SQLiteDatabase, validated: Validated) {
