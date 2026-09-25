@@ -1,5 +1,6 @@
 param(
     [string]$Serial = 'emulator-5554',
+    [switch]$Reboot,
     [Parameter(Mandatory)][switch]$DisposableEmulator
 )
 $ErrorActionPreference = 'Stop'
@@ -73,6 +74,25 @@ try {
     if ($beforePid -and $remainingPid -eq $beforePid) { throw 'Original Fluxo process still alive after force-stop.' }
     "before=$beforePid after=$remainingPid" | Out-File -LiteralPath (Join-Path $evidence ((Get-Date -Format 'yyyyMMdd-HHmmss') + '-restart-pids.txt')) -Encoding utf8
     Invoke-RestartPhase 'verify'
+    if ($Reboot) {
+        Invoke-RestartPhase 'seed'
+        $beforeBoot = (Invoke-Adb shell cat /proc/sys/kernel/random/boot_id).Trim()
+        Invoke-Adb reboot
+        $bootDeadline = (Get-Date).AddSeconds(180)
+        $ready = $false
+        do {
+            Start-Sleep -Seconds 3
+            try {
+                $afterBoot = (Invoke-Adb shell cat /proc/sys/kernel/random/boot_id).Trim()
+                $ready = $afterBoot -ne $beforeBoot -and (Invoke-Adb shell getprop sys.boot_completed).Trim() -eq '1'
+            } catch { $ready = $false }
+        } while (-not $ready -and (Get-Date) -lt $bootDeadline)
+        if (-not $ready) { throw 'Emulator reboot did not complete within 180 seconds.' }
+        "before=$beforeBoot after=$afterBoot" | Out-File -LiteralPath (Join-Path $evidence ((Get-Date -Format 'yyyyMMdd-HHmmss') + '-boot-ids.txt')) -Encoding utf8
+        Invoke-Adb shell input keyevent KEYCODE_WAKEUP
+        Invoke-Adb shell input keyevent KEYCODE_MENU
+        Invoke-RestartPhase 'verifyBoot'
+    }
 } finally {
     $cleanupFailures = [Collections.Generic.List[string]]::new()
     if ($restartStarted) {

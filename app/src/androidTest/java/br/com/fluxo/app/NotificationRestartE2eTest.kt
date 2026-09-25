@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.Process
 import android.os.SystemClock
+import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.util.Base64
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -30,7 +31,7 @@ class NotificationRestartE2eTest {
     @Test fun persistenceAndFutureCaptureAcrossProcessRestart() = runBlocking {
         val args = InstrumentationRegistry.getArguments()
         val phase = args.getString("restartPhase")
-        assumeTrue(args.getString("notificationE2e") == "true" && phase in setOf("seed", "verify", "cleanup"))
+        assumeTrue(args.getString("notificationE2e") == "true" && phase in setOf("seed", "verify", "verifyBoot", "cleanup"))
         assumeTrue(Build.HARDWARE in setOf("ranchu", "goldfish"))
         var seeded = false
         try {
@@ -48,12 +49,21 @@ class NotificationRestartE2eTest {
                     assertEquals(PaymentMethod.PIX, row.method)
                     assertEquals(Direction.INCOME, row.direction)
                     assertTrue(marker.edit().putInt("pid", Process.myPid()).putString("id", row.id)
-                        .putString("source", row.sourceKey).commit())
+                        .putString("source", row.sourceKey)
+                        .putInt("boot", Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1)).commit())
                     seeded = true
                 }
-                "verify" -> {
+                "verify", "verifyBoot" -> {
                     assertTrue("Seed evidence required", marker.contains("pid"))
-                    assertNotEquals("Must be a different OS process", marker.getInt("pid", -1), Process.myPid())
+                    if (phase == "verifyBoot") {
+                        val previousBoot = marker.getInt("boot", -1)
+                        assertTrue("Valid original boot count required", previousBoot >= 0)
+                        assertTrue("Android must have rebooted", Settings.Global.getInt(context.contentResolver,
+                            Settings.Global.BOOT_COUNT, -1) > previousBoot)
+                        assertTrue("Listener permission must survive reboot", shell("settings get secure enabled_notification_listeners").contains("br.com.fluxo.app/"))
+                    } else {
+                        assertNotEquals("Must be a different OS process", marker.getInt("pid", -1), Process.myPid())
+                    }
                     assertTrue("Capture consent must survive", repository.captureEnabled.value)
                     assertEquals(setOf(bank), repository.enabledBanks.value)
                     repository.refresh()
@@ -61,12 +71,17 @@ class NotificationRestartE2eTest {
                     assertEquals(marker.getString("id", null), before.id)
                     assertEquals(marker.getString("source", null), before.sourceKey)
                     assertEquals(1731L, before.amountCents)
-                    connect()
-                    // Same active Android key, no original timestamp: persisted alias must win.
-                    post(701, "Pix recebido R$ 28,42")
-                    await { repository.transactions.value.singleOrNull()?.amountCents == 2842L }
-                    assertEquals(before.id, repository.transactions.value.single().id)
-                    assertEquals(ReviewStatus.REVIEW, repository.transactions.value.single().status)
+                    if (phase == "verifyBoot") {
+                        // No grant/rebind call here: verify Android reconnects the listener itself.
+                        await { CaptureHealth.state.value.connected == true }
+                    } else {
+                        connect()
+                        // Same active Android key, no original timestamp: persisted alias must win.
+                        post(701, "Pix recebido R$ 28,42")
+                        await { repository.transactions.value.singleOrNull()?.amountCents == 2842L }
+                        assertEquals(before.id, repository.transactions.value.single().id)
+                        assertEquals(ReviewStatus.REVIEW, repository.transactions.value.single().status)
+                    }
                     post(702, "Pix recebido R$ 39,53")
                     await { repository.transactions.value.size == 2 }
                     assertEquals(ReviewStatus.CONFIRMED, repository.transactions.value.single { it.amountCents == 3953L }.status)

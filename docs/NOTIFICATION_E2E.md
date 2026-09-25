@@ -57,7 +57,18 @@ Na suíte Android comum, os seis testes de entrega e o teste de reinício são *
 
 Execução final aprovada: seis testes de entrega em 20,793 s; fases seed/verify/cleanup aprovadas em 0,713/0,966/0,229 s. Build, testes JVM e lint aprovados. Resultados e PIDs ficam em `.artifacts/fluxo-preview/notification-e2e/*-restart-*.txt`.
 
-Isso comprova morte/recriação do processo com reconexão explícita, não boot completo do aparelho nem garantia de reinício automático em background para qualquer fabricante.
+Isso comprova morte/recriação do processo com reconexão explícita, não garantia de reinício automático em background para qualquer fabricante.
+
+## Reboot completo do emulador
+
+Executar `./tools/notification-e2e/run.ps1 -DisposableEmulator -Reboot` acrescenta outro seed, reboot real e fase `verifyBoot`.
+
+- Host exige mudança do identificador de boot do kernel e `sys.boot_completed=1`, com prazo de 180 segundos.
+- Teste exige aumento de `Settings.Global.BOOT_COUNT`, preservação da permissão do listener, consentimento, bancos selecionados e lançamento SQLite.
+- Sem nova concessão de acesso ou chamada explícita a `requestRebind`, aguarda conexão do listener e recebe outro Pix sintético pelo Android.
+- Execução aprovada em 24/09/2026: seis testes de entrega em 20,44 s; `verifyBoot` em 4,963 s; fases de processo e limpeza também aprovadas. Evidências locais: `20260924-221753-boot-ids.txt` e `20260924-221807-restart-verifyBoot.txt`, no diretório de resultados acima.
+
+Limite importante: a instrumentação inicia o processo do aplicativo antes do novo envio. Isso comprova captura após reboot com processo iniciado pelo teste, não captura autônoma em background antes de qualquer inicialização do aplicativo.
 
 ## Problemas de infraestrutura diagnosticados
 
@@ -69,6 +80,6 @@ Isso comprova morte/recriação do processo com reconexão explícita, não boot
 
 ## Limites
 
-Não comprova templates, políticas de privacidade ou publicação de notificações dos apps bancários reais. A matriz `CAPTURE_VALIDATION_MATRIX.md` permanece pendente. API 26, outras versões/OEMs, boot completo do aparelho, reconexão automática em background e stress prolongado ainda precisam de validação específica. Regras linguísticas são heurísticas conservadoras, não compreensão completa de português.
+Não comprova templates, políticas de privacidade ou publicação de notificações dos apps bancários reais. A matriz `CAPTURE_VALIDATION_MATRIX.md` permanece pendente. API 26, outras versões/OEMs, captura autônoma após boot, reconexão automática em background e stress prolongado ainda precisam de validação específica. Regras linguísticas são heurísticas conservadoras, não compreensão completa de português.
 
 Ruflo coordenou roteamento; agente isolado implementou parser e revisou infraestrutura. OmniRoute autenticado não estava disponível; nenhuma revisão por esse provedor é alegada.
