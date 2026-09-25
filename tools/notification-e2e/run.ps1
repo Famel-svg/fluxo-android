@@ -28,6 +28,15 @@ $installed = [Collections.Generic.List[string]]::new()
 $listener = 'br.com.fluxo.app/.BankNotificationListener'
 $wasAllowed = (Invoke-Adb shell settings get secure enabled_notification_listeners) -match 'br\.com\.fluxo\.app/(\.BankNotificationListener|br\.com\.fluxo\.app\.BankNotificationListener)'
 $instrumented = $false
+$restartStarted = $false
+function Invoke-RestartPhase([string]$Phase) {
+    $output = Invoke-Adb -Arguments @('shell', 'am', 'instrument', '-w', '-r', '-e', 'notificationE2e', 'true', '-e', 'restartPhase', $Phase, '-e', 'class', 'br.com.fluxo.app.NotificationRestartE2eTest', 'br.com.fluxo.app.test/androidx.test.runner.AndroidJUnitRunner')
+    $output | Out-File -LiteralPath (Join-Path $evidence ((Get-Date -Format 'yyyyMMdd-HHmmss') + "-restart-$Phase.txt")) -Encoding utf8
+    $output
+    if ($output -notmatch 'OK \(1 test\)' -or $output -match 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed') {
+        throw "Notification restart phase failed: $Phase"
+    }
+}
 Push-Location $project
 try {
     & ./gradlew.bat '-PnotificationE2e=true' :app:assembleDebug :app:assembleDebugAndroidTest :notification-fixture:assembleDebug
@@ -51,14 +60,32 @@ try {
     if ($result -notmatch 'OK \(6 tests\)' -or $result -match 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed') {
         throw 'Notification delivery tests did not all pass.'
     }
+    $restartStarted = $true
+    Invoke-RestartPhase 'seed'
+    $beforePid = (& $adb -s $Serial shell pidof br.com.fluxo.app 2>$null)
+    Invoke-Adb shell am force-stop br.com.fluxo.app
+    $stopDeadline = (Get-Date).AddSeconds(5)
+    do {
+        $remainingPid = (& $adb -s $Serial shell pidof br.com.fluxo.app 2>$null)
+        if (-not $remainingPid -or $remainingPid -ne $beforePid) { break }
+        Start-Sleep -Milliseconds 100
+    } while ((Get-Date) -lt $stopDeadline)
+    if ($beforePid -and $remainingPid -eq $beforePid) { throw 'Original Fluxo process still alive after force-stop.' }
+    "before=$beforePid after=$remainingPid" | Out-File -LiteralPath (Join-Path $evidence ((Get-Date -Format 'yyyyMMdd-HHmmss') + '-restart-pids.txt')) -Encoding utf8
+    Invoke-RestartPhase 'verify'
 } finally {
+    $cleanupFailures = [Collections.Generic.List[string]]::new()
+    if ($restartStarted) {
+        try { Invoke-RestartPhase 'cleanup' } catch { $cleanupFailures.Add('Restart fixture cleanup failed.') }
+    }
     if ($instrumented) {
         $operation = if ($wasAllowed) { 'allow_listener' } else { 'disallow_listener' }
-        try { Invoke-Adb shell cmd notification $operation $listener } catch { Write-Warning 'Listener permission restoration failed.' }
+        try { Invoke-Adb shell cmd notification $operation $listener } catch { $cleanupFailures.Add('Listener permission restoration failed.') }
     }
     foreach ($pkg in $installed) {
         # Only packages absent at preflight and successfully installed by this invocation.
-        try { Invoke-Adb uninstall $pkg } catch { Write-Warning "Fixture cleanup failed for $pkg" }
+        try { Invoke-Adb uninstall $pkg } catch { $cleanupFailures.Add("Fixture cleanup failed for $pkg") }
     }
     Pop-Location
+    if ($cleanupFailures.Count -gt 0) { throw ($cleanupFailures -join ' ') }
 }

@@ -43,7 +43,21 @@ O script:
 
 O receiver tem permissão de assinatura/shell `android.permission.DUMP`, exige hardware de emulador, não possui Internet nem SDK bancário. Identidades de pacote compatíveis servem apenas para testar a lista de permissão existente, sem modificá-la.
 
-Na suíte Android comum, os seis testes E2E são **ignorados por intenção** sem argumento `notificationE2e=true`. Para validar captura, executar este script; não interpretar skips como aprovação.
+Na suíte Android comum, os seis testes de entrega e o teste de reinício são **ignorados por intenção** sem argumentos opt-in. Para validar captura, executar este script; não interpretar skips como aprovação.
+
+## Reinício real do processo — incremento posterior
+
+`NotificationRestartE2eTest` passa em três invocações separadas de instrumentação: `seed`, `verify` e `cleanup`. O script executa essas fases depois dos seis testes de entrega.
+
+- `seed` recebe um Pix sintético pelo Android, confirma valor/direção/modalidade/status e grava marcador com PID, ID e chave do lançamento.
+- Host executa `am force-stop` e aguarda até cinco segundos pelo término do PID original. Eventual novo processo criado pelo Android não é confundido com o original.
+- `verify` exige PID diferente daquele que gravou o evento, recupera consentimento, bancos selecionados e registro SQLite sem recriar dados.
+- Após reconexão explícita via API `requestRebind`, atualização da mesma notificação sem `when` preserva ID e entra em revisão; outro ID recebe novo lançamento confirmado.
+- `cleanup` remove marcadores e dados sintéticos. O host restaura permissão anterior e remove somente fixtures desta execução. Qualquer falha de limpeza termina com erro, depois de tentar as demais etapas.
+
+Execução final aprovada: seis testes de entrega em 20,793 s; fases seed/verify/cleanup aprovadas em 0,713/0,966/0,229 s. Build, testes JVM e lint aprovados. Resultados e PIDs ficam em `.artifacts/fluxo-preview/notification-e2e/*-restart-*.txt`.
+
+Isso comprova morte/recriação do processo com reconexão explícita, não boot completo do aparelho nem garantia de reinício automático em background para qualquer fabricante.
 
 ## Problemas de infraestrutura diagnosticados
 
@@ -55,6 +69,6 @@ Na suíte Android comum, os seis testes E2E são **ignorados por intenção** se
 
 ## Limites
 
-Não comprova templates, políticas de privacidade ou publicação de notificações dos apps bancários reais. A matriz `CAPTURE_VALIDATION_MATRIX.md` permanece pendente. API 26, outras versões/OEMs, reinício completo do processo/aparelho e stress prolongado ainda precisam de validação específica. Regras linguísticas são heurísticas conservadoras, não compreensão completa de português.
+Não comprova templates, políticas de privacidade ou publicação de notificações dos apps bancários reais. A matriz `CAPTURE_VALIDATION_MATRIX.md` permanece pendente. API 26, outras versões/OEMs, boot completo do aparelho, reconexão automática em background e stress prolongado ainda precisam de validação específica. Regras linguísticas são heurísticas conservadoras, não compreensão completa de português.
 
 Ruflo coordenou roteamento; agente isolado implementou parser e revisou infraestrutura. OmniRoute autenticado não estava disponível; nenhuma revisão por esse provedor é alegada.
