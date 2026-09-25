@@ -7,3 +7,7 @@ dependencyResolutionManagement {
 }
 rootProject.name = "Fluxo"
 include(":core", ":app")
+// Synthetic notification emitter is opt-in and never a production dependency.
+if (providers.gradleProperty("notificationE2e").orNull == "true") {
+    include(":notification-fixture")
+}

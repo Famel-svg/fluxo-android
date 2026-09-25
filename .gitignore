@@ -25,3 +25,6 @@ captures/
 .swarm/
 .claude/
 .worktrees/
+.artifacts/fluxo-preview/
+__pycache__/
+*.py[cod]
