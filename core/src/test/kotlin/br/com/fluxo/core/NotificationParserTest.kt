@@ -4,6 +4,35 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NotificationParserTest {
+    @Test fun `numeric suffixes cannot become truncated confirmed amounts`() {
+        listOf("10,00e3", "10,00abc", "10,00/20,00", "10,00%", "10,00..", "10,00_20", "10,00+20,00").forEach { token ->
+            val result = requireNotNull(NotificationParser.parse("Pix recebido R$ $token"))
+            assertNull(token, result.amountCents)
+            assertEquals(token, ReviewStatus.REVIEW, result.status)
+        }
+    }
+
+    @Test fun `future and conditional movements need review`() {
+        listOf(
+            "Pix recebido será confirmado", "Pix recebido sera confirmado",
+            "Pix recebido será ainda confirmado", "Pix recebido será efetivado",
+            "Compra aprovada no crédito será realizada", "Pix recebido seria confirmado",
+            "Se você recebeu Pix", "Caso tenha recebido Pix", "Pix recebido se confirmado",
+        ).forEach { prefix ->
+            val result = requireNotNull(NotificationParser.parse("$prefix R$ 10,00"))
+            assertEquals(prefix, 1000L, result.amountCents)
+            assertEquals(prefix, ReviewStatus.REVIEW, result.status)
+        }
+    }
+
+    @Test fun `ordinary punctuation around valid amounts stays supported`() {
+        listOf("10,00", "10,00.", "10,00!", "10,00;", "10,00)").forEach { token ->
+            val result = requireNotNull(NotificationParser.parse("Pix recebido R$ $token"))
+            assertEquals(token, 1000L, result.amountCents)
+            assertEquals(token, ReviewStatus.CONFIRMED, result.status)
+        }
+    }
+
     @Test fun `synthetic bank Pix receipts are income`() {
         listOf("Nubank Você recebeu um Pix de R$ 1.234,56", "C6 Bank Pix recebido: R$ 10,01", "Itaú Pix recebido no valor de R$ 300,00").forEach {
             val result = requireNotNull(NotificationParser.parse(it))

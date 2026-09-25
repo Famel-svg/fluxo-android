@@ -5,7 +5,8 @@ import java.util.Locale
 
 /** Conservative rules, based on synthetic examples, not a bank API contract. */
 object NotificationParser {
-    private val currency = Regex("r\\$\\s*([+-]?\\s*[0-9][0-9.,]*)")
+    // Consume the complete token: a valid numeric prefix is not a valid amount.
+    private val currency = Regex("r\\$\\s*([+-]?\\s*[^\\s]+)")
     private val validAmount = Regex("(?:[0-9]+|[1-9][0-9]{0,2}(?:\\.[0-9]{3})+),[0-9]{2}")
     private val financial = Regex("\\b(pix|compra|pagamento|transferencia|deposito|credito em conta|creditad[oa]|debitad[oa]|estorno|devolucao|fatura)\\b")
     private val marketing = Regex("\\b(oferta|promocao|aproveite|contrate|ganhe|cashback|pre-aprovad[oa]|simule|receba|limite disponivel|limite aprovado)\\b")
@@ -17,6 +18,9 @@ object NotificationParser {
     private val outgoing = Regex("\\b(enviou|enviado|enviada|debitado|debitada|pagou|pagamento realizado|pagamento efetuado|transferencia realizada|transferencia efetuada)\\b")
     private val completedPurchase = Regex("\\b(compra (?:no (?:credito|debito) )?(?:aprovada|realizada|efetuada)|comprou|pagamento aprovado)\\b")
     private val underReview = Regex("\\b(em analise|sob analise|em verificacao|aguardando confirmacao)\\b")
+    private val futureOrConditional = Regex(
+        """\b(?:sera|serao|seria|seriam|vai ser|podera ser|pode ser)\s+(?:[a-z]+\s+){0,4}(?:confirmad[oa]|aprovad[oa]|autorizad[oa]|concluid[oa]|efetivad[oa]|efetuad[oa]|realizad[oa]|enviad[oa]|recebid[oa]|creditad[oa]|debitad[oa])\b|\b(?:se|caso)\s+(?:[a-z]+\s+){0,4}(?:recebeu|enviou|pagou|comprou|recebid[oa]|enviad[oa]|confirmad[oa]|aprovad[oa]|realizad[oa])\b""",
+    )
     // Limit the context to one clause; negation may precede auxiliaries and adverbs.
     private val negatedMovement = Regex(
         """\b(?:nao|nunca|jamais|nem|sem)\s+(?:[a-z]+\s+){0,4}(?:confirmad[oa]|confirmacao|aprovad[oa]|aprovacao|autorizad[oa]|autorizacao|concluid[oa]|conclusao|efetivad[oa]|efetuad[oa]|realizad[oa]|enviad[oa]|recebid[oa]|creditad[oa]|debitad[oa]|recebeu|enviou|pagou|comprou)\b""",
@@ -31,7 +35,10 @@ object NotificationParser {
             .replace(Regex("\\s+"), " ").trim()
         if (!financial.containsMatchIn(normalized)) return null
 
-        val amounts = currency.findAll(normalized).map { it.groupValues[1].trimEnd('.') }.toList()
+        val amounts = currency.findAll(normalized).map {
+            // Permit sentence punctuation, but not repeated decimal separators or suffixes.
+            it.groupValues[1].trimEnd('!', '?', ';', ':', ')', ']', '}').removeSuffix(".")
+        }.toList()
         val amount = amounts.singleOrNull()?.let(::toCents)
         val pix = Regex("\\bpix\\b").containsMatchIn(normalized)
         val credit = Regex("\\b(no credito|cartao (?:de )?credito|funcao credito)\\b").containsMatchIn(normalized)
@@ -56,7 +63,8 @@ object NotificationParser {
             '?' in normalized -> "Mensagem contém pergunta; confirme se houve movimentação."
             collection.containsMatchIn(normalized) -> "Cobrança ou pedido de pagamento não comprova movimentação."
             unconfirmed.containsMatchIn(normalized) || notExecuted.containsMatchIn(normalized) ||
-                underReview.containsMatchIn(normalized) || negatedMovement.containsMatchIn(normalized) ->
+                underReview.containsMatchIn(normalized) || negatedMovement.containsMatchIn(normalized) ||
+                futureOrConditional.containsMatchIn(normalized) ->
                 "Evento pendente, recusado ou agendado; confirme a movimentação."
             settlement.containsMatchIn(normalized) -> "Fatura, estorno ou devolução exige classificação manual."
             hasMarketing -> "Mensagem mistura movimentação e oferta; confirme os dados da transação."
