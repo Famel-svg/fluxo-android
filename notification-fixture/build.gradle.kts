@@ -15,6 +15,11 @@ android {
         create("c6") { dimension = "emitter"; applicationId = "com.c6bank.app" }
         create("itau") { dimension = "emitter"; applicationId = "com.itau" }
         create("unsupported") { dimension = "emitter"; applicationId = "br.com.fluxo.fixture.unsupported" }
+        create("wallet") { dimension = "emitter"; applicationId = "com.example.wallet" }
+        create("store") { dimension = "emitter"; applicationId = "com.example.store" }
+        create("ride") { dimension = "emitter"; applicationId = "com.example.ride" }
+        create("telecom") { dimension = "emitter"; applicationId = "com.example.telecom" }
+        create("system") { dimension = "emitter"; applicationId = "com.example.system" }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21

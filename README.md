@@ -1,16 +1,25 @@
 # Fluxo
 
-Controle financeiro Android pessoal, offline, com leitura consentida de notificações de C6 Bank, Nubank e Itaú. Interface em português. Pix recebido/enviado, compras no crédito/débito, lançamentos manuais e revisão de mensagens ambíguas.
+Aplicativo Android de controle financeiro pessoal, em português e com dados locais. Registra notificações financeiras selecionadas pelo usuário, lançamentos manuais, orçamentos e transferências entre contas próprias.
 
-## Versão 0.3 — captura e recuperação
+## Recursos
 
 - Pendências e mensagens com oferta anexada recebem revisão conservadora.
 - Atualizações de notificações reabrem revisão sem sobrescrever correções manuais ou exclusões; migração SQLite v3 preserva legado.
 - Ajustes mostra diagnóstico do serviço e última observação por banco nesta sessão.
 - Backup protegido por senha permite restaurar lançamentos, orçamentos e identificadores contra duplicatas. Permissões e seleção de bancos continuam locais; restauração pausa captura.
-- 32 testes JVM e 42 Android aprovados localmente. CI passou a executar testes instrumentados em emulador.
+- Captura consentida de notificações de C6 Bank, Nubank e Itaú, com revisão de mensagens ambíguas.
+- Categorias, orçamentos mensais, busca, filtros e exportação CSV.
+- Contas locais e transferências próprias; suporte não equivale a conciliação bancária.
+- Backup restaurável protegido por senha.
 
-Backup não substitui validação bancária real. Guarde senha e arquivo separadamente; sem a senha, não há recuperação. Contas/cartões completos e demais incrementos seguem nos [specs](docs/specs/README.md).
+## Limites e privacidade
+
+Fluxo não conecta a servidor, não sincroniza dados e não precisa de conta, internet ou credenciais bancárias. O histórico depende das notificações recebidas e não representa saldo ou extrato completo. Modelos de notificação precisam de validação em aparelhos e versões Android reais. Captura real de bancos não é comprovada por testes com dados sintéticos.
+
+Notificações brutas não são armazenadas. O SQLite fica no armazenamento privado do Android, sem criptografia adicional. Backup protegido exige senha: guarde senha e arquivo separadamente. CSV é texto legível e não pode restaurar o banco. Desinstalar apaga dados locais.
+
+Veja [evidências e limites de validação](docs/VALIDATION.md), [plano de testes](docs/TEST_PLAN.md), [especificação](docs/SPEC.md), [arquitetura](docs/ARCHITECTURE.md) e [incrementos planejados](docs/specs/README.md).
 
 ## Novidades da versão 0.2
 - Categorias editáveis em cada lançamento; registros anteriores começam em Sem categoria.

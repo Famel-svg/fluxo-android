@@ -1,10 +1,11 @@
 param(
-    [string]$Serial = 'emulator-5554',
+    [Parameter(Mandatory)][ValidateSet('emulator-5556')][string]$Serial,
     [switch]$Reboot,
     [Parameter(Mandatory)][switch]$DisposableEmulator
 )
 $ErrorActionPreference = 'Stop'
 if (-not $DisposableEmulator) { throw 'Explicit disposable-emulator acknowledgement required.' }
+if ($Serial -ne 'emulator-5556') { throw 'Only disposable emulator-5556 is allowed.' }
 $project = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $adb = Join-Path $env:LOCALAPPDATA 'Android/Sdk/platform-tools/adb.exe'
 function Invoke-Adb {
@@ -17,7 +18,17 @@ if ($Serial -notmatch '^emulator-[0-9]+$') { throw 'Physical devices forbidden.'
 if ((Invoke-Adb shell getprop ro.kernel.qemu).Trim() -ne '1') { throw 'QEMU required.' }
 $avdName = ((Invoke-Adb emu avd name) -split "`n")[0].Trim()
 if ($avdName -notmatch '^ApkPreview_[A-Za-z0-9_.-]+$') { throw 'Dedicated ApkPreview_ AVD required.' }
-$fixtures = [ordered]@{ nubank='com.nu.production'; c6='com.c6bank.app'; itau='com.itau'; unsupported='br.com.fluxo.fixture.unsupported' }
+$fixtures = [ordered]@{
+    nubank = 'com.nu.production'
+    c6 = 'com.c6bank.app'
+    itau = 'com.itau'
+    unsupported = 'br.com.fluxo.fixture.unsupported'
+    wallet = 'com.example.wallet'
+    store = 'com.example.store'
+    ride = 'com.example.ride'
+    telecom = 'com.example.telecom'
+    system = 'com.example.system'
+}
 $packages = Invoke-Adb shell pm list packages
 foreach ($pkg in $fixtures.Values) {
     if (($packages -split "`n").Trim() -contains "package:$pkg") {
@@ -58,7 +69,7 @@ try {
     $evidence = Join-Path $project '.artifacts/fluxo-preview/notification-e2e'
     New-Item -ItemType Directory -Path $evidence -Force | Out-Null
     $result | Out-File -LiteralPath (Join-Path $evidence ((Get-Date -Format 'yyyyMMdd-HHmmss') + '.txt')) -Encoding utf8
-    if ($result -notmatch 'OK \(6 tests\)' -or $result -match 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed') {
+    if ($result -notmatch 'OK \(8 tests\)' -or $result -match 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed') {
         throw 'Notification delivery tests did not all pass.'
     }
     $restartStarted = $true

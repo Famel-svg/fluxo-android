@@ -40,7 +40,7 @@ object CaptureHealth {
     }
 
     @Synchronized fun observed(packageName: String, at: Long) {
-        if (supportedBanks.none { it.packageName == packageName } || at <= 0) return
+        if (packageName.isBlank() || at <= 0) return
         val previous = mutable.value.lastObserved[packageName] ?: 0
         mutable.value = mutable.value.copy(lastObserved = mutable.value.lastObserved +
             (packageName to maxOf(at, previous)))
@@ -48,11 +48,11 @@ object CaptureHealth {
 }
 
 @Composable
-fun CaptureHealthCard(access: Boolean, capture: Boolean, banks: Set<String>) {
+fun CaptureHealthCard(access: Boolean, capture: Boolean, banks: Set<String>, allowOtherApps: Boolean = false) {
     val snapshot by CaptureHealth.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var message by remember { mutableStateOf<String?>(null) }
-    CaptureHealthContent(snapshot, access, capture, banks, message) {
+    CaptureHealthContent(snapshot, access, capture, banks, message, allowOtherApps) {
         message = try {
             NotificationListenerService.requestRebind(ComponentName(context, BankNotificationListener::class.java))
             "Reconexão solicitada. Aguarde a confirmação do Android."
@@ -65,7 +65,7 @@ fun CaptureHealthCard(access: Boolean, capture: Boolean, banks: Set<String>) {
 @Composable
 internal fun CaptureHealthContent(
     snapshot: CaptureSnapshot, access: Boolean, capture: Boolean, banks: Set<String>,
-    message: String? = null, reconnect: () -> Unit = {},
+    message: String? = null, allowOtherApps: Boolean = false, reconnect: () -> Unit = {},
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -77,7 +77,16 @@ internal fun CaptureHealthContent(
                 false -> "Serviço: desconectado do Android"
                 null -> "Serviço: conexão ainda não confirmada nesta sessão"
             })
-            if (banks.isEmpty()) Text("Selecione pelo menos um banco para capturar.")
+            if (banks.isEmpty() && !allowOtherApps) Text("Selecione um banco ou permita outros apps para capturar.")
+            if (allowOtherApps) {
+                Text("Outros apps: notificações observadas nesta sessão")
+                snapshot.lastObserved.filterKeys { key -> supportedBanks.none { it.packageName == key } }
+                    .forEach { (_, time) ->
+                        val formatted = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")
+                            .withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(time))
+                        Text("Outro app: notificação observada às $formatted")
+                    }
+            }
             supportedBanks.filter { it.packageName in banks }.forEach { bank ->
                 val time = snapshot.lastObserved[bank.packageName]?.let {
                     DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")
@@ -88,7 +97,7 @@ internal fun CaptureHealthContent(
             }
             Text("Observada não significa lançamento confirmado. Mensagens sem valor ou promocionais podem ser descartadas. Ausência de notificações não comprova falha.",
                 style = MaterialTheme.typography.bodySmall)
-            if (access && capture && banks.isNotEmpty() && snapshot.connected != true) {
+            if (access && capture && (banks.isNotEmpty() || allowOtherApps) && snapshot.connected != true) {
                 OutlinedButton(onClick = reconnect) { Text("Solicitar reconexão") }
             }
             message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }

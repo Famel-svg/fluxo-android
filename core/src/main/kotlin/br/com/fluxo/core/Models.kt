@@ -12,11 +12,21 @@ enum class Category(val label: String) {
 
 data class Budget(val month: String, val category: Category, val limitCents: Long)
 
-enum class AccountType(val label: String) { CHECKING("Conta corrente"), SAVINGS("Poupança"), CASH("Dinheiro"), OTHER("Outra") }
+enum class AccountType(val label: String) { CHECKING("Conta corrente"), SAVINGS("Poupança"), CASH("Dinheiro"), CREDIT_CARD("Cartão de crédito"), OTHER("Outra") }
 
 data class Account(val id: String, val name: String, val bankPackage: String,
     val openingCents: Long, val openingAt: Long, val archived: Boolean = false,
     val type: AccountType = AccountType.CHECKING)
+
+data class Invoice(
+    val id: String,
+    val accountId: String,
+    val month: String,
+    val dueDate: Long,
+    val closingDate: Long,
+    val isPaid: Boolean,
+    val amountCents: Long,
+)
 
 data class ParsedNotification(
     val amountCents: Long?,
@@ -24,6 +34,9 @@ data class ParsedNotification(
     val method: PaymentMethod,
     val status: ReviewStatus,
     val reason: String,
+    // Transient parser evidence only; never persist or interpret as an inferred amount.
+    @Transient val hasAmountCandidate: Boolean = amountCents != null,
+    @Transient val hasEventStateSignal: Boolean = false,
 )
 
 data class Transaction(
@@ -40,4 +53,5 @@ data class Transaction(
     val category: Category = Category.UNCATEGORIZED,
     val accountId: String? = null,
     val transferId: String? = null,
+    val invoiceId: String? = null, // Link para fatura (se for cartão)
 )

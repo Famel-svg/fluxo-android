@@ -40,6 +40,12 @@ object NotificationParser {
             it.groupValues[1].trimEnd('!', '?', ';', ':', ')', ']', '}').removeSuffix(".")
         }.toList()
         val amount = amounts.singleOrNull()?.let(::toCents)
+        // An unprefixed decimal is evidence for review, never a source of amountCents.
+        // Match whole tokens to reject numeric prefixes, suffixes and arithmetic expressions.
+        val hasAmountCandidate = Regex("r\\$").containsMatchIn(normalized) || normalized.split(' ').count { token ->
+            validAmount.matches(token.trimStart('(', '[', '{')
+                .trimEnd('!', '?', ';', ':', ')', ']', '}').removeSuffix("."))
+        } == 1
         val pix = Regex("\\bpix\\b").containsMatchIn(normalized)
         val credit = Regex("\\b(no credito|cartao (?:de )?credito|funcao credito)\\b").containsMatchIn(normalized)
         val debit = Regex("\\b(no debito|cartao (?:de )?debito|funcao debito)\\b").containsMatchIn(normalized)
@@ -59,12 +65,13 @@ object NotificationParser {
             expense && !income -> Direction.EXPENSE
             else -> Direction.UNKNOWN
         }
+        val hasEventStateSignal = unconfirmed.containsMatchIn(normalized) ||
+            notExecuted.containsMatchIn(normalized) || underReview.containsMatchIn(normalized) ||
+            negatedMovement.containsMatchIn(normalized) || futureOrConditional.containsMatchIn(normalized)
         val reason = when {
             '?' in normalized -> "Mensagem contém pergunta; confirme se houve movimentação."
             collection.containsMatchIn(normalized) -> "Cobrança ou pedido de pagamento não comprova movimentação."
-            unconfirmed.containsMatchIn(normalized) || notExecuted.containsMatchIn(normalized) ||
-                underReview.containsMatchIn(normalized) || negatedMovement.containsMatchIn(normalized) ||
-                futureOrConditional.containsMatchIn(normalized) ->
+            hasEventStateSignal ->
                 "Evento pendente, recusado ou agendado; confirme a movimentação."
             settlement.containsMatchIn(normalized) -> "Fatura, estorno ou devolução exige classificação manual."
             hasMarketing -> "Mensagem mistura movimentação e oferta; confirme os dados da transação."
@@ -77,7 +84,8 @@ object NotificationParser {
             else -> ""
         }
         return ParsedNotification(amount, direction, method,
-            if (reason.isEmpty()) ReviewStatus.CONFIRMED else ReviewStatus.REVIEW, reason)
+            if (reason.isEmpty()) ReviewStatus.CONFIRMED else ReviewStatus.REVIEW, reason,
+            hasAmountCandidate = hasAmountCandidate, hasEventStateSignal = hasEventStateSignal)
     }
 
     private fun toCents(value: String): Long? {

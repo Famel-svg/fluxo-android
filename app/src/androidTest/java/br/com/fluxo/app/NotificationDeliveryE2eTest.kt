@@ -25,7 +25,15 @@ class NotificationDeliveryE2eTest {
     private val listener = "br.com.fluxo.app/.BankNotificationListener"
     private val bank = "com.nu.production"
     private val originalTime = System.currentTimeMillis()
-    private val emitters = listOf(bank, "com.c6bank.app", "com.itau", "br.com.fluxo.fixture.unsupported")
+    private val sourceMatrix = linkedMapOf(
+        "com.example.wallet" to "Pix recebido R$ 12,34",
+        "com.example.store" to "Compra aprovada no crédito R$ 45,67",
+        "com.example.ride" to "Pagamento realizado no débito R$ 18,90",
+        "com.example.telecom" to "Pagamento efetuado no crédito R$ 79,90",
+        "com.example.system" to "Pix recebido R$ 5,00",
+    )
+ private val emitters = listOf(bank, "com.c6bank.app", "com.itau", "br.com.fluxo.fixture.unsupported") +
+        sourceMatrix.keys
     private var prepared = false
     private var originallyAllowed = false
 
@@ -38,6 +46,7 @@ class NotificationDeliveryE2eTest {
         emitters.forEach { emit(it, "cancelAll") }
         prepared = true
         repository.clear()
+        repository.setAllowOtherApps(false)
         supportedBanks.forEach { repository.setBankEnabled(it.packageName, true) }
         repository.setCaptureEnabled(true)
         shell("cmd notification allow_listener $listener")
@@ -51,6 +60,7 @@ class NotificationDeliveryE2eTest {
             finally {
                 try {
                     repository.clear()
+                    repository.setAllowOtherApps(false)
                     supportedBanks.forEach { repository.setBankEnabled(it.packageName, false) }
                 } finally {
                     shell("cmd notification ${if (originallyAllowed) "allow_listener" else "disallow_listener"} $listener")
@@ -142,6 +152,53 @@ class NotificationDeliveryE2eTest {
         assertEquals(6000L, repository.transactions.value.single().amountCents)
     }
 
+    @Test
+    fun representativeThirdPartyClassesDeliverOnlyRecognizedFinancialEvents() = runBlocking {
+           repository.setAllowOtherApps(true)
+           sourceMatrix.entries.forEachIndexed { index, (packageName, text) ->
+               post(packageName, 50 + index, text)
+               await("delivery from representative third-party class") {
+                   repository.transactions.value.size == index + 1
+               }
+           }
+           assertEquals(sourceMatrix.keys, repository.transactions.value.map { it.bankPackage }.toSet())
+           assertEquals(setOf(1234L, 4567L, 1890L, 7990L, 500L),
+               repository.transactions.value.mapNotNull { it.amountCents }.toSet())
+           val confirmedSourceKeys = repository.transactions.value.mapNotNull { it.sourceKey }.toSet()
+
+           listOf(
+               "com.example.wallet" to "Saldo disponível R$ 999,99",
+               "com.example.store" to "Oferta especial: cashback R$ 10,00",
+               "com.example.ride" to "Sua entrega está a caminho",
+               "com.example.telecom" to "Renove seu plano hoje",
+               "com.example.system" to "Sincronização concluída",
+           ).forEachIndexed { index, (packageName, text) -> post(packageName, 60 + index, text) }
+           stableCount(sourceMatrix.size)
+
+           post("com.example.store", 70, "Compra aprovada no crédito R$ 45,67 saldo R$ 100,00")
+           post("com.example.telecom", 71, "Pagamento efetuado no crédito R$ 79,90abc")
+           await("ambiguous and malformed review rows") { repository.transactions.value.size == sourceMatrix.size + 2 }
+           repository.transactions.value.filter { it.sourceKey !in confirmedSourceKeys }
+               .forEach { row ->
+                   assertEquals(ReviewStatus.REVIEW, row.status)
+                   assertNull(row.amountCents)
+               }
+       }
+
+    @Test
+    fun optedInThirdPartyNotificationDeliversOnlyWhileConsentRemainsEnabled() {
+        val thirdParty = "br.com.fluxo.fixture.unsupported"
+        repository.setAllowOtherApps(true)
+        post(thirdParty, 40, "Pix recebido R$ 42,75")
+        await("opted-in third-party delivery") { repository.transactions.value.size == 1 }
+        assertEquals(thirdParty, repository.transactions.value.single().bankPackage)
+        assertEquals(4275L, repository.transactions.value.single().amountCents)
+
+        repository.setAllowOtherApps(false)
+        post(thirdParty, 41, "Pix recebido R$ 88,10")
+        stableCount(1)
+    }
+
     @Test fun revocationStopsDeliveryAndRegrantReceivesFutureEvent() {
         shell("cmd notification disallow_listener $listener")
         await("disconnect") { CaptureHealth.state.value.connected == false }
@@ -156,8 +213,7 @@ class NotificationDeliveryE2eTest {
 
     private fun post(pkg: String, id: Int, text: String, timestamp: Long = originalTime,
         big: String? = null, summary: Boolean = false) {
-        val expectCallback = CaptureHealth.state.value.connected == true &&
-            repository.captureEnabled.value && pkg in repository.enabledBanks.value
+        val expectCallback = CaptureHealth.state.value.connected == true && repository.allowsNotification(pkg)
         val previous = CaptureHealth.state.value.lastObserved[pkg] ?: 0L
         if (expectCallback) {
             await("distinct callback clock") { System.currentTimeMillis() > previous }

@@ -7,6 +7,10 @@ import android.database.DatabaseErrorHandler
 import android.database.sqlite.SQLiteDatabase
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import br.com.fluxo.core.BenefitCalculator
+import br.com.fluxo.core.BenefitDays
+import br.com.fluxo.core.BenefitSettings
+import java.time.YearMonth
 import br.com.fluxo.core.Direction
 import br.com.fluxo.core.Budget
 import br.com.fluxo.core.Category
@@ -29,11 +33,15 @@ class LedgerRepositoryTest {
 
     @Before fun prepare() = runBlocking {
         repository.clear()
+        repository.setCaptureEnabled(false)
+        repository.setAllowOtherApps(false)
         supportedBanks.forEach { repository.setBankEnabled(it.packageName, false) }
     }
 
     @After fun clean() = runBlocking {
         repository.clear()
+        repository.setCaptureEnabled(false)
+        repository.setAllowOtherApps(false)
         supportedBanks.forEach { repository.setBankEnabled(it.packageName, false) }
     }
 
@@ -157,6 +165,37 @@ class LedgerRepositoryTest {
         repository.ingest("selected", bank, 3L, "Pix recebido R$ 10,00")
         repository.ingest("other-bank", "com.itau", 4L, "Pix recebido R$ 10,00")
         assertEquals(listOf("selected"), repository.transactions.value.map { it.sourceKey })
+    }
+
+    @Test fun multiappConsentPersistsOnlyRecognizedFinancialEvents() = runBlocking {
+        val appPackage = "com.example.wallet"
+        val ownPackage = InstrumentationRegistry.getInstrumentation().targetContext.packageName
+        repository.clear()
+        repository.setCaptureEnabled(false)
+        repository.setAllowOtherApps(false)
+        supportedBanks.forEach { repository.setBankEnabled(it.packageName, false) }
+        assertFalse(repository.allowOtherApps.value)
+        repository.setAllowOtherApps(true)
+        repository.ingest("paused", appPackage, 1L, "Pix recebido R$ 10,00")
+        repository.setCaptureEnabled(true)
+        repository.ingest("promo", appPackage, 2L, "Oferta especial: cashback 10,00")
+        repository.ingest("ambiguous", appPackage, 3L, "Pix recebido análise 10,00")
+        repository.ingest("missing-amount", appPackage, 31L, "Pix recebido valor oculto")
+        repository.ingest("missing-direction", appPackage, 32L, "Pix R$ 10,00")
+        repository.ingest("own", ownPackage, 4L, "Pix recebido R$ 10,00")
+        repository.setAllowOtherApps(false)
+        repository.ingest("after-opt-out", appPackage, 5L, "Pix recebido R$ 10,00")
+        repository.setAllowOtherApps(true)
+        repository.ingest("recognized", appPackage, 6L, "Pix recebido R$ 10,00")
+
+        assertEquals(setOf("ambiguous", "recognized"), repository.transactions.value.map { it.sourceKey }.toSet())
+        assertTrue(repository.transactions.value.all { it.bankPackage == "com.example.wallet" })
+        assertEquals(br.com.fluxo.core.ReviewStatus.REVIEW,
+            repository.transactions.value.single { it.sourceKey == "ambiguous" }.status)
+        assertEquals("Movimentação detectada", repository.transactions.value.single { it.sourceKey == "recognized" }.description)
+        repository.clear()
+        repository.setCaptureEnabled(false)
+        repository.setAllowOtherApps(false)
     }
 
     @Test fun duplicateDeliveryHasOneRowButDistinctEventsRemain() = runBlocking {
@@ -410,6 +449,102 @@ class LedgerRepositoryTest {
         migrated.ingest("new-v3", bank, 300L, "Pix enviado cancelado R$ 10,00", observedAt = 400L)
         assertEquals(ReviewStatus.REVIEW, migrated.transactions.value.single { it.sourceKey == "new-v3" }.status)
         migrated.clear()
+    }
+
+    @Test fun benefitsPersistAcrossRepositoryRecreationAndLedgerClearWithoutChangingTotals() = runBlocking {
+        val context = IsolatedContext(InstrumentationRegistry.getInstrumentation().targetContext,
+            "benefits_${java.util.UUID.randomUUID()}_")
+        val initial = LedgerRepository(context)
+        val month = YearMonth.of(2026, 9)
+        val next = month.plusMonths(1)
+        try {
+            assertEquals(BenefitSettings(), initial.benefits.value)
+            initial.save(manualTransaction())
+            initial.saveBudget(Budget(month.toString(), Category.FOOD, 5000))
+            val rows = initial.transactions.value
+            val budgets = initial.budgets.value
+            initial.saveBenefits(month, 2550, 1050, BenefitDays(0, 12))
+            initial.saveBenefits(next, 2550, 1050, BenefitDays(5, null))
+            assertEquals(rows, initial.transactions.value)
+            assertEquals(budgets, initial.budgets.value)
+            assertTrue(initial.accounts.value.isEmpty())
+            assertFalse(context.getSharedPreferences("capture", Context.MODE_PRIVATE)
+                .contains("vr_daily_cents"))
+            val persisted = context.getSharedPreferences("benefits", Context.MODE_PRIVATE)
+            assertEquals(2550L, persisted.getLong("vr_daily_cents", -1))
+            assertEquals(0, persisted.getInt("vr_days:$month", -1))
+            val reopened = LedgerRepository(context)
+            assertEquals(initial.benefits.value, reopened.benefits.value)
+            reopened.saveBenefits(month, 2550, 1050, BenefitDays(null, 12))
+            assertFalse(persisted.contains("vr_days:$month"))
+            assertEquals(BenefitDays(5, null), reopened.benefits.value.overrides[next])
+            val estimate = BenefitCalculator.estimate(month, reopened.benefits.value)
+            assertEquals(22, estimate.vrDays)
+            assertEquals(12, estimate.vtDays)
+            reopened.saveBenefits(month, 2550, 1050, BenefitDays())
+            assertFalse(persisted.contains("vt_days:$month"))
+            assertFalse(reopened.benefits.value.overrides.containsKey(month))
+            val beforeClear = reopened.benefits.value
+            reopened.clear()
+            assertTrue(reopened.transactions.value.isEmpty())
+            assertTrue(reopened.budgets.value.isEmpty())
+            assertEquals(beforeClear, reopened.benefits.value)
+            assertEquals(beforeClear, LedgerRepository(context).benefits.value)
+        } finally {
+            initial.clear()
+            context.getSharedPreferences("benefits", Context.MODE_PRIVATE).edit().clear().commit()
+        }
+    }
+
+    @Test fun benefitsRejectInvalidWritesAndPreserveLongMaximumExactly() = runBlocking {
+        val context = IsolatedContext(InstrumentationRegistry.getInstrumentation().targetContext,
+            "benefits_limits_${java.util.UUID.randomUUID()}_")
+        val isolated = LedgerRepository(context)
+        val month = YearMonth.of(2025, 2)
+        val prefs = context.getSharedPreferences("benefits", Context.MODE_PRIVATE)
+        try {
+            isolated.saveBenefits(month, Long.MAX_VALUE, Long.MAX_VALUE, BenefitDays(28, 28))
+            val saved = isolated.benefits.value
+            val stored = prefs.all.toMap()
+            for ((vr, vt, days) in listOf(
+                Triple(-1L, 0L, BenefitDays()), Triple(0L, -1L, BenefitDays()),
+                Triple(0L, 0L, BenefitDays(29, null)), Triple(0L, 0L, BenefitDays(null, -1)))) {
+                try {
+                    isolated.saveBenefits(month, vr, vt, days)
+                    fail("Invalid benefit configuration must be rejected")
+                } catch (_: IllegalArgumentException) { /* expected */ }
+                assertEquals(saved, isolated.benefits.value)
+                assertEquals(stored, prefs.all)
+            }
+            val reopened = LedgerRepository(context)
+            assertEquals(saved, reopened.benefits.value)
+            assertEquals(java.math.BigInteger.valueOf(Long.MAX_VALUE).multiply(java.math.BigInteger.valueOf(56)),
+                BenefitCalculator.estimate(month, reopened.benefits.value).totalCents)
+        } finally {
+            isolated.clear()
+            prefs.edit().clear().commit()
+        }
+    }
+
+    @Test fun benefitsIgnoreMalformedPreferencesAndKeepValidIndependentDays() {
+        val context = IsolatedContext(InstrumentationRegistry.getInstrumentation().targetContext,
+            "benefits_corrupt_${java.util.UUID.randomUUID()}_")
+        val prefs = context.getSharedPreferences("benefits", Context.MODE_PRIVATE)
+        try {
+            assertTrue(prefs.edit().putString("vr_daily_cents", "invalid")
+                .putLong("vt_daily_cents", -1).putInt("vr_days:2025-02", 29)
+                .putInt("vt_days:2025-02", 0).putInt("vr_days:bad-month", 10)
+                .putString("vr_days:2026-09", "3").commit())
+            val loaded = LedgerRepository(context).benefits.value
+            assertEquals(BenefitSettings(overrides = mapOf(YearMonth.of(2025, 2) to BenefitDays(null, 0))), loaded)
+            // No migration from the obsolete prototype preference name is proposed.
+            assertTrue(context.getSharedPreferences("benefits_vr_vt", Context.MODE_PRIVATE)
+                .edit().putLong("vr_daily_cents", 9999L).commit())
+            assertEquals(loaded, LedgerRepository(context).benefits.value)
+        } finally {
+            prefs.edit().clear().commit()
+            context.getSharedPreferences("benefits_vr_vt", Context.MODE_PRIVATE).edit().clear().commit()
+        }
     }
 
     private fun enableCapture() {

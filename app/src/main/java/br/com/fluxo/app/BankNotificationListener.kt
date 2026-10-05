@@ -3,6 +3,7 @@ package br.com.fluxo.app
 import android.app.Notification
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import br.com.fluxo.core.NotificationCapturePolicy
 import java.security.MessageDigest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,7 +17,7 @@ class BankNotificationListener : NotificationListenerService() {
 
     private sealed interface Event {
         data class Posted(val notification: StatusBarNotification) : Event
-        data class Removed(val identity: String) : Event
+        data class Removed(val packageName: String, val identity: String) : Event
     }
     // Callback order matters: a removal must finish before an Android key is reused.
     private val events = Channel<Event>(64)
@@ -33,7 +34,11 @@ class BankNotificationListener : NotificationListenerService() {
                             repository.ingest(candidate.sourceKey, candidate.packageName, candidate.timestamp,
                                 candidate.text, candidate.fallbackIdentity, event.notification.postTime)
                         }
-                        is Event.Removed -> repository.forgetNotification(event.identity)
+                        is Event.Removed -> {
+                            if (repository.allowsNotification(event.packageName)) {
+                                repository.forgetNotification(event.identity)
+                            }
+                        }
                     }
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
                     throw cancelled
@@ -57,15 +62,16 @@ class BankNotificationListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val repository = (application as FluxoApplication).repository
-        if (!repository.captureEnabled.value || sbn.packageName !in repository.enabledBanks.value) return
+        if (!repository.allowsNotification(sbn.packageName)) return
         CaptureHealth.observed(sbn.packageName, System.currentTimeMillis())
         if (!events.trySend(Event.Posted(sbn)).isSuccess) repository.reportCaptureError()
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
-        if (supportedBanks.none { it.packageName == sbn.packageName }) return
-        if (!events.trySend(Event.Removed(notificationIdentity(sbn))).isSuccess) {
-            (application as FluxoApplication).repository.reportCaptureError()
+        val repository = (application as FluxoApplication).repository
+        if (!repository.allowsNotification(sbn.packageName)) return
+        if (!events.trySend(Event.Removed(sbn.packageName, notificationIdentity(sbn))).isSuccess) {
+            repository.reportCaptureError()
         }
     }
 

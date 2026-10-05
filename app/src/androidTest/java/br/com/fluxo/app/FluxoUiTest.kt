@@ -3,17 +3,20 @@ package br.com.fluxo.app
 import android.os.Build
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasAnySibling
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assume.assumeTrue
@@ -36,7 +39,9 @@ class FluxoUiTest {
 
     @Before
     fun prepareSyntheticLedger() {
-        assumeTrue("UI smoke tests require an emulator with disposable app data", Build.HARDWARE in setOf("ranchu", "goldfish"))
+        assumeTrue("Pass disposableEmulator=true only from the guarded ApkPreview runner",
+            InstrumentationRegistry.getArguments().getString("disposableEmulator") == "true")
+        assumeTrue("UI smoke tests require an emulator", Build.HARDWARE in setOf("ranchu", "goldfish"))
         fixtureStarted = true
         runBlocking { repository.clear() }
         compose.waitForIdle()
@@ -48,24 +53,35 @@ class FluxoUiTest {
     }
 
     @Test
+    fun summaryKeepsCapturePromptClearOfAddButton() {
+    compose.onNodeWithText("Configure a captura").performScrollTo()
+    compose.onNodeWithText("Configure a captura").assertIsDisplayed()
+    compose.onNodeWithContentDescription("Adicionar lançamento").assertDoesNotExist()
+    val promptBounds = compose.onNodeWithText("Configure a captura").fetchSemanticsNode().boundsInRoot
+    assert(promptBounds.width > 0f && promptBounds.height > 0f)
+    }
+
+    @Test
     fun manualExpenseCanBeCreatedEditedAndDeleted() {
         addExpense("125,90", "Mercado sintético")
-        compose.onNodeWithText("Lançamentos").performClick()
-        compose.onNodeWithText("Mercado sintético").assertIsDisplayed()
-        compose.onNodeWithText(currency("125.90")).assertIsDisplayed().performClick()
+        compose.onNodeWithTag("navigation.1").performClick()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Mercado sintético"))
+        compose.onNodeWithText("Mercado sintético").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(currency("125.90")).performScrollTo().assertIsDisplayed().performClick()
 
         compose.onNodeWithText("Valor em reais").performTextReplacement("130,45")
         compose.onNodeWithText("Salvar e confirmar").performClick()
         compose.waitUntil(10_000) { repository.transactions.value.singleOrNull()?.amountCents == 13045L }
-        compose.onNodeWithText(currency("130.45")).assertIsDisplayed()
+        compose.onNodeWithText(currency("130.45")).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText(currency("125.90")).assertDoesNotExist()
 
-        compose.onNodeWithText("Mercado sintético").performClick()
+        compose.onNodeWithText("Mercado sintético").performScrollTo().performClick()
         compose.onNodeWithText("Excluir lançamento").performScrollTo().performClick()
         compose.onNodeWithText("Excluir lançamento?").assertIsDisplayed()
         compose.onNodeWithText("Excluir", substring = false).performClick()
         compose.waitUntil(10_000) { repository.transactions.value.isEmpty() }
-        compose.onNodeWithText("Nenhum lançamento").assertIsDisplayed()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Nenhum lançamento"))
+        compose.onNodeWithText("Nenhum lançamento").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Mercado sintético").assertDoesNotExist()
     }
 
@@ -73,6 +89,7 @@ class FluxoUiTest {
     fun dashboardSeparatesCreditCommitmentsFromCashExpenses() {
         addExpense("20,00", "Débito sintético", "Cartão de débito")
         addExpense("80,00", "Crédito sintético", "Cartão de crédito")
+        compose.onNodeWithTag("navigation.0").performClick()
 
         assertMetric("Saídas de caixa", "20.00")
         assertMetric("Compras no crédito", "80.00")
@@ -82,6 +99,7 @@ class FluxoUiTest {
 
     private fun addExpense(amount: String, description: String, method: String? = null) {
         val previousCount = repository.transactions.value.size
+        compose.onNodeWithTag("navigation.1").performClick()
         compose.onNodeWithContentDescription("Adicionar lançamento").performClick()
         compose.onNodeWithText("Valor em reais").performTextInput(amount)
         compose.onNodeWithText("Descrição").performTextInput(description)
@@ -95,7 +113,7 @@ class FluxoUiTest {
     }
 
     private fun assertMetric(label: String, value: String) {
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText(label))
+        compose.onNodeWithText(label, substring = true).performScrollTo()
         compose.onNode(hasText(currency(value)) and hasAnySibling(hasText(label)), useUnmergedTree = true).assertIsDisplayed()
     }
 

@@ -4,6 +4,7 @@ import android.os.Build
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import br.com.fluxo.core.*
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -24,6 +25,8 @@ class SearchCategoryUiTest {
     private var fixtureStarted = false
 
     @Before fun seedPreviousMonth() {
+        assumeTrue("Pass disposableEmulator=true only from the guarded ApkPreview runner",
+            InstrumentationRegistry.getArguments().getString("disposableEmulator") == "true")
         assumeTrue("Integration tests require an emulator", Build.HARDWARE in setOf("ranchu", "goldfish"))
         fixtureStarted = true
         runBlocking {
@@ -41,7 +44,7 @@ class SearchCategoryUiTest {
     @After fun clearFixtures() { if (fixtureStarted) runBlocking { repository.clear() } }
 
     @Test fun accentInsensitiveSearchFindsOldTransactionAndEditedCategoryCombinesWithFilters() {
-        compose.onNodeWithText("Lançamentos").performClick()
+        compose.onNodeWithTag("navigation.1").performClick()
         compose.onNodeWithText("Buscar descrição, banco ou categoria").performTextInput("itau")
         scrollTo("Nenhum lançamento")
         compose.onNodeWithText("Nenhum lançamento").assertIsDisplayed()

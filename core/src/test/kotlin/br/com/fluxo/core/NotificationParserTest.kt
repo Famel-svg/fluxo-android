@@ -4,6 +4,59 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NotificationParserTest {
+    @Test fun `unprefixed decimal candidate is transient review evidence without inferred amount`() {
+        listOf("10,00", "1.234,56", "(10,00)", "10,00.").forEach { token ->
+            val result = requireNotNull(NotificationParser.parse("Pix recebido análise $token"))
+            assertTrue(token, result.hasAmountCandidate)
+            assertNull(token, result.amountCents)
+            assertEquals(token, Direction.INCOME, result.direction)
+            assertEquals(token, ReviewStatus.REVIEW, result.status)
+        }
+        val noAmount = requireNotNull(NotificationParser.parse("Pix recebido valor oculto"))
+        assertFalse(noAmount.hasAmountCandidate)
+        assertNull(noAmount.amountCents)
+        assertEquals(Direction.INCOME, noAmount.direction)
+        assertEquals(ReviewStatus.REVIEW, noAmount.status)
+    }
+
+    @Test fun `unprefixed candidates require one whole well formed decimal token`() {
+        listOf("10,00e3", "10,00abc", "10,00/20,00", "10,00%", "10,00..",
+            "10,00_20", "10,00+20,00", "-10,00", "+10,00", "1.23,45", "1,234",
+            "100", "1.00", "10,00 20,00").forEach { token ->
+            val result = requireNotNull(NotificationParser.parse("Pix recebido $token"))
+            assertFalse(token, result.hasAmountCandidate)
+            assertNull(token, result.amountCents)
+            assertEquals(token, ReviewStatus.REVIEW, result.status)
+        }
+    }
+
+    @Test fun `currency evidence does not imply valid money or a known direction`() {
+        listOf("R$ 10,00 saldo R$ 100,00", "R$ 10,00abc", "R$").forEach { token ->
+            val result = requireNotNull(NotificationParser.parse("Pix recebido $token"))
+            assertTrue(token, result.hasAmountCandidate)
+            assertNull(token, result.amountCents)
+            assertEquals(token, ReviewStatus.REVIEW, result.status)
+        }
+        listOf("Pix R$10,00", "Pix pendente R$ 50,00").forEach { text ->
+            val result = requireNotNull(NotificationParser.parse(text))
+            assertTrue(text, result.hasAmountCandidate)
+            assertEquals(text, Direction.UNKNOWN, result.direction)
+            assertEquals(text, ReviewStatus.REVIEW, result.status)
+            assertEquals(text, text.contains("pendente"), result.hasEventStateSignal)
+        }
+        assertNull(NotificationParser.parse("Receba um Pix de 10,00 nesta promoção"))
+        assertNull(NotificationParser.parse("Mensagem de contato 10,00"))
+    }
+
+    @Test fun `existing constructor calls derive default candidate from amount only`() {
+        val withAmount = ParsedNotification(1000L, Direction.INCOME, PaymentMethod.PIX,
+            ReviewStatus.CONFIRMED, "")
+        val withoutAmount = ParsedNotification(null, Direction.INCOME, PaymentMethod.PIX,
+            ReviewStatus.REVIEW, "Valor ausente")
+        assertTrue(withAmount.hasAmountCandidate)
+        assertFalse(withoutAmount.hasAmountCandidate)
+    }
+
     @Test fun `numeric suffixes cannot become truncated confirmed amounts`() {
         listOf("10,00e3", "10,00abc", "10,00/20,00", "10,00%", "10,00..", "10,00_20", "10,00+20,00").forEach { token ->
             val result = requireNotNull(NotificationParser.parse("Pix recebido R$ $token"))
@@ -177,4 +230,42 @@ class NotificationParserTest {
         assertEquals(ReviewStatus.CONFIRMED, result.status)
         assertEquals(1000L, NotificationParser.parse("Pix recebido R$ 10,00.")?.amountCents)
     }
+
+ @Test fun `sanitized synthetic multi category fixtures verify financial and non financial outcomes`() {
+     // Financial positive/valid cases
+     val positiveFixtures = mapOf(
+         "bancos" to "Pix recebido R$ 150,00",
+         "carteiras pagamentos" to "Compra aprovada no débito R$ 45,90",
+         "compras entregas" to "Pagamento efetuado no crédito R$ 99,00",
+         "e-mail" to "Transferência enviada R$ 200,00",
+         "mensageria" to "Pix enviado R$ 12,50",
+         "redes sociais" to "Compra realizada no crédito R$ 30,00",
+         "sistema" to "Pix recebido R$ 5,00"
+     )
+
+     positiveFixtures.forEach { (category, text) ->
+         val result = NotificationParser.parse(text)
+         assertNotNull("Should parse financial event for $category", result)
+         assertNotNull("Should extract valid cents for $category", result?.amountCents)
+         assertTrue("Amount must be positive for $category", (result?.amountCents ?: 0) > 0)
+     }
+
+     // Non-financial negative cases & promotions (must be ignored/discarded by parser)
+     val nonFinancialFixtures = mapOf(
+         "promoção bancária" to "Aproveite seu limite de R$ 5.000,00 pré-aprovado",
+         "compras marketing" to "Oferta imperdível: R$ 50,00 de desconto no próximo pedido",
+         "mensageria conversa" to "Te transferi o valor mais cedo, me avise quando receber",
+         "social ad" to "Ganhe até R$ 100,00 indicando amigos para a plataforma",
+         "sistema alerta" to "Sua senha foi alterada com sucesso em 10/10"
+     )
+
+     nonFinancialFixtures.forEach { (category, text) ->
+         val result = NotificationParser.parse(text)
+         // Should either be null OR not have inferred/valid financial transaction amounts
+         if (result != null) {
+             assertNull("Non-financial or marketing text should not yield an inferred amount for $category", result.amountCents)
+             assertEquals("Ambiguous/non-financial events must require review", ReviewStatus.REVIEW, result.status)
+         }
+     }
+ }
 }

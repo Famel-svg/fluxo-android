@@ -4,11 +4,15 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import br.com.fluxo.core.BenefitCalculator
+import br.com.fluxo.core.BenefitDays
+import br.com.fluxo.core.BenefitSettings
 import br.com.fluxo.core.Budget
 import br.com.fluxo.core.Account
 import br.com.fluxo.core.AccountType
 import br.com.fluxo.core.Category
 import br.com.fluxo.core.Direction
+import br.com.fluxo.core.NotificationCapturePolicy
 import br.com.fluxo.core.NotificationParser
 import br.com.fluxo.core.PaymentMethod
 import br.com.fluxo.core.ReviewStatus
@@ -31,7 +35,11 @@ val supportedBanks = listOf(
 )
 
 class LedgerRepository(context: Context) {
+    private val appPackageName = context.applicationContext.packageName
     private val preferences = context.getSharedPreferences("capture", Context.MODE_PRIVATE)
+    private val benefitPreferences = context.getSharedPreferences("benefits", Context.MODE_PRIVATE)
+    private val _benefits = MutableStateFlow(readBenefits())
+    val benefits: StateFlow<BenefitSettings> = _benefits
     private val database = LedgerDatabase(context.applicationContext)
     private val mutex = Mutex()
     private val _transactions = MutableStateFlow<List<Transaction>>(emptyList())
@@ -42,16 +50,72 @@ class LedgerRepository(context: Context) {
     val accounts: StateFlow<List<Account>> = _accounts
     private val _captureEnabled = MutableStateFlow(preferences.getBoolean("enabled", false))
     val captureEnabled: StateFlow<Boolean> = _captureEnabled
+    private val _allowOtherApps = MutableStateFlow(preferences.getBoolean("allow_other_apps", false))
+    val allowOtherApps: StateFlow<Boolean> = _allowOtherApps
     private val _enabledBanks = MutableStateFlow(preferences.getStringSet("banks", emptySet())!!.toSet())
     val enabledBanks: StateFlow<Set<String>> = _enabledBanks
     private val _captureError = MutableStateFlow<String?>(null)
     val captureError: StateFlow<String?> = _captureError
+
+    private fun readBenefits(): BenefitSettings {
+        val stored = benefitPreferences.all
+        fun rate(key: String) = (stored[key] as? Long)?.takeIf { it >= 0 } ?: 0L
+        val overrides = mutableMapOf<YearMonth, BenefitDays>()
+        stored.forEach { (key, value) ->
+            if (key.startsWith("vr_days:") || key.startsWith("vt_days:")) {
+                val rawMonth = key.substringAfter(':')
+                val month = runCatching { YearMonth.parse(rawMonth) }.getOrNull()
+                val days = value as? Int
+                if (month != null && month.toString() == rawMonth && days != null && days in 0..month.lengthOfMonth()) {
+                    val current = overrides[month] ?: BenefitDays()
+                    overrides[month] = if (key.startsWith("vr_days:")) current.copy(vr = days) else current.copy(vt = days)
+                }
+            }
+        }
+        return BenefitSettings(rate("vr_daily_cents"), rate("vt_daily_cents"), overrides.toMap())
+    }
+
+    suspend fun saveBenefits(month: YearMonth, vrDailyCents: Long, vtDailyCents: Long, days: BenefitDays) =
+        withContext(Dispatchers.IO) {
+            mutex.withLock {
+                BenefitCalculator.validateDays(month, days)
+                val overrides = readBenefits().overrides.toMutableMap()
+                if (days == BenefitDays()) overrides.remove(month) else overrides[month] = days
+                val updated = BenefitSettings(vrDailyCents, vtDailyCents, overrides.toMap())
+                val editor = benefitPreferences.edit()
+                    .putLong("vr_daily_cents", vrDailyCents)
+                    .putLong("vt_daily_cents", vtDailyCents)
+                val vrKey = "vr_days:$month"
+                val vtKey = "vt_days:$month"
+                val vrDays = days.vr
+                val vtDays = days.vt
+                if (vrDays == null) editor.remove(vrKey) else editor.putInt(vrKey, vrDays)
+                if (vtDays == null) editor.remove(vtKey) else editor.putInt(vtKey, vtDays)
+                // Commit on IO: do not announce success before disk persistence succeeds.
+                check(editor.commit()) { "Não foi possível salvar os benefícios no aparelho." }
+                _benefits.value = updated
+            }
+        }
 
     @Synchronized
     fun setCaptureEnabled(value: Boolean) {
         preferences.edit().putBoolean("enabled", value).apply()
         _captureEnabled.value = value
     }
+
+    @Synchronized
+    fun setAllowOtherApps(value: Boolean) {
+        preferences.edit().putBoolean("allow_other_apps", value).apply()
+        _allowOtherApps.value = value
+    }
+
+    fun allowsNotification(packageName: String): Boolean = NotificationCapturePolicy.allows(
+        packageName = packageName,
+        ownPackageName = appPackageName,
+        captureEnabled = _captureEnabled.value,
+        allowOtherApps = _allowOtherApps.value,
+        enabledLegacyPackages = _enabledBanks.value,
+    )
 
     @Synchronized
     fun setBankEnabled(packageName: String, enabled: Boolean) {
@@ -84,17 +148,26 @@ class LedgerRepository(context: Context) {
         }
     }
 
-    /** A fallback identity belongs to one active notification lifecycle, never to an amount. */
+    /** fallback identity belongs one active notification lifecycle. */
     suspend fun ingest(
         sourceKey: String, bankPackage: String, occurredAt: Long, text: String,
         fallbackIdentity: String? = null, observedAt: Long = occurredAt,
     ) = withContext(Dispatchers.IO) {
         mutex.withLock {
-            if (!_captureEnabled.value || bankPackage !in _enabledBanks.value) return@withLock
+            if (!allowsNotification(bankPackage)) return@withLock
             val parsed = NotificationParser.parse(text) ?: return@withLock
+            // Only financial events with directional and monetary evidence may reach storage.
+            if (!parsed.hasAmountCandidate ||
+                (parsed.direction == Direction.UNKNOWN && !parsed.hasEventStateSignal)) return@withLock
+            // A candidate without a reliable amount remains reviewable, never inferred as money.
+            val initialStatus = if (parsed.amountCents?.let { it > 0 } == true &&
+                parsed.direction != Direction.UNKNOWN) parsed.status else ReviewStatus.REVIEW
+            // Fingerprint parser output, not raw text, posting time or the stored review status.
+            // Length prefixes keep field boundaries unambiguous; null cannot match a numeric amount.
             val signature = MessageDigest.getInstance("SHA-256").digest(
-                listOf(parsed.amountCents, parsed.direction, parsed.method, parsed.status, parsed.reason)
-                    .joinToString("|").toByteArray(Charsets.UTF_8),
+                listOf(bankPackage, parsed.amountCents?.toString() ?: "null", parsed.direction.name,
+                    parsed.method.name, parsed.status.name, parsed.reason)
+                    .joinToString("") { "${it.length}:$it" }.toByteArray(Charsets.UTF_8),
             ).joinToString("") { "%02x".format(it) }
             val db = database.writableDatabase
             db.beginTransaction()
@@ -114,6 +187,7 @@ class LedgerRepository(context: Context) {
                         if (cursor.getInt(1) == 0 && cursor.getInt(2) == 0 && observedAt >= cursor.getLong(4)) {
                             val changed = cursor.getString(3) != signature
                             val updates = ContentValues().apply {
+                                // Even identical redelivery advances the watermark against stale callbacks.
                                 put("last_observed_at", observedAt)
                                 if (changed) {
                                     put("amount_cents", parsed.amountCents)
@@ -133,7 +207,7 @@ class LedgerRepository(context: Context) {
                     val transaction = Transaction(
                         id = UUID.randomUUID().toString(), sourceKey = canonicalKey,
                         bankPackage = bankPackage, amountCents = parsed.amountCents,
-                        direction = parsed.direction, method = parsed.method, status = parsed.status,
+                        direction = parsed.direction, method = parsed.method, status = initialStatus,
                         occurredAt = occurredAt, description = "Movimentação detectada", reason = parsed.reason,
                     )
                     db.insertOrThrow("transactions", null, values(transaction).apply {
@@ -388,6 +462,10 @@ private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "flux
         if (oldVersion < 2) {
             db.execSQL("ALTER TABLE transactions ADD COLUMN category TEXT NOT NULL DEFAULT 'UNCATEGORIZED'")
             createBudgets(db)
+if (oldVersion < 5) {
+    db.execSQL("""CREATE TABLE invoices (id TEXT PRIMARY KEY NOT NULL, account_id TEXT NOT NULL, month TEXT NOT NULL, due_date INTEGER NOT NULL, closing_date INTEGER NOT NULL, is_paid INTEGER NOT NULL DEFAULT 0, amount_cents INTEGER NOT NULL DEFAULT 0)""")
+    db.execSQL("ALTER TABLE transactions ADD COLUMN invoice_id TEXT")
+}
         }
         if (oldVersion < 3) {
             // Older schemas did not record which fields were edited. Preserve every old row.

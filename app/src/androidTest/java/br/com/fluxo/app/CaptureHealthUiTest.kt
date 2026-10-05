@@ -40,4 +40,37 @@ class CaptureHealthUiTest {
         compose.onAllNodes(hasText("Itaú", substring = true)).assertCountEquals(0)
         compose.onNodeWithText("Ausência de notificações não comprova falha.", substring = true).assertExists()
     }
+
+    @Test fun multiappDiagnosticsShowGenericSourceWithoutPackageName() {
+        compose.setContent { MaterialTheme {
+            CaptureHealthContent(
+                CaptureSnapshot(connected = true, lastObserved = mapOf("com.example.wallet" to 1700000000000)),
+                access = true,
+                capture = true,
+                banks = emptySet(),
+                allowOtherApps = true,
+            )
+        } }
+        compose.onNodeWithText("Outros apps: notificações observadas nesta sessão").assertIsDisplayed()
+        compose.onNodeWithText("eventos financeiros reconhecidos", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Outro app: notificação observada às", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("com.example.wallet", substring = true).assertDoesNotExist()
+    }
+
+    @Test fun disablingOtherAppsHidesPreviouslyObservedEvents() {
+        val allowOtherApps = androidx.compose.runtime.mutableStateOf(true)
+        compose.setContent { MaterialTheme {
+            CaptureHealthContent(
+                CaptureSnapshot(connected = true, lastObserved = mapOf("com.example.wallet" to 1700000000000)),
+                access = true,
+                capture = true,
+                banks = emptySet(),
+                allowOtherApps = allowOtherApps.value,
+            )
+        } }
+        compose.onNodeWithText("Outro app: notificação observada às", substring = true).assertExists()
+        compose.runOnIdle { allowOtherApps.value = false }
+        compose.onNodeWithText("Outro app: notificação observada às", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Outros apps:", substring = true).assertDoesNotExist()
+    }
 }
