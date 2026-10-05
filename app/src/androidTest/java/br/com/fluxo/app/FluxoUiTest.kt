@@ -70,7 +70,7 @@ class FluxoUiTest {
         compose.onNodeWithText(currency("125.90")).performScrollTo().assertIsDisplayed().performClick()
 
         compose.onNodeWithText("Valor em reais").performTextReplacement("130,45")
-        compose.onNodeWithText("Salvar e confirmar").performClick()
+        compose.onNodeWithText("Salvar lançamento").performClick()
         compose.waitUntil(10_000) { repository.transactions.value.singleOrNull()?.amountCents == 13045L }
         compose.onNodeWithText(currency("130.45")).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText(currency("125.90")).assertDoesNotExist()
@@ -107,7 +107,7 @@ class FluxoUiTest {
             compose.onNodeWithText("Meio: Outro / não informado").performScrollTo().performClick()
             compose.onNodeWithText(method, substring = false).performClick()
         }
-        compose.onNodeWithText("Salvar e confirmar").performClick()
+        compose.onNodeWithText("Salvar lançamento").performClick()
         compose.waitUntil(10_000) { repository.transactions.value.size == previousCount + 1 }
         compose.waitForIdle()
     }
