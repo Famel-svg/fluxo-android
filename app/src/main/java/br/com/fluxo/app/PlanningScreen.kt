@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -83,7 +84,8 @@ internal fun PlanningScreen(
     benefits: BenefitSettings,
     saveBenefits: (YearMonth, Long, Long, BenefitDays, Set<DayOfWeek>, Set<DayOfWeek>, () -> Unit) -> Unit,
     previousMonth: (() -> Unit)? = null,
-    nextMonth: (() -> Unit)? = null
+    nextMonth: (() -> Unit)? = null,
+    salaryMonthlyCents: Long = 0
 ) {
     val totals = remember(transactions, month) { SpendingAnalytics.byCategory(transactions, month) }
     val monthly = remember(transactions, month) { SpendingAnalytics.monthlyExpenses(transactions, month, 6) }
@@ -120,6 +122,7 @@ internal fun PlanningScreen(
             if (previousMonth != null && nextMonth != null) FluxoMonthBar(month, previousMonth, nextMonth)
         }
         item(key = "hero") { PlanningHero(total, previousTotal, month) }
+        if (salaryMonthlyCents > 0) item(key = "income") { ExpectedIncomeBlock(month, salaryMonthlyCents, benefits, total) }
         item(key = "monthly") { MonthlyExpensesTile(monthly) }
         item(key = "budgets-heading") { PlanningSectionTitle("Orçamentos") { BudgetMarkerLegend() } }
         if (monthBudgets.isEmpty()) item(key = "budgets-empty") {
@@ -211,6 +214,39 @@ private fun PlanningHero(total: BigInteger, previousTotal: BigInteger, month: Ye
                     modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(FluxoColors.Soft).padding(horizontal = 10.dp, vertical = 3.dp))
             }
         }
+    }
+}
+
+/**
+ * "Renda prevista do mês": salary + VR + VT estimate and the share of the salary already spent. A planning aid
+ * only; it never feeds income, expenses, cash or the observed result.
+ */
+@Composable
+private fun ExpectedIncomeBlock(month: YearMonth, salaryCents: Long, benefits: BenefitSettings, spent: BigInteger) {
+    val estimate = BenefitCalculator.estimate(month, benefits)
+    val salary = BigInteger.valueOf(salaryCents)
+    val expected = salary + estimate.totalCents
+    val percent = SalaryPlanner.percentSpent(salaryCents, spent) ?: 0
+    Column(
+        Modifier.fillMaxWidth().testTag("planning.income").clip(RoundedCornerShape(16.dp)).background(FluxoColors.Pale)
+            .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text("Renda prevista do mês", style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
+            modifier = Modifier.semantics { heading() })
+        Text("Salário ${planningMoney(salary)} + VR ${planningMoney(estimate.vrCents)} + VT ${planningMoney(estimate.vtCents)}",
+            style = FluxoType.Caption.copy(fontSize = 12.sp, fontFeatureSettings = "tnum"), color = FluxoColors.Ink)
+        Text("= ${planningMoney(expected)}", style = FluxoType.number(18.sp, FontWeight.ExtraBold), color = FluxoColors.Ink)
+        Text("Gastos do mês: $percent% do salário", color = if (percent > 100) FluxoColors.Expense else FluxoColors.Ink,
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold),
+            modifier = Modifier.padding(top = 4.dp).testTag("planning.salaryShare"))
+        BudgetBar(
+            spent = spent, limit = salary,
+            contentDescription = "Gastos do mês: $percent% do salário",
+            modifier = Modifier.fillMaxWidth().height(10.dp), thickness = 6.dp
+        )
+        Text("Estimativa para planejamento: não altera renda, gastos, caixa nem o resultado observado.",
+            style = FluxoType.Caption.copy(fontSize = 11.5.sp, lineHeight = 15.sp), color = FluxoColors.Mute)
     }
 }
 

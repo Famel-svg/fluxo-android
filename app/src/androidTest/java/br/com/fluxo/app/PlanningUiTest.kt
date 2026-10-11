@@ -160,6 +160,46 @@ class PlanningUiTest {
         compose.onNodeWithTag("benefits.total").assertTextEquals("Total estimado: ${currency("%d.%02d".format((3900L * vrCount + 1080L * vtCount) / 100, (3900L * vrCount + 1080L * vtCount) % 100))}")
     }
 
+    private fun showWithSalary(rows: List<Transaction>, salaryCents: Long, settings: BenefitSettings = BenefitSettings(3900, 1080)) {
+        compose.setContent { MaterialTheme {
+            PlanningScreen(rows, emptyList(), month, false, null, {}, { _, _ -> }, { _, _, _ -> }, settings,
+                { _, _, _, _, _, _, _ -> }, salaryMonthlyCents = salaryCents)
+        } }
+    }
+
+    @Test fun incomeBlockShowsSalaryPlusBenefitsAndHalfOfTheSalarySpent() {
+        showWithSalary(listOf(expense("half", 175000, PaymentMethod.DEBIT_CARD)), 350000)
+        val vr = 3900L * BenefitCalculator.scheduledDays(month, BenefitCalculator.WORKDAYS)
+        val vt = 1080L * BenefitCalculator.scheduledDays(month, BenefitCalculator.WORKDAYS)
+        fun cents(value: Long) = currency("%d.%02d".format(value / 100, value % 100))
+        compose.onNodeWithTag("planning.income").assertIsDisplayed()
+        compose.onNodeWithText("Renda prevista do mês").assertIsDisplayed()
+        compose.onNodeWithText("Salário ${cents(350000)} + VR ${cents(vr)} + VT ${cents(vt)}").assertIsDisplayed()
+        compose.onNodeWithText("= ${cents(350000 + vr + vt)}").assertIsDisplayed()
+        compose.onNodeWithTag("planning.salaryShare").assertTextEquals("Gastos do mês: 50% do salário")
+        compose.onNodeWithText("Estimativa para planejamento", substring = true).assertIsDisplayed()
+    }
+
+    @Test fun shareOfSalaryPastOneHundredPercentIsStillShownAsAnInteger() {
+        showWithSalary(listOf(expense("big", 400000, PaymentMethod.CREDIT_CARD)), 350000)
+        compose.onNodeWithTag("planning.salaryShare").assertTextEquals("Gastos do mês: 114% do salário")
+    }
+
+    @Test fun noSalaryMeansNoIncomeBlockAndASalaryDoesNotChangeTheMonthSpending() {
+        val rows = listOf(expense("a", 175000, PaymentMethod.DEBIT_CARD))
+        showWithSalary(rows, 0)
+        compose.onNodeWithTag("planning.income").assertDoesNotExist()
+        compose.onNodeWithTag("planning.salaryShare").assertDoesNotExist()
+        compose.onNodeWithText("Renda prevista do mês").assertDoesNotExist()
+    }
+
+    @Test fun incomeBlockDoesNotChangeTheSpendingHeroOrCategoryTotals() {
+        showWithSalary(listOf(expense("a", 175000, PaymentMethod.DEBIT_CARD)), 350000)
+        compose.onNodeWithText("Gastos do mês").assertIsDisplayed()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("1 lançamento(s) · 100,0% das despesas"))
+        compose.onNodeWithText("1 lançamento(s) · 100,0% das despesas").assertIsDisplayed()
+    }
+
     private fun expense(id: String, amount: Long, method: PaymentMethod) = Transaction(
         id, null, "manual", amount, Direction.EXPENSE, method, ReviewStatus.CONFIRMED,
         month.atDay(2).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli(), id, category = Category.FOOD
