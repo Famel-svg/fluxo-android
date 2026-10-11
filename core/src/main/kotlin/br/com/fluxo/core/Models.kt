@@ -18,16 +18,6 @@ data class Account(val id: String, val name: String, val bankPackage: String,
     val openingCents: Long, val openingAt: Long, val archived: Boolean = false,
     val type: AccountType = AccountType.CHECKING)
 
-data class Invoice(
-    val id: String,
-    val accountId: String,
-    val month: String,
-    val dueDate: Long,
-    val closingDate: Long,
-    val isPaid: Boolean,
-    val amountCents: Long,
-)
-
 data class ParsedNotification(
     val amountCents: Long?,
     val direction: Direction,
@@ -53,5 +43,4 @@ data class Transaction(
     val category: Category = Category.UNCATEGORIZED,
     val accountId: String? = null,
     val transferId: String? = null,
-    val invoiceId: String? = null, // Link para fatura (se for cartão)
 )

@@ -2,6 +2,7 @@ package br.com.fluxo.app
 
 import android.content.ContentValues
 import android.content.Context
+import android.database.SQLException
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import br.com.fluxo.core.BenefitCalculator
@@ -430,7 +431,7 @@ class LedgerRepository(context: Context) {
     }
 }
 
-private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "fluxo.db", null, 4) {
+private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "fluxo.db", null, 5) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
             CREATE TABLE transactions (
@@ -462,10 +463,6 @@ private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "flux
         if (oldVersion < 2) {
             db.execSQL("ALTER TABLE transactions ADD COLUMN category TEXT NOT NULL DEFAULT 'UNCATEGORIZED'")
             createBudgets(db)
-if (oldVersion < 5) {
-    db.execSQL("""CREATE TABLE invoices (id TEXT PRIMARY KEY NOT NULL, account_id TEXT NOT NULL, month TEXT NOT NULL, due_date INTEGER NOT NULL, closing_date INTEGER NOT NULL, is_paid INTEGER NOT NULL DEFAULT 0, amount_cents INTEGER NOT NULL DEFAULT 0)""")
-    db.execSQL("ALTER TABLE transactions ADD COLUMN invoice_id TEXT")
-}
         }
         if (oldVersion < 3) {
             // Older schemas did not record which fields were edited. Preserve every old row.
@@ -479,7 +476,26 @@ if (oldVersion < 5) {
             db.execSQL("ALTER TABLE transactions ADD COLUMN transfer_id TEXT")
             createAccounts(db)
         }
+        if (oldVersion < 5) {
+            // A v4 build created unused invoice structures only when upgrading from v1.
+            // Nothing ever wrote to them; remove them so every install converges on one schema.
+            db.execSQL("DROP TABLE IF EXISTS invoices")
+            if (hasColumn(db, "transactions", "invoice_id")) {
+                try {
+                    db.execSQL("ALTER TABLE transactions DROP COLUMN invoice_id")
+                } catch (_: SQLException) {
+                    // SQLite before 3.35 cannot drop columns. The always-null column stays;
+                    // later migrations must check hasColumn before adding it again.
+                }
+            }
+        }
     }
+
+    private fun hasColumn(db: SQLiteDatabase, table: String, column: String): Boolean =
+        db.rawQuery("PRAGMA table_info($table)", null).use { cursor ->
+            val name = cursor.getColumnIndexOrThrow("name")
+            generateSequence { if (cursor.moveToNext()) cursor.getString(name) else null }.any { it == column }
+        }
 
     private fun createAccounts(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE accounts (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, bank_package TEXT NOT NULL, opening_cents INTEGER NOT NULL, opening_at INTEGER NOT NULL, archived INTEGER NOT NULL DEFAULT 0, type TEXT NOT NULL)")
