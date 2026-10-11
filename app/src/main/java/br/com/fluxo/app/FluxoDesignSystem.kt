@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -172,14 +175,18 @@ internal object FluxoType {
 
 private fun fluxoTypography(): Typography {
     val base = Typography()
-    fun TextStyle.display(w: FontWeight) = copy(fontFamily = FluxoType.Display, fontWeight = w, letterSpacing = (-0.01).em)
-    fun TextStyle.body(w: FontWeight = FontWeight.Normal) = copy(fontFamily = FluxoType.Body, fontWeight = w)
+    // Letter spacing is explicit (the prototype uses none for text) and line height is relative (1.3em)
+    // so call sites that change fontSize keep the prototype's proportions.
+    fun TextStyle.display(w: FontWeight, lh: TextUnit = 1.3.em) =
+        copy(fontFamily = FluxoType.Display, fontWeight = w, letterSpacing = (-0.01).em, lineHeight = lh)
+    fun TextStyle.body(w: FontWeight = FontWeight.Normal) =
+        copy(fontFamily = FluxoType.Body, fontWeight = w, letterSpacing = 0.sp, lineHeight = 1.3.em)
     return base.copy(
         displayLarge = base.displayLarge.display(FontWeight.ExtraBold),
         displayMedium = base.displayMedium.display(FontWeight.ExtraBold),
         displaySmall = base.displaySmall.display(FontWeight.ExtraBold),
         headlineLarge = base.headlineLarge.display(FontWeight.ExtraBold),
-        headlineMedium = base.headlineMedium.display(FontWeight.ExtraBold).copy(letterSpacing = (-0.02).em),
+        headlineMedium = base.headlineMedium.display(FontWeight.ExtraBold, 1.05.em).copy(letterSpacing = (-0.02).em),
         headlineSmall = base.headlineSmall.display(FontWeight.ExtraBold),
         titleLarge = base.titleLarge.display(FontWeight.ExtraBold),
         titleMedium = base.titleMedium.display(FontWeight.ExtraBold),
@@ -235,9 +242,10 @@ internal fun FluxoVisualTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = FluxoLightColorScheme,
         typography = FluxoTypography,
-        shapes = FluxoMaterialShapes,
-        content = content
-    )
+        shapes = FluxoMaterialShapes
+    ) {
+        ProvideTextStyle(MaterialTheme.typography.bodyMedium, content)
+    }
 }
 
 /** Material typography wired to [FluxoType]: display family for display/headline/title, body family elsewhere. */
@@ -314,39 +322,41 @@ internal fun FluxoHero(
     trailing: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit = {}
 ) {
-    Column(
+    val overlay = LocalDensity.current.fontScale < 1.3f
+    Box(
         modifier
             .fillMaxWidth()
             .clip(FluxoShapes.Hero)
             .background(FluxoColors.Petrol)
-            .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
-        Row(verticalAlignment = Alignment.Top) {
-            Column(Modifier.weight(1f)) {
-                Text(label, color = Color.White, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold))
-                Text(
-                    buildAnnotatedString {
-                        if (currency != null) {
-                            withStyle(SpanStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.sp)) { append("$currency ") }
-                        }
-                        append(value)
-                    },
-                    color = Color.White, style = FluxoType.HeroNumber, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip
-                )
-                if (equation != null) Text(equation, color = Color.White, style = FluxoType.Caption.copy(fontFeatureSettings = "tnum"))
-            }
-            if (trailing != null) trailing()
-        }
-        if (note != null) {
-            Spacer(Modifier.height(6.dp))
+        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 11.dp, bottom = 12.dp)) {
+            Text(label, color = Color.White, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold))
             Text(
-                note,
-                color = FluxoColors.Ink,
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, fontSize = 11.5.sp),
-                modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(FluxoColors.Soft).padding(horizontal = 10.dp, vertical = 3.dp)
+                buildAnnotatedString {
+                    if (currency != null) {
+                        withStyle(SpanStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.sp)) { append("$currency ") }
+                    }
+                    append(value)
+                },
+                color = Color.White, style = FluxoType.HeroNumber, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip,
+                modifier = Modifier.padding(top = 1.dp, bottom = 3.dp)
             )
+            if (equation != null) Text(
+                equation, color = Color.White,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, fontFeatureSettings = "tnum")
+            )
+            if (note != null) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    note,
+                    color = FluxoColors.Ink,
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, fontSize = 11.5.sp),
+                    modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(FluxoColors.Soft).padding(horizontal = 10.dp, vertical = 3.dp)
+                )
+            }
+            content()
         }
-        content()
+        if (trailing != null && overlay) Box(Modifier.align(Alignment.TopEnd).padding(end = 12.dp, top = 24.dp)) { trailing() }
     }
 }
 
@@ -365,6 +375,47 @@ internal fun FluxoScreenHeader(
         }
         if (trailing != null) trailing()
     }
+}
+
+/**
+ * Compact top row used instead of screen titles: previous/next arrows around the month label on the
+ * start side and an optional [trailing] action group on the end side (stacked below at large font).
+ */
+@Composable
+internal fun FluxoMonthBar(
+    month: java.time.YearMonth,
+    previous: () -> Unit,
+    next: () -> Unit,
+    modifier: Modifier = Modifier,
+    trailing: (@Composable RowScope.() -> Unit)? = null
+) {
+    val label = month.format(java.time.format.DateTimeFormatter.ofPattern("MMMM 'de' yyyy", ptBr)).replaceFirstChar { it.titlecase(ptBr) }
+    val left: @Composable RowScope.() -> Unit = {
+        MonthArrow(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Mês anterior", previous)
+        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, color = FluxoColors.Ink,
+            style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.5.sp, fontWeight = FontWeight.Bold),
+            modifier = Modifier.weight(1f, fill = false))
+        MonthArrow(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Próximo mês", next)
+    }
+    if (LocalDensity.current.fontScale >= 1.3f) {
+        Column(modifier.fillMaxWidth()) {
+            Row(verticalAlignment = Alignment.CenterVertically, content = left)
+            if (trailing != null) Row(verticalAlignment = Alignment.CenterVertically, content = trailing)
+        }
+    } else {
+        Row(modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(1f, fill = trailing == null), verticalAlignment = Alignment.CenterVertically, content = left)
+            if (trailing != null) trailing()
+        }
+    }
+}
+
+@Composable
+private fun MonthArrow(icon: ImageVector, description: String, onClick: () -> Unit) {
+    Box(
+        Modifier.size(width = 32.dp, height = 44.dp).clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) { Icon(icon, description, tint = FluxoColors.Petrol, modifier = Modifier.size(22.dp)) }
 }
 
 /**
@@ -415,7 +466,7 @@ internal fun FluxoEmptyState(
     }
 }
 
-/** Adaptive pair: column below 340dp or fontScale >= 1.3, otherwise equal columns gap 12dp. */
+/** Adaptive pair: column below 300dp or fontScale >= 1.3, otherwise equal columns gap 12dp. */
 @Composable
 internal fun FluxoAdaptivePair(
     modifier: Modifier = Modifier,
@@ -424,7 +475,7 @@ internal fun FluxoAdaptivePair(
 ) {
     val fontScale = LocalDensity.current.fontScale
     BoxWithConstraints(modifier.fillMaxWidth()) {
-        if (maxWidth < 340.dp || fontScale >= 1.3f) {
+        if (maxWidth < 300.dp || fontScale >= 1.3f) {
             Column(verticalArrangement = Arrangement.spacedBy(FluxoDesignTokens.ContentSpacing)) {
                 first(); second()
             }
@@ -462,7 +513,7 @@ internal fun FluxoChip(
     val border = when { review && !selected -> FluxoColors.Amber; else -> FluxoColors.Ink }
     val text = when { review -> FluxoColors.Ink; selected -> Color.White; else -> FluxoColors.Ink }
     Box(
-        modifier.heightIn(min = 48.dp).selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick),
+        modifier.heightIn(min = 44.dp).selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Box(
@@ -483,7 +534,7 @@ internal enum class FluxoBadgeKind { Automatic, Manual, Bank }
 internal fun FluxoBadge(text: String, modifier: Modifier = Modifier, kind: FluxoBadgeKind = FluxoBadgeKind.Automatic) {
     val (bg, fg) = if (kind == FluxoBadgeKind.Manual) FluxoColors.Soft to FluxoColors.Ink else FluxoColors.Ink to Color.White
     Text(
-        text, color = fg, maxLines = 1,
+        text, color = fg, maxLines = 1, softWrap = false,
         style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.02.em),
         modifier = modifier.clip(FluxoShapes.Badge).background(bg).padding(horizontal = 6.dp)
     )
@@ -518,7 +569,7 @@ internal fun FluxoPillButton(
     val alpha = if (enabled) 1f else .38f
     Row(
         modifier
-            .heightIn(min = 48.dp)
+            .heightIn(min = 44.dp)
             .clip(FluxoShapes.Pill)
             .background(fill.copy(alpha = fill.alpha * alpha))
             .border(borderWidth, borderColor.copy(alpha = alpha), FluxoShapes.Pill)

@@ -185,10 +185,10 @@ internal fun BarChart(
             if (showValueLabels && entry.valueLabel != null) {
                 val style = if (highlighted) bold else normal
                 val top = (baseline - barHeight - labelHeight - pad / 2f).coerceAtLeast(0f)
-                drawLabel(measurer, entry.valueLabel, style, cx, top, slot * 1.3f)
+                drawLabel(measurer, entry.valueLabel, style, cx, top, slot * 2.6f)
             }
             if (bottomReserve > 0f && entry.axisLabel != null) {
-                drawLabel(measurer, entry.axisLabel, if (highlighted) bold else normal, cx, baseline + pad, slot)
+                drawLabel(measurer, entry.axisLabel, if (highlighted) bold else normal, cx, baseline + pad, slot * 1.6f)
             }
         }
     }

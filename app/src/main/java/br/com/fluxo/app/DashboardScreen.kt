@@ -104,21 +104,15 @@ internal fun Dashboard(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().testTag("dashboard.neon"),
-        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 24.dp),
+        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         item {
-            FluxoScreenHeader(
-                "Início",
-                subtitle = month.format(DateTimeFormatter.ofPattern("MMMM 'de' yyyy", ptBr)).replaceFirstChar { it.titlecase(ptBr) },
-                trailing = { FluxoPillButton("Manual", add, style = FluxoButtonStyle.Quiet, icon = Icons.Default.Add) }
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = previous) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Mês anterior") }
-                IconButton(onClick = next) { Icon(Icons.AutoMirrored.Filled.ArrowForward, "Próximo mês") }
-                IconButton(onClick = { hidden = !hidden }, modifier = Modifier.testTag("dashboard.visibility")) {
-                    Icon(if (hidden) Icons.Default.VisibilityOff else Icons.Default.Visibility, if (hidden) "Mostrar valores do resumo" else "Ocultar valores do resumo")
+            FluxoMonthBar(month, previous, next) {
+                IconButton(onClick = { hidden = !hidden }, modifier = Modifier.size(36.dp, 44.dp).testTag("dashboard.visibility")) {
+                    Icon(if (hidden) Icons.Default.VisibilityOff else Icons.Default.Visibility, if (hidden) "Mostrar valores do resumo" else "Ocultar valores do resumo", modifier = Modifier.size(22.dp))
                 }
+                FluxoPillButton("Manual", add, style = FluxoButtonStyle.Quiet, icon = Icons.Default.Add)
             }
         }
         item {
@@ -198,8 +192,8 @@ internal fun Dashboard(
                     DonutChart(
                         slices = legend.map { DonutSlice(it.second, it.third) },
                         contentDescription = donutText + (topCategory?.let { "; maior: ${it.key.label}" } ?: ""),
-                        modifier = Modifier.padding(vertical = 4.dp).size(72.dp).align(Alignment.CenterHorizontally),
-                        strokeWidth = 11.dp
+                        modifier = Modifier.padding(vertical = 4.dp).size(80.dp).align(Alignment.CenterHorizontally),
+                        strokeWidth = 12.dp
                     ) {
                         if (topCategory != null) Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("${percent(topCategory.value, monthExpenses)}%", style = FluxoType.number(14.sp), color = FluxoColors.Ink)
@@ -255,7 +249,7 @@ internal fun Dashboard(
             }
             val fontScale = LocalDensity.current.fontScale
             BoxWithConstraints(Modifier.fillMaxWidth()) {
-                if (maxWidth < 340.dp || fontScale >= 1.3f) {
+                if (maxWidth < 300.dp || fontScale >= 1.3f) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { donutTile(); barTile(); splitTile() }
                 } else {
                     Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -268,7 +262,7 @@ internal fun Dashboard(
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 FluxoSectionHeading("Últimos lançamentos", Modifier.weight(1f))
-                Box(Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = showAll).padding(horizontal = 6.dp), contentAlignment = Alignment.CenterEnd) {
+                Box(Modifier.heightIn(min = 44.dp).clickable(role = Role.Button, onClick = showAll).padding(horizontal = 6.dp), contentAlignment = Alignment.CenterEnd) {
                     Text("Todos", style = FluxoType.Caption.copy(fontSize = 11.5.sp), color = FluxoColors.Mute)
                 }
             }
@@ -277,7 +271,7 @@ internal fun Dashboard(
             FluxoEmptyState("Seu mês começa aqui", "Adicione um lançamento ou configure a captura. Nenhum histórico anterior será importado.")
         } else if (hidden) item {
             Text("Lançamentos ocultos neste resumo.", style = MaterialTheme.typography.bodyMedium, color = FluxoColors.Mute)
-        } else items(rows.take(5), key = { it.id }) { TransactionRow(it, today, edit) }
+        } else item { Column { rows.take(5).forEach { key(it.id) { TransactionRow(it, today, edit) } } } }
         item {
             Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 if (pendingCredit > 0) Text("$pendingCredit lançamento(s) de crédito pendente(s) de revisão. Fatura, limite e vencimento não estão disponíveis; confira no emissor do cartão.", style = FluxoType.Caption, color = FluxoColors.Mute)
@@ -314,7 +308,7 @@ private fun TransactionRow(row: Transaction, today: LocalDate, edit: (Transactio
     val sign = when (row.direction) { Direction.INCOME -> "+"; Direction.EXPENSE -> "−"; Direction.UNKNOWN -> "" }
     val amountText = if (row.amountCents == null) money(row.amountCents) else sign + money(row.amountCents)
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { edit(row) }.padding(horizontal = 2.dp, vertical = 1.dp),
+        Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button) { edit(row) }.padding(horizontal = 2.dp, vertical = 1.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)
     ) {
         FluxoDot(fluxoCategoryColor(row.category))

@@ -128,21 +128,6 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
-        topBar = {
-            if (tab != 0) Surface(color = MaterialTheme.colorScheme.surface) {
-                Row(
-                    Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Image(painterResource(R.drawable.ic_fluxo_mark), contentDescription = null, modifier = Modifier.size(40.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Fluxo", style = MaterialTheme.typography.headlineMedium)
-                        if (!largeFont) Text("Suas finanças, no seu aparelho", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-        },
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             val destinations = listOf("Resumo", "Lançamentos", "Planejamento", "Ajustes")
@@ -165,7 +150,7 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
                         }
                     } else {
                         Row(
-                            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 6.dp, vertical = 6.dp),
+                            Modifier.fillMaxWidth().navigationBarsPadding().height(56.dp).padding(horizontal = 6.dp),
                             horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically
                         ) {
                             destinations.forEachIndexed { index, name ->
@@ -176,13 +161,11 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
                     }
                 }
             }
-        },
-        floatingActionButton = { if (tab == 1) FloatingActionButton(onClick = { model.resetEditError(); adding = true }, containerColor = FluxoColors.Petrol, contentColor = Color.White) { Icon(Icons.Default.Add, "Adicionar lançamento") } }
+        }
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 800.dp).fillMaxWidth()) {
                 if (captureError != null) Text(captureError.orEmpty(), modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-                if (tab != 0 && tab != 3 && !(tab == 1 && allMonths)) MonthPicker(month, { monthText = month.minusMonths(1).toString() }, { monthText = month.plusMonths(1).toString() })
                 when (tab) {
                     0 -> Dashboard(
                         rows = monthly, month = month,
@@ -203,13 +186,18 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
                         allMonths = allMonths,
                         setAllMonths = { allMonths = it },
                         edit = { model.resetEditError(); editingId = it.id },
+                        month = month,
+                        previousMonth = { monthText = month.minusMonths(1).toString() },
+                        nextMonth = { monthText = month.plusMonths(1).toString() },
+                        add = { model.resetEditError(); adding = true },
                         bankOptions = listOf<String?>(null, "manual") + supportedBanks.map { it.packageName },
                         bankLabel = ::bankName,
                         moneyLabel = ::money,
                         directionLabel = { it.label() },
                         methodLabel = { it.label() }
                     )
-                    2 -> PlanningScreen(transactions, budgets, month, saving, editError, model::resetEditError, model::saveBudget, model::deleteBudget, benefits, model::saveBenefits)
+                    2 -> PlanningScreen(transactions, budgets, month, saving, editError, model::resetEditError, model::saveBudget, model::deleteBudget, benefits, model::saveBenefits,
+                        previousMonth = { monthText = month.minusMonths(1).toString() }, nextMonth = { monthText = month.plusMonths(1).toString() })
                     else -> SettingsScreen(capture, allowOtherApps, banks, access, model, transactions)
                 }
             }
@@ -230,13 +218,13 @@ private fun FluxoNavItem(
     val fg = if (selected) Color.White else FluxoColors.Mute
     Column(
         modifier
-            .heightIn(min = 48.dp)
+            .heightIn(min = 44.dp)
             .widthIn(min = 60.dp)
             .clip(RoundedCornerShape(22.dp))
             .background(if (selected) FluxoColors.Petrol else Color.Transparent)
             .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .semantics { contentDescription = description }
-            .padding(horizontal = 10.dp, vertical = 3.dp),
+            .padding(horizontal = 10.dp, vertical = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
     ) {
         if (showIcon) Icon(icon, null, tint = fg, modifier = Modifier.size(20.dp))

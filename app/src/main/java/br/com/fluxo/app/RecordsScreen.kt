@@ -9,7 +9,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.foundation.border
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -64,6 +66,10 @@ internal fun RecordsScreen(
     moneyLabel: (Long?) -> String,
     directionLabel: (Direction) -> String,
     methodLabel: (PaymentMethod) -> String,
+    month: java.time.YearMonth = java.time.YearMonth.now(),
+    previousMonth: () -> Unit = {},
+    nextMonth: () -> Unit = {},
+    add: () -> Unit = {},
     model: LedgerViewModel = viewModel()
 ) {
     val saving by model.saving.collectAsStateWithLifecycle()
@@ -97,26 +103,56 @@ internal fun RecordsScreen(
     }
     Surface(modifier = Modifier.fillMaxSize(), color = FluxoColors.Paper) {
         LazyColumn(
-            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 100.dp),
+            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             item {
-                OutlinedTextField(
+                val addButton: @Composable RowScope.() -> Unit = {
+                    Box(
+                        Modifier.size(44.dp).clip(FluxoShapes.Pill).border(2.dp, FluxoColors.Ink, FluxoShapes.Pill)
+                            .clickable(role = Role.Button, onClick = add),
+                        contentAlignment = Alignment.Center
+                    ) { Icon(Icons.Default.Add, "Adicionar lançamento", tint = FluxoColors.Ink, modifier = Modifier.size(20.dp)) }
+                }
+                if (allMonths) Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Todos os meses", Modifier.weight(1f), color = FluxoColors.Ink, maxLines = 1,
+                        style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.5.sp, fontWeight = FontWeight.Bold))
+                    addButton()
+                } else FluxoMonthBar(month, previousMonth, nextMonth, trailing = addButton)
+            }
+            item {
+                val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                val fieldColors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = FluxoColors.Ink, unfocusedBorderColor = FluxoColors.Ink,
+                    focusedContainerColor = FluxoColors.Paper, unfocusedContainerColor = FluxoColors.Paper,
+                    focusedPlaceholderColor = FluxoColors.Mute, unfocusedPlaceholderColor = FluxoColors.Mute,
+                    focusedLeadingIconColor = FluxoColors.Ink, unfocusedLeadingIconColor = FluxoColors.Ink,
+                    cursorColor = FluxoColors.Ink
+                )
+                val fieldText = MaterialTheme.typography.bodyLarge.copy(fontSize = 13.5.sp, color = FluxoColors.Ink)
+                androidx.compose.foundation.text.BasicTextField(
                     value = query, onValueChange = { query = it },
-                    label = { Text("Buscar descrição, banco ou categoria") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 13.5.sp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = FluxoColors.Ink, unfocusedBorderColor = FluxoColors.Ink,
-                        focusedContainerColor = FluxoColors.Paper, unfocusedContainerColor = FluxoColors.Paper,
-                        focusedLabelColor = FluxoColors.Mute, unfocusedLabelColor = FluxoColors.Mute,
-                        focusedLeadingIconColor = FluxoColors.Ink, unfocusedLeadingIconColor = FluxoColors.Ink,
-                        cursorColor = FluxoColors.Ink
-                    ),
-                    // Allow the label and input to grow at accessibility font sizes.
-                    singleLine = false
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
+                    singleLine = true, textStyle = fieldText,
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(FluxoColors.Ink),
+                    interactionSource = interaction,
+                    decorationBox = { inner ->
+                        OutlinedTextFieldDefaults.DecorationBox(
+                            value = query, innerTextField = inner, enabled = true, singleLine = true,
+                            visualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
+                            interactionSource = interaction,
+                            placeholder = { Text("Buscar descrição, banco ou categoria", maxLines = 1, overflow = TextOverflow.Ellipsis, style = fieldText.copy(color = FluxoColors.Mute)) },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(17.dp)) },
+                            colors = fieldColors,
+                            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                            container = {
+                                OutlinedTextFieldDefaults.Container(
+                                    enabled = true, isError = false, interactionSource = interaction, colors = fieldColors,
+                                    shape = RoundedCornerShape(22.dp), focusedBorderThickness = 2.dp, unfocusedBorderThickness = 2.dp
+                                )
+                            }
+                        )
+                    }
                 )
             }
             item {
@@ -287,27 +323,27 @@ private fun RecordRow(
         Direction.UNKNOWN -> moneyLabel(row.amountCents)
     }
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { edit(row) }.padding(horizontal = 2.dp, vertical = 2.dp),
+        Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button) { edit(row) }.padding(horizontal = 2.dp, vertical = 1.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(9.dp)
     ) {
         FluxoDot(fluxoCategoryColor(row.category))
         Column(Modifier.weight(1f)) {
             Text(
-                row.description.ifBlank { shortMethod }, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, lineHeight = 16.sp, fontWeight = FontWeight.Bold)
+                row.description.ifBlank { shortMethod }, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, lineHeight = 15.sp, fontWeight = FontWeight.Bold)
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     row.category.label + " · " + bankLabel(row.bankPackage) + " · " + shortMethod,
-                    color = FluxoColors.Mute, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    color = FluxoColors.Mute, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     style = FluxoType.Caption, modifier = Modifier.weight(1f, fill = false)
                 )
                 if (row.sourceKey != null) FluxoBadge("automático") else FluxoBadge("manual", kind = FluxoBadgeKind.Manual)
             }
         }
         Text(
-            signed, maxLines = 1, softWrap = false,
+            signed, maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 2.dp),
             color = if (row.direction == Direction.INCOME) FluxoColors.Income else FluxoColors.Ink,
             style = FluxoType.RowNumber
         )
