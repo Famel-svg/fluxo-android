@@ -20,6 +20,7 @@ import br.com.fluxo.core.ReviewStatus
 import br.com.fluxo.core.Transaction
 import java.util.UUID
 import java.security.MessageDigest
+import java.time.DayOfWeek
 import java.time.YearMonth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,6 +42,13 @@ class LedgerRepository(context: Context) {
     private val benefitPreferences = context.getSharedPreferences("benefits", Context.MODE_PRIVATE)
     private val _benefits = MutableStateFlow(readBenefits())
     val benefits: StateFlow<BenefitSettings> = _benefits
+    // Local profile. The name never leaves the device: no logs, no CSV, no backup payload.
+    // Profile and benefits live in their own preference files, so clear() never touches them.
+    private val profilePreferences = context.getSharedPreferences("profile", Context.MODE_PRIVATE)
+    private val _profileName = MutableStateFlow(cleanProfileName(profilePreferences.getString("name", null).orEmpty()))
+    val profileName: StateFlow<String> = _profileName
+    private val _onboardingDone = MutableStateFlow(profilePreferences.getBoolean("onboarding_done", false))
+    val onboardingDone: StateFlow<Boolean> = _onboardingDone
     private val database = LedgerDatabase(context.applicationContext)
     private val mutex = Mutex()
     private val _transactions = MutableStateFlow<List<Transaction>>(emptyList())
@@ -73,19 +81,37 @@ class LedgerRepository(context: Context) {
                 }
             }
         }
-        return BenefitSettings(rate("vr_daily_cents"), rate("vt_daily_cents"), overrides.toMap())
+        return BenefitSettings(rate("vr_daily_cents"), rate("vt_daily_cents"), overrides.toMap(),
+            weekdaysFrom(stored["vr_weekdays"]), weekdaysFrom(stored["vt_weekdays"]))
     }
 
-    suspend fun saveBenefits(month: YearMonth, vrDailyCents: Long, vtDailyCents: Long, days: BenefitDays) =
+    private fun cleanProfileName(raw: String): String = raw.trim().take(MAX_PROFILE_NAME).trim()
+
+    /** Missing or malformed values fall back to Monday-Friday; mask 0 is a valid empty schedule. */
+    private fun weekdaysFrom(stored: Any?): Set<DayOfWeek> {
+        val mask = stored as? Int
+        return if (mask == null || mask !in 0..WEEKDAY_MASK_ALL) BenefitCalculator.WORKDAYS else weekdaysOfMask(mask)
+    }
+
+    /** Rates, weekday sets and the month override are committed together; null weekdays keep the stored set. */
+    suspend fun saveBenefits(
+        month: YearMonth, vrDailyCents: Long, vtDailyCents: Long, days: BenefitDays,
+        vrWeekdays: Set<DayOfWeek>? = null, vtWeekdays: Set<DayOfWeek>? = null,
+    ) =
         withContext(Dispatchers.IO) {
             mutex.withLock {
                 BenefitCalculator.validateDays(month, days)
-                val overrides = readBenefits().overrides.toMutableMap()
+                val current = readBenefits()
+                val overrides = current.overrides.toMutableMap()
                 if (days == BenefitDays()) overrides.remove(month) else overrides[month] = days
-                val updated = BenefitSettings(vrDailyCents, vtDailyCents, overrides.toMap())
+                val vrSet = vrWeekdays ?: current.vrWeekdays
+                val vtSet = vtWeekdays ?: current.vtWeekdays
+                val updated = BenefitSettings(vrDailyCents, vtDailyCents, overrides.toMap(), vrSet, vtSet)
                 val editor = benefitPreferences.edit()
                     .putLong("vr_daily_cents", vrDailyCents)
                     .putLong("vt_daily_cents", vtDailyCents)
+                    .putInt("vr_weekdays", weekdayMask(vrSet))
+                    .putInt("vt_weekdays", weekdayMask(vtSet))
                 val vrKey = "vr_days:$month"
                 val vtKey = "vt_days:$month"
                 val vrDays = days.vr
@@ -104,12 +130,56 @@ class LedgerRepository(context: Context) {
         benefitPreferences.all.keys.filter { it.startsWith("vr_days:") || it.startsWith("vt_days:") }
             .forEach { editor.remove(it) }
         editor.putLong("vr_daily_cents", settings.vrDailyCents).putLong("vt_daily_cents", settings.vtDailyCents)
+            .putInt("vr_weekdays", weekdayMask(settings.vrWeekdays))
+            .putInt("vt_weekdays", weekdayMask(settings.vtWeekdays))
         settings.overrides.forEach { (month, days) ->
             days.vr?.let { editor.putInt("vr_days:$month", it) }
             days.vt?.let { editor.putInt("vt_days:$month", it) }
         }
         check(editor.commit()) { "Não foi possível salvar os benefícios no aparelho." }
         _benefits.value = settings
+    }
+
+    suspend fun setProfileName(name: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val clean = cleanProfileName(name)
+            check(profilePreferences.edit().putString("name", clean).commit()) { "Não foi possível salvar o nome no aparelho." }
+            _profileName.value = clean
+        }
+    }
+
+    suspend fun setOnboardingDone(done: Boolean) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            check(profilePreferences.edit().putBoolean("onboarding_done", done).commit()) {
+                "Não foi possível salvar a configuração inicial no aparelho."
+            }
+            _onboardingDone.value = done
+        }
+    }
+
+    /**
+     * First-run completion. Rates and weekday sets (month overrides untouched) are committed first, then name
+     * and flag together; any failure throws and leaves the flag unset so the screen can be retried.
+     */
+    suspend fun completeOnboarding(
+        name: String, vrDailyCents: Long, vtDailyCents: Long,
+        vrWeekdays: Set<DayOfWeek>, vtWeekdays: Set<DayOfWeek>,
+    ) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            require(vrDailyCents >= 0 && vtDailyCents >= 0) { "As tarifas não podem ser negativas." }
+            val updated = BenefitSettings(vrDailyCents, vtDailyCents, _benefits.value.overrides, vrWeekdays, vtWeekdays)
+            check(benefitPreferences.edit()
+                .putLong("vr_daily_cents", vrDailyCents).putLong("vt_daily_cents", vtDailyCents)
+                .putInt("vr_weekdays", weekdayMask(vrWeekdays)).putInt("vt_weekdays", weekdayMask(vtWeekdays))
+                .commit()) { "Não foi possível salvar os benefícios no aparelho." }
+            _benefits.value = updated
+            val clean = cleanProfileName(name)
+            check(profilePreferences.edit().putString("name", clean).putBoolean("onboarding_done", true).commit()) {
+                "Não foi possível salvar o perfil no aparelho."
+            }
+            _profileName.value = clean
+            _onboardingDone.value = true
+        }
     }
 
     @Synchronized
@@ -443,6 +513,10 @@ class LedgerRepository(context: Context) {
         db.query("transactions", arrayOf("transfer_id"), "id = ?", arrayOf(id), null, null, null).use { cursor ->
             require(!cursor.moveToFirst() || cursor.isNull(0)) { "Desvincule a transferência antes de editar ou excluir." }
         }
+    }
+
+    private companion object {
+        const val MAX_PROFILE_NAME = 40
     }
 }
 

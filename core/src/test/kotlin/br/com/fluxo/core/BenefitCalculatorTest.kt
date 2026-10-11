@@ -1,6 +1,7 @@
 package br.com.fluxo.core
 
 import java.math.BigInteger
+import java.time.DayOfWeek
 import java.time.YearMonth
 import org.junit.Assert.*
 import org.junit.Test
@@ -85,6 +86,54 @@ class BenefitCalculatorTest {
         assertEquals(product, result.vrCents)
         assertEquals(product, result.vtCents)
         assertEquals(BigInteger("571849066284996100034"), result.totalCents)
+    }
+
+    @Test fun `each benefit counts its own weekdays`() {
+        val monThu = setOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY)
+        val settings = BenefitSettings(3900, 1080, vtWeekdays = monThu)
+        // September 2026 starts on a Tuesday: 22 Monday-Friday days, 18 Monday-Thursday days.
+        val sep = BenefitCalculator.estimate(september, settings)
+        assertEquals(22, sep.vrAutomaticDays)
+        assertEquals(18, sep.vtAutomaticDays)
+        assertEquals(BigInteger.valueOf(85800), sep.vrCents)
+        assertEquals(BigInteger.valueOf(19440), sep.vtCents)
+        assertEquals(BigInteger.valueOf(105240), sep.totalCents)
+        // October 2026 starts on a Thursday: 22 Monday-Friday days but only 17 Monday-Thursday days.
+        val oct = BenefitCalculator.estimate(YearMonth.of(2026, 10), settings)
+        assertEquals(22, oct.vrDays)
+        assertEquals(17, oct.vtDays)
+        assertEquals(BigInteger.valueOf(85800), oct.vrCents)
+        assertEquals(BigInteger.valueOf(18360), oct.vtCents)
+        assertEquals(BigInteger.valueOf(104160), oct.totalCents)
+    }
+
+    @Test fun `scheduled days cover leap february and weekends`() {
+        val feb2024 = YearMonth.of(2024, 2)
+        assertEquals(21, BenefitCalculator.scheduledDays(feb2024, BenefitCalculator.WORKDAYS))
+        assertEquals(29, BenefitCalculator.scheduledDays(feb2024, DayOfWeek.values().toSet()))
+        assertEquals(4, BenefitCalculator.scheduledDays(feb2024, setOf(DayOfWeek.SATURDAY)))
+        assertEquals(5, BenefitCalculator.scheduledDays(feb2024, setOf(DayOfWeek.THURSDAY)))
+        assertEquals(20, BenefitCalculator.scheduledDays(YearMonth.of(2025, 2), BenefitCalculator.WORKDAYS))
+    }
+
+    @Test fun `empty weekday set is valid and yields zero`() {
+        val result = BenefitCalculator.estimate(september,
+            BenefitSettings(3900, 1080, vrWeekdays = emptySet()))
+        assertEquals(0, result.vrDays)
+        assertEquals(22, result.vtDays)
+        assertEquals(BigInteger.ZERO, result.vrCents)
+        assertEquals(0, BenefitCalculator.scheduledDays(september, emptySet()))
+    }
+
+    @Test fun `manual override wins over the weekday schedule`() {
+        val settings = BenefitSettings(3900, 1080, mapOf(september to BenefitDays(vr = 3, vt = 0)),
+            vrWeekdays = setOf(DayOfWeek.MONDAY), vtWeekdays = BenefitCalculator.WORKDAYS)
+        val result = BenefitCalculator.estimate(september, settings)
+        assertEquals(4, result.vrAutomaticDays)
+        assertEquals(3, result.vrDays)
+        assertEquals(0, result.vtDays)
+        assertEquals(22, result.vtAutomaticDays)
+        assertEquals(BigInteger.valueOf(11700), result.totalCents)
     }
 
     private fun rejects(action: () -> Unit) {
