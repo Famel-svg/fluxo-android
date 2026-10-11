@@ -67,13 +67,14 @@ class FluxoUiTest {
         compose.onNodeWithTag("navigation.1").performClick()
         compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Mercado sintético"))
         compose.onNodeWithText("Mercado sintético").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText(currency("125.90")).performScrollTo().assertIsDisplayed().performClick()
+        // Day-list rows show the signed amount; the exact unsigned text belongs to the 7-day strip, which is not clickable.
+        compose.onNodeWithText("−" + currency("125.90")).performScrollTo().assertIsDisplayed().performClick()
 
         compose.onNodeWithText("Valor em reais").performTextReplacement("130,45")
         compose.onNodeWithText("Salvar lançamento").performClick()
         compose.waitUntil(10_000) { repository.transactions.value.singleOrNull()?.amountCents == 13045L }
-        compose.onNodeWithText(currency("130.45")).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText(currency("125.90")).assertDoesNotExist()
+        compose.onNodeWithText("−" + currency("130.45")).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("−" + currency("125.90")).assertDoesNotExist()
 
         compose.onNodeWithText("Mercado sintético").performScrollTo().performClick()
         compose.onNodeWithText("Excluir lançamento").performScrollTo().performClick()
@@ -91,10 +92,13 @@ class FluxoUiTest {
         addExpense("80,00", "Crédito sintético", "Cartão de crédito")
         compose.onNodeWithTag("navigation.0").performClick()
 
-        assertMetric("Saídas de caixa", "20.00")
-        assertMetric("Compras no crédito", "80.00")
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("RESULTADO OBSERVADO"))
-        compose.onNodeWithText(currency("-20.00")).assertIsDisplayed()
+        // Hero: only the R$ 20,00 cash outflow feeds the observed result; credit is excluded.
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Resultado observado do mês"))
+        compose.onNodeWithText("Entradas ${currency("0.00")} − saídas de caixa ${currency("20.00")}").assertIsDisplayed()
+        compose.onNodeWithText("R$ −20,00").assertIsDisplayed()
+        // Credit commitments are a separate row, not mixed into cash.
+        compose.onNodeWithText("Compras no crédito").performScrollTo().assertIsDisplayed()
+        compose.onNode(hasText(currency("80.00")) and hasAnySibling(hasText("Compras no crédito"))).performScrollTo().assertIsDisplayed()
     }
 
     private fun addExpense(amount: String, description: String, method: String? = null) {
@@ -110,11 +114,6 @@ class FluxoUiTest {
         compose.onNodeWithText("Salvar lançamento").performClick()
         compose.waitUntil(10_000) { repository.transactions.value.size == previousCount + 1 }
         compose.waitForIdle()
-    }
-
-    private fun assertMetric(label: String, value: String) {
-        compose.onNodeWithText(label, substring = true).performScrollTo()
-        compose.onNode(hasText(currency(value)) and hasAnySibling(hasText(label)), useUnmergedTree = true).assertIsDisplayed()
     }
 
     private fun currency(value: String): String = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("pt-BR")).format(BigDecimal(value))
