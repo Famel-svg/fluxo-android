@@ -25,6 +25,10 @@ captures/
 .swarm/
 .claude/
 .worktrees/
-.artifacts/fluxo-preview/
+# Local evidence, screenshots and scratch output
+.artifacts/
+artifacts/
+/build_*.txt
+/test_*.txt
 __pycache__/
 *.py[cod]
