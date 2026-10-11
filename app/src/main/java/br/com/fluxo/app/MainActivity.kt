@@ -13,6 +13,13 @@ import androidx.core.view.WindowCompat
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.outlined.BarChart
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -49,10 +56,10 @@ import java.time.format.DateTimeFormatter
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val navy = android.graphics.Color.rgb(0, 16, 32)
+        val paper = android.graphics.Color.rgb(0xFB, 0xFC, 0xFC)
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(navy),
-            navigationBarStyle = SystemBarStyle.dark(navy)
+            statusBarStyle = SystemBarStyle.light(paper, paper),
+            navigationBarStyle = SystemBarStyle.light(paper, paper)
         )
         setContent { FluxoTheme { FluxoScreen() } }
     }
@@ -107,8 +114,8 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
     SideEffect {
         activity?.window?.let { window ->
             val controller = WindowCompat.getInsetsController(window, window.decorView)
-            controller.isAppearanceLightStatusBars = false
-            controller.isAppearanceLightNavigationBars = false
+            controller.isAppearanceLightStatusBars = true
+            controller.isAppearanceLightNavigationBars = true
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 window.isStatusBarContrastEnforced = false
                 window.isNavigationBarContrastEnforced = false
@@ -130,7 +137,7 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
                 ) {
                     Image(painterResource(R.drawable.ic_fluxo_mark), contentDescription = null, modifier = Modifier.size(40.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("Fluxo", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                        Text("Fluxo", style = MaterialTheme.typography.headlineMedium)
                         if (!largeFont) Text("Suas finanças, no seu aparelho", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -140,49 +147,37 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
         bottomBar = {
             val destinations = listOf("Resumo", "Lançamentos", "Planejamento", "Ajustes")
             val labels = listOf("Início", "Registros", "Planejar", "Ajustes")
-            val icons = listOf(Icons.Default.Home, Icons.AutoMirrored.Filled.ReceiptLong, Icons.Default.PieChart, Icons.Default.Settings)
-            if (largeFont) {
-                Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
-                    Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp)) {
-                        destinations.chunked(2).forEachIndexed { row, names ->
-                            Row(Modifier.fillMaxWidth()) {
-                                names.forEachIndexed { column, name ->
-                                    val index = row * 2 + column
-                                    TextButton(
-                                        onClick = { tab = index },
-                                        modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("navigation.$index").semantics { selected = tab == index; role = Role.Tab; contentDescription = name },
-                                        colors = ButtonDefaults.textButtonColors(
-                                            containerColor = if (tab == index) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
-                                            contentColor = if (tab == index) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.primary
-                                        )
-                                    ) {
-                                        Text(labels[index], textAlign = TextAlign.Center)
+            val icons = listOf(Icons.Outlined.Home, Icons.AutoMirrored.Filled.ReceiptLong, Icons.Outlined.BarChart, Icons.Outlined.Tune)
+            Surface(color = FluxoColors.Paper, tonalElevation = 0.dp) {
+                Column(Modifier.fillMaxWidth()) {
+                    HorizontalDivider(color = FluxoColors.Line)
+                    if (largeFont) {
+                        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp)) {
+                            destinations.chunked(2).forEachIndexed { row, names ->
+                                Row(Modifier.fillMaxWidth()) {
+                                    names.forEachIndexed { column, name ->
+                                        val index = row * 2 + column
+                                        FluxoNavItem(labels[index], name, icons[index], tab == index, { tab = index },
+                                            Modifier.weight(1f).testTag("navigation.$index"), showIcon = false)
                                     }
                                 }
                             }
                         }
-                    }
-                }
-            } else {
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
-                    destinations.forEachIndexed { index, name ->
-                        NavigationBarItem(
-                            modifier = Modifier.testTag("navigation.$index").semantics { contentDescription = name },
-                            selected = tab == index, onClick = { tab = index },
-                            label = { Text(labels[index]) }, icon = { Icon(icons[index], null) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        )
+                    } else {
+                        Row(
+                            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 6.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            destinations.forEachIndexed { index, name ->
+                                FluxoNavItem(labels[index], name, icons[index], tab == index, { tab = index },
+                                    Modifier.testTag("navigation.$index"))
+                            }
+                        }
                     }
                 }
             }
         },
-        floatingActionButton = { if (tab == 1) FloatingActionButton(onClick = { model.resetEditError(); adding = true }) { Icon(Icons.Default.Add, "Adicionar lançamento") } }
+        floatingActionButton = { if (tab == 1) FloatingActionButton(onClick = { model.resetEditError(); adding = true }, containerColor = FluxoColors.Petrol, contentColor = Color.White) { Icon(Icons.Default.Add, "Adicionar lançamento") } }
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 800.dp).fillMaxWidth()) {
@@ -226,11 +221,35 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
         onDismiss = { adding = false; editingId = null }, onSave = { model.save(it) { adding = false; editingId = null } }, onDelete = { model.delete(it) { editingId = null } })
 }
 
+/** Bottom navigation destination: petrol pill with white icon and label when selected. */
+@Composable
+private fun FluxoNavItem(
+    label: String, description: String, icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, showIcon: Boolean = true
+) {
+    val fg = if (selected) Color.White else FluxoColors.Mute
+    Column(
+        modifier
+            .heightIn(min = 48.dp)
+            .widthIn(min = 60.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(if (selected) FluxoColors.Petrol else Color.Transparent)
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            .semantics { contentDescription = description }
+            .padding(horizontal = 10.dp, vertical = 3.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
+    ) {
+        if (showIcon) Icon(icon, null, tint = fg, modifier = Modifier.size(20.dp))
+        Text(label, color = fg, textAlign = TextAlign.Center, maxLines = 1,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold))
+    }
+}
+
 @Composable
 internal fun MonthPicker(month: YearMonth, previous: () -> Unit, next: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-        IconButton(onClick = previous) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Mês anterior") }
+        IconButton(onClick = previous) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Mês anterior", tint = FluxoColors.Petrol) }
         Text(month.format(DateTimeFormatter.ofPattern("MMMM 'de' yyyy", ptBr)).replaceFirstChar { it.titlecase(ptBr) }, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.titleMedium)
-        IconButton(onClick = next) { Icon(Icons.AutoMirrored.Filled.ArrowForward, "Próximo mês") }
+        IconButton(onClick = next) { Icon(Icons.AutoMirrored.Filled.ArrowForward, "Próximo mês", tint = FluxoColors.Petrol) }
     }
 }
