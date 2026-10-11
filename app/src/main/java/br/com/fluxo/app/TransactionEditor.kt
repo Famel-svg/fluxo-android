@@ -65,7 +65,9 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
     val parsedDate = remember(date) { runCatching { LocalDate.parse(date, DateTimeFormatter.ofPattern("dd/MM/uuuu").withResolverStyle(java.time.format.ResolverStyle.STRICT)) }.getOrNull() }
     Dialog(onDismissRequest = { if (!saving) onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = FluxoColors.Paper) {
-            Column(Modifier.fillMaxSize().imePadding()) {
+            // Centred column so wide layouts do not stretch the form and the save button edge to edge.
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            Column(Modifier.widthIn(max = 560.dp).fillMaxSize().imePadding()) {
                 Row(
                     Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -142,6 +144,7 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
         onSave(Transaction(existing?.id ?: UUID.randomUUID().toString(), existing?.sourceKey, bank, cents, direction, method, ReviewStatus.CONFIRMED, occurred, description.ifBlank { "Lançamento manual" }, "", category, accountId))
                     }
                 )
+            }
             }
         }
     }

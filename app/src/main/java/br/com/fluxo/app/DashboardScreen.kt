@@ -28,6 +28,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import br.com.fluxo.core.BenefitBalance
@@ -220,7 +221,7 @@ internal fun Dashboard(
                     }
                 }
             }
-            val barTile: @Composable () -> Unit = {
+            val barTile: @Composable (Dp) -> Unit = { chartHeight ->
                 FluxoTile(Modifier.fillMaxWidth(), role = FluxoTileRole.Outlined) {
                     Text("Gastos por dia", style = TileTitle)
                     Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -232,7 +233,7 @@ internal fun Dashboard(
                             BarEntry(d.totalCents, dayLabels[i], if (!hidden && peak != null && peak.index == i) plainMoney(d.totalCents).removePrefix("−") else null)
                         },
                         contentDescription = barText,
-                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp).height(84.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp).height(chartHeight),
                         highlightedIndex = if (currentMonth) daily.lastIndex else null,
                         showValueLabels = !hidden
                     )
@@ -256,12 +257,15 @@ internal fun Dashboard(
             }
             val fontScale = LocalDensity.current.fontScale
             BoxWithConstraints(Modifier.fillMaxWidth()) {
+                // Wider phones give extra width to the donut tile and a little more height to the bars (84dp at 320dp).
+                val available = maxWidth
+                val chartHeight = (84.dp + (available - 320.dp).coerceAtLeast(0.dp) * 0.25f).coerceAtMost(120.dp)
                 if (maxWidth < 300.dp || fontScale >= 1.3f) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { donutTile(); barTile(); splitTile() }
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { donutTile(); barTile(84.dp); splitTile() }
                 } else {
                     Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Box(Modifier.width(148.dp).fillMaxHeight()) { donutTile() }
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) { barTile(); splitTile() }
+                        Box(Modifier.width((available * 0.34f).coerceIn(148.dp, 190.dp)).fillMaxHeight()) { donutTile() }
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) { barTile(chartHeight); splitTile() }
                     }
                 }
             }
