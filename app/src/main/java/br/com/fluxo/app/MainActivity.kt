@@ -186,7 +186,8 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
                         review = { filter = 3; allMonths = false; tab = 1 },
                         add = { model.resetEditError(); adding = true },
                         edit = { model.resetEditError(); editingId = it.id },
-                        greetingName = profileName
+                        greetingName = profileName,
+                        benefits = benefits
                     )
                     1 -> RecordsScreen(
                         rows = if (allMonths) transactions else monthly,

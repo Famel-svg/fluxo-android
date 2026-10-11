@@ -126,6 +126,7 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                         Choice("Conta", accountId, listOf<String?>(null) + accounts.filter { !it.archived || it.id == accountId }.map { it.id },
                             { id -> accounts.firstOrNull { it.id == id }?.name ?: "Não atribuída" }) { id -> accountId = id; accounts.firstOrNull { it.id == id }?.let { bank = it.bankPackage } }
                         if (method == PaymentMethod.CREDIT_CARD) Text("Compras no crédito ficam separadas das saídas de caixa.", style = MaterialTheme.typography.bodySmall, color = FluxoColors.Mute)
+                        if (method.isVoucher) Text("Gastos com vale ficam fora das saídas de caixa e abatem o saldo estimado do vale.", style = MaterialTheme.typography.bodySmall, color = FluxoColors.Mute)
                         if (existing != null) TextButton(enabled = !saving, onClick = { deleting = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Excluir lançamento", color = FluxoColors.Expense, style = MaterialTheme.typography.labelLarge) }
                     }
                     Spacer(Modifier.height(4.dp))

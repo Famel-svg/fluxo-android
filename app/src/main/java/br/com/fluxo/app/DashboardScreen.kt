@@ -30,6 +30,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import br.com.fluxo.core.BenefitBalance
+import br.com.fluxo.core.BenefitCalculator
+import br.com.fluxo.core.BenefitSettings
 import br.com.fluxo.core.Direction
 import br.com.fluxo.core.PaymentMethod
 import br.com.fluxo.core.ReviewStatus
@@ -63,14 +66,15 @@ internal fun Dashboard(
     showAll: () -> Unit, review: () -> Unit, add: () -> Unit,
     edit: (Transaction) -> Unit,
     allRows: List<Transaction> = rows,
-    greetingName: String = ""
+    greetingName: String = "",
+    benefits: BenefitSettings = BenefitSettings()
 ) {
     // Baseline accounting: only confirmed, non-transfer records enter totals; credit stays apart from cash.
     val confirmed = rows.filter { it.status == ReviewStatus.CONFIRMED && it.transferId == null }
     fun total(predicate: (Transaction) -> Boolean): BigInteger = confirmed.filter(predicate)
         .fold(BigInteger.ZERO) { sum, row -> sum + BigInteger.valueOf(row.amountCents ?: 0) }
     val income = total { it.direction == Direction.INCOME }
-    val cash = total { it.direction == Direction.EXPENSE && it.method != PaymentMethod.CREDIT_CARD }
+    val cash = total { it.direction == Direction.EXPENSE && it.method.affectsCash }
     val credit = total { it.direction == Direction.EXPENSE && it.method == PaymentMethod.CREDIT_CARD }
     val result = income - cash
     val pending = rows.count { it.status == ReviewStatus.REVIEW }
@@ -87,6 +91,11 @@ internal fun Dashboard(
     val byCategory = SpendingAnalytics.byCategory(rows, month).entries.sortedByDescending { it.value }
     val monthExpenses = byCategory.fold(BigInteger.ZERO) { sum, e -> sum + e.value }
     val share = SpendingAnalytics.captureShare(rows, month)
+    // Voucher balances are estimates for the selected month; spending is read from the same month slice.
+    val benefitEstimate = BenefitCalculator.estimate(month, benefits)
+    val zone = ZoneId.systemDefault()
+    val vrUsage = if (benefits.vrDailyCents > 0) BenefitBalance.remaining(benefitEstimate.vrCents, rows, PaymentMethod.MEAL_VOUCHER, month, zone) else null
+    val vtUsage = if (benefits.vrDailyCents > 0 && benefits.vtDailyCents > 0) BenefitBalance.remaining(benefitEstimate.vtCents, rows, PaymentMethod.TRANSPORT_VOUCHER, month, zone) else null
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().testTag("dashboard.neon"),
@@ -134,6 +143,12 @@ internal fun Dashboard(
                     Text("Compromisso separado do caixa", style = FluxoType.Caption, color = FluxoColors.Mute)
                 }
                 Text(amount(credit), style = FluxoType.number(18.sp))
+            }
+        }
+        if (vrUsage != null) item {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                BenefitBalanceBlock(vrUsage, benefitEstimate.vrDays, benefits.vrDailyCents, hidden)
+                if (vtUsage != null) TransportBalanceRow(vtUsage, hidden)
             }
         }
         item {
@@ -294,10 +309,7 @@ private fun TransactionRow(row: Transaction, today: LocalDate, edit: (Transactio
         today.minusDays(1) -> "ontem"
         else -> day.format(DateTimeFormatter.ofPattern("dd/MM"))
     }
-    val methodText = when (row.method) {
-        PaymentMethod.PIX -> "Pix"; PaymentMethod.CREDIT_CARD -> "crédito"
-        PaymentMethod.DEBIT_CARD -> "débito"; PaymentMethod.UNKNOWN -> "outro"
-    }
+    val methodText = row.method.shortLabel
     val automatic = row.sourceKey != null
     val sign = when (row.direction) { Direction.INCOME -> "+"; Direction.EXPENSE -> "−"; Direction.UNKNOWN -> "" }
     val full = money(row.amountCents)
