@@ -231,7 +231,60 @@ class NotificationParserTest {
         assertEquals(1000L, NotificationParser.parse("Pix recebido R$ 10,00.")?.amountCents)
     }
 
- @Test fun `sanitized synthetic multi category fixtures verify financial and non financial outcomes`() {
+    @Test fun `common bank wording keeps its amount and direction`() {
+        data class Case(val text: String, val cents: Long, val direction: Direction,
+            val method: PaymentMethod?, val status: ReviewStatus)
+        listOf(
+            Case("Compra no crédito aprovada\nSua compra no cartão final 1234 no valor de R$ 35,00, dia 10/10 às 12:30, em RESTAURANTE Y, foi aprovada.",
+                3500, Direction.EXPENSE, PaymentMethod.CREDIT_CARD, ReviewStatus.CONFIRMED),
+            Case("Itaú\nCompra aprovada no cartão final 5678, R$ 120,00, POSTO BR, 10/10 14:22.",
+                12000, Direction.EXPENSE, null, ReviewStatus.REVIEW),
+            Case("Compra no débito\nCompra no débito de R$ 18,90 em FARMACIA Z aprovada.",
+                1890, Direction.EXPENSE, PaymentMethod.DEBIT_CARD, ReviewStatus.CONFIRMED),
+            Case("Pix realizado\nPix de R$ 75,00 para LOJA ABC realizado com sucesso.",
+                7500, Direction.EXPENSE, PaymentMethod.PIX, ReviewStatus.CONFIRMED),
+            Case("Boleto pago\nPagamento de boleto no valor de R$ 230,45 efetuado.",
+                23045, Direction.EXPENSE, null, ReviewStatus.REVIEW),
+            Case("Débito automático\nDébito de R$ 110,00 referente a CONTA DE LUZ realizado.",
+                11000, Direction.EXPENSE, null, ReviewStatus.REVIEW),
+            Case("Salário\nCrédito de salário de R$ 3.500,00 em sua conta.",
+                350000, Direction.INCOME, null, ReviewStatus.REVIEW),
+            Case("Compra internacional aprovada\nCompra de US$ 10,00 (R$ 55,30) aprovada em AMAZON.",
+                5530, Direction.EXPENSE, null, ReviewStatus.REVIEW),
+            Case("Pagamento de fatura\nRecebemos o pagamento da sua fatura no valor de R$ 900,00.",
+                90000, Direction.UNKNOWN, null, ReviewStatus.REVIEW),
+        ).forEach { case ->
+            val result = requireNotNull(NotificationParser.parse(case.text)) { case.text }
+            assertEquals(case.text, case.cents, result.amountCents)
+            assertEquals(case.text, case.direction, result.direction)
+            case.method?.let { assertEquals(case.text, it, result.method) }
+            assertEquals(case.text, case.status, result.status)
+            // Every case must pass the same gate that LedgerRepository.ingest applies.
+            assertTrue(case.text, result.hasAmountCandidate)
+            assertTrue(case.text, result.direction != Direction.UNKNOWN || result.hasEventStateSignal)
+        }
+        // Invoice wording keeps its dedicated reason even though it is now review evidence.
+        assertEquals("Fatura, estorno ou devolução exige classificação manual.",
+            NotificationParser.parse("Pagamento de fatura\nRecebemos o pagamento da sua fatura no valor de R$ 900,00.")?.reason)
+    }
+
+    @Test fun `wider bank wording never confirms events that did not happen`() {
+        listOf(
+            "Compra de R$ 40,00 em LOJA Q não foi aprovada.",
+            "Seu Pix de R$ 75,00 para LOJA ABC será realizado amanhã.",
+            "Pagamento de boleto no valor de R$ 230,45 não efetuado.",
+            "Compra de R$ 10,00 em LOJA recusada. Tente outra forma de pagamento aprovada.",
+            "Compra aprovada\nR$ 50 em UBER no cartão final 1234.",
+        ).forEach { text ->
+            val result = requireNotNull(NotificationParser.parse(text)) { text }
+            assertEquals(text, ReviewStatus.REVIEW, result.status)
+            assertTrue(text, result.reason.isNotBlank())
+        }
+        assertNull(NotificationParser.parse("Compra aprovada\nR$ 50 em UBER no cartão final 1234.")?.amountCents)
+        assertNull(NotificationParser.parse("Aproveite: limite de crédito pré-aprovado de R$ 5.000,00"))
+    }
+
+    @Test fun `sanitized synthetic multi category fixtures verify financial and non financial outcomes`() {
      // Financial positive/valid cases
      val positiveFixtures = mapOf(
          "bancos" to "Pix recebido R$ 150,00",

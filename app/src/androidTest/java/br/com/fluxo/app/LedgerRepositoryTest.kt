@@ -255,6 +255,23 @@ class LedgerRepositoryTest {
         assertFalse(transaction.description.contains("saldo"))
     }
 
+    @Test fun commonBankWordingIsStoredInsteadOfDropped() = runBlocking {
+        enableCapture()
+        repository.ingest("debit-purchase", bank, 1L,
+            "Compra no débito\nCompra no débito de R$ 18,90 em FARMACIA Z aprovada.")
+        repository.ingest("invoice-payment", bank, 2L,
+            "Pagamento de fatura\nRecebemos o pagamento da sua fatura no valor de R$ 900,00.")
+        val rows = repository.transactions.value
+        assertEquals(2, rows.size)
+        val purchase = rows.single { it.amountCents == 1890L }
+        assertEquals(ReviewStatus.CONFIRMED, purchase.status)
+        assertEquals(Direction.EXPENSE, purchase.direction)
+        assertEquals(PaymentMethod.DEBIT_CARD, purchase.method)
+        val invoice = rows.single { it.amountCents == 90000L }
+        assertEquals(ReviewStatus.REVIEW, invoice.status)
+        assertTrue(invoice.reason.isNotBlank())
+    }
+
     @Test fun clearRemovesHistoryAndFingerprintsAndPausesCapture() = runBlocking {
         enableCapture()
         repository.ingest("clear", bank, 1L, "Pix recebido R$ 10,00")
