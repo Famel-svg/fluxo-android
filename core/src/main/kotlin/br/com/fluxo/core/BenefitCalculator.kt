@@ -37,17 +37,8 @@ object BenefitCalculator {
     val WORKDAYS: Set<DayOfWeek> = setOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY,
         DayOfWeek.THURSDAY, DayOfWeek.FRIDAY)
 
-    private val ratePattern = Regex("(?:[0-9]+|[0-9]{1,3}(?:\\.[0-9]{3})+)(?:,[0-9]{1,2})?")
-
     /** Strict pt-BR decimal input, optional correctly grouped thousands; never floating point. */
-    fun parseDailyCents(input: String): Long? {
-        val text = input.trim()
-        if (text.length !in 1..32 || !ratePattern.matches(text)) return null
-        val parts = text.replace(".", "").split(',')
-        val cents = BigInteger(parts[0]) * BigInteger.valueOf(100) +
-            BigInteger(parts.getOrElse(1) { "0" }.padEnd(2, '0'))
-        return if (cents <= BigInteger.valueOf(Long.MAX_VALUE)) cents.toLong() else null
-    }
+    fun parseDailyCents(input: String): Long? = MoneyParser.parseCents(input)
 
     /** Blank means automatic; malformed or out-of-month counts are rejected, never clamped. */
     fun parseDays(input: String, month: YearMonth): Int? {
