@@ -10,8 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -91,15 +89,12 @@ fun ExportCsvCard(transactions: List<Transaction>, model: CsvExportViewModel = v
     val message by model.message.collectAsStateWithLifecycle()
     var confirm by rememberSaveable { mutableStateOf(false) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv"), model::destination)
-    OutlinedCard {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Seus dados em planilha", style = MaterialTheme.typography.titleMedium)
-            Text("Exporte todos os meses, incluindo itens em revisão. Lançamentos excluídos ficam de fora. O CSV não serve para restaurar o aplicativo.")
-            OutlinedButton(enabled = !busy, onClick = { confirm = true }) {
-                Text(if (busy) "Exportando…" else "Exportar histórico CSV")
-            }
-            message?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-        }
+    Column(Modifier.fillMaxWidth()) {
+        FluxoDataRow(
+            if (busy) "Exportando…" else "Exportar CSV", onClick = { confirm = true }, enabled = !busy,
+            caption = "Exporte todos os meses, incluindo itens em revisão. Lançamentos excluídos ficam de fora. O CSV não serve para restaurar o aplicativo."
+        )
+        message?.let { Text(it, color = FluxoColors.Ink, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp)) }
     }
     if (confirm) AlertDialog(
         onDismissRequest = { confirm = false },
