@@ -8,7 +8,7 @@ object AccountBalances {
         if (account.openingAt > asOf) return null
         return rows.asSequence()
         .filter { it.accountId == account.id && it.occurredAt >= account.openingAt && it.occurredAt <= asOf &&
-            it.status == ReviewStatus.CONFIRMED && it.method != PaymentMethod.CREDIT_CARD }
+            it.status == ReviewStatus.CONFIRMED && it.method.affectsCash }
         .fold(BigInteger.valueOf(account.openingCents)) { total, row ->
             val amount = BigInteger.valueOf(row.amountCents ?: 0)
             when (row.direction) {

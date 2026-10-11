@@ -1,7 +1,28 @@
 package br.com.fluxo.core
 
 enum class Direction { INCOME, EXPENSE, UNKNOWN }
-enum class PaymentMethod { PIX, CREDIT_CARD, DEBIT_CARD, UNKNOWN }
+/** Names are persisted as text (SQLite and backups): never rename or reorder; append only. */
+enum class PaymentMethod {
+    PIX, CREDIT_CARD, DEBIT_CARD, UNKNOWN, MEAL_VOUCHER, TRANSPORT_VOUCHER;
+
+    /** Voucher balances (VR/VT) are a separate pot, not bank cash. */
+    val isVoucher: Boolean get() = this == MEAL_VOUCHER || this == TRANSPORT_VOUCHER
+
+    /** False for credit-card and voucher spending: it is consumption, but does not leave the bank account. */
+    val affectsCash: Boolean get() = this != CREDIT_CARD && !isVoucher
+
+    /** Full pt-BR name. */
+    val label: String get() = when (this) {
+        PIX -> "Pix"; CREDIT_CARD -> "Cartão de crédito"; DEBIT_CARD -> "Cartão de débito"
+        UNKNOWN -> "Outro / não informado"; MEAL_VOUCHER -> "Vale-refeição"; TRANSPORT_VOUCHER -> "Vale-transporte"
+    }
+
+    /** Compact pt-BR name for lists and chips. */
+    val shortLabel: String get() = when (this) {
+        PIX -> "Pix"; CREDIT_CARD -> "crédito"; DEBIT_CARD -> "débito"
+        UNKNOWN -> "outro"; MEAL_VOUCHER -> "VR"; TRANSPORT_VOUCHER -> "VT"
+    }
+}
 enum class ReviewStatus { CONFIRMED, REVIEW }
 
 enum class Category(val label: String) {

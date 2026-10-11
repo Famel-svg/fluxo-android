@@ -151,7 +151,7 @@ internal object LedgerBackup {
         allRows.getValue("transactions").filter { it.getAsString("transfer_id") != null }.groupBy { it.getAsString("transfer_id") }.values.forEach { pair ->
             require(pair.size == 2)
             require(pair.all { it.getAsLong("deleted") == 0L && it.getAsLong("user_modified") == 1L && it.getAsString("status") == "CONFIRMED" &&
-                it.getAsString("account_id") != null && it.getAsString("method") != "CREDIT_CARD" })
+                it.getAsString("account_id") != null && PaymentMethod.valueOf(it.getAsString("method")).affectsCash })
             require(pair.map { it.getAsString("account_id") }.toSet().size == 2)
             require(pair.map { it.getAsString("direction") }.toSet() == setOf("INCOME", "EXPENSE"))
             require(pair[0].getAsLong("amount_cents") == pair[1].getAsLong("amount_cents"))

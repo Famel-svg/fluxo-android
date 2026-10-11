@@ -26,7 +26,7 @@ object CsvExport {
                 row.category.label,
                 row.amountCents?.let { BigDecimal.valueOf(it, 2).toPlainString().replace('.', ',') }.orEmpty(),
                 (if (row.transferId != null) "Transferência própria: " else "") + when (row.direction) { Direction.INCOME -> "Entrada"; Direction.EXPENSE -> "Saída"; Direction.UNKNOWN -> "Não definida" },
-                when (row.method) { PaymentMethod.PIX -> "Pix"; PaymentMethod.CREDIT_CARD -> "Cartão de crédito"; PaymentMethod.DEBIT_CARD -> "Cartão de débito"; PaymentMethod.UNKNOWN -> "Outro / não informado" },
+                row.method.label,
                 if (row.status == ReviewStatus.CONFIRMED) "Confirmado" else "Revisar",
                 row.reason,
             ))

@@ -46,7 +46,7 @@ fun AccountsPanel(accounts: List<Account>, rows: List<Transaction>, model: Ledge
         FluxoWrapButton("Adicionar conta", onClick = { model.resetEditError(); newAccount = true })
         FluxoWrapButton("Registrar transferência própria", enabled = accounts.count { !it.archived } >= 2, onClick = { model.resetEditError(); transfer = true })
         val candidates = remember(rows) {
-            val available = rows.filter { it.transferId == null && it.accountId != null && it.status == ReviewStatus.CONFIRMED && it.method != PaymentMethod.CREDIT_CARD }
+            val available = rows.filter { it.transferId == null && it.accountId != null && it.status == ReviewStatus.CONFIRMED && it.method.affectsCash }
             val outgoing = available.filter { it.direction == Direction.EXPENSE }.take(50)
             val incoming = available.filter { it.direction == Direction.INCOME }.take(50)
             outgoing.flatMap { out -> incoming.filter { it.accountId != out.accountId && it.amountCents == out.amountCents &&
