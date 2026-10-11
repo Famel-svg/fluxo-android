@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -211,7 +212,10 @@ internal fun SettingsScreen(capture: Boolean, allowOtherApps: Boolean, banks: Se
     val saving by model.saving.collectAsStateWithLifecycle()
     val editError by model.editError.collectAsStateWithLifecycle()
     val snapshot by CaptureHealth.state.collectAsStateWithLifecycle()
+    val profileName by model.profileName.collectAsStateWithLifecycle()
     var clear by rememberSaveable { mutableStateOf(false) }
+    var editingProfile by rememberSaveable { mutableStateOf(false) }
+    var profileDraft by rememberSaveable { mutableStateOf("") }
     var settingsError by remember { mutableStateOf(false) }
     var reconnectMessage by remember { mutableStateOf<String?>(null) }
     // Keep document pickers registered even when their cards scroll off screen.
@@ -292,6 +296,20 @@ internal fun SettingsScreen(capture: Boolean, allowOtherApps: Boolean, banks: Se
                     )
                 }
             }
+            item { SectionTitle("Perfil") }
+            item {
+                Column(Modifier.fillMaxWidth()) {
+                    FluxoDataRow(
+                        "Nome", caption = profileName.ifBlank { "Não informado" },
+                        onClick = { profileDraft = profileName; model.resetEditError(); editingProfile = true },
+                        modifier = Modifier.testTag("settings.profile")
+                    )
+                    FluxoDataRow(
+                        "Rever configuração inicial", caption = "Nome, VR e VT, dias de depósito.",
+                        onClick = { model.reopenOnboarding() }, modifier = Modifier.testTag("settings.onboarding")
+                    )
+                }
+            }
             item { SectionTitle("Bancos", "lidos pelas notificações") }
             item {
                 Column(Modifier.fillMaxWidth()) {
@@ -361,6 +379,26 @@ internal fun SettingsScreen(capture: Boolean, allowOtherApps: Boolean, banks: Se
             }
         }
     }
+    if (editingProfile) AlertDialog(
+        onDismissRequest = { if (!saving) editingProfile = false },
+        title = { Text("Seu nome") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = profileDraft, onValueChange = { profileDraft = it.take(40) },
+                    modifier = Modifier.fillMaxWidth().testTag("settings.profile.input"),
+                    label = { Text("Como podemos te chamar?") }, singleLine = true, enabled = !saving,
+                    supportingText = { Text("Opcional. Fica só neste aparelho.") }
+                )
+                if (editError != null) Text(editError.orEmpty(), color = FluxoColors.Expense, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !saving, modifier = Modifier.heightIn(min = 48.dp).testTag("settings.profile.save"),
+                onClick = { model.saveProfileName(profileDraft) { editingProfile = false } }) { Text(if (saving) "Salvando…" else "Salvar") }
+        },
+        dismissButton = { TextButton(enabled = !saving, onClick = { editingProfile = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancelar") } }
+    )
     if (clear) AlertDialog(
         onDismissRequest = { clear = false },
         title = { Text("Apagar todo o histórico?") },

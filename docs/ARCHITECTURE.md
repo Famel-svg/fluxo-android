@@ -3,8 +3,10 @@
 ## Atualização 0.4
 SQLite v5. Migrações são aditivas, exceto a v5, que remove a tabela `invoices` e a coluna `transactions.invoice_id`, criadas por engano apenas no caminho v1→v4 e nunca gravadas. Toda instalação converge no schema de `onCreate`; um teste instrumentado compara os caminhos. `BankNotificationListener.onListenerConnected` reenvia à fila as notificações ativas de fontes permitidas; a ingestão é idempotente por `source_key`. Interface: `MainActivity.kt` (navegação), `LedgerViewModel.kt`, `DashboardScreen.kt`, `SettingsScreen.kt`, `TransactionEditor.kt`, `Formatting.kt`.
 
+Configuração inicial e benefícios por dia da semana: `BenefitSettings` ganha `vrWeekdays` e `vtWeekdays` (padrão segunda a sexta); `BenefitCalculator.scheduledDays` conta os dias do mês nesses dias e o ajuste manual do mês continua prevalecendo. Os conjuntos ficam em SharedPreferences `benefits` como máscara de 7 bits (segunda = bit 0; ausente ou inválida = segunda a sexta). Perfil local (`profile`: nome com até 40 caracteres e flag de onboarding) fica fora do SQLite, do backup e do CSV e sobrevive a "apagar histórico". O backup passa ao payload v4 (v3 mais `vr_weekdays` e `vt_weekdays`, listas ISO 1–7 estritamente crescentes dentro de `benefits`); v1, v2 e v3 continuam aceitos, e v3 restaura com segunda a sexta. `OnboardingScreen.kt` aparece uma vez antes das abas (também para quem já tinha dados) e pode ser reaberta em Ajustes; `WeekdayChips.kt` é compartilhado com o editor de benefícios em Planejar.
+
 ## Atualização 0.2
-Backup criptografado usa payload JSON v3 (schema SQLite 4): além das tabelas, inclui `benefits` (tarifas VR/VT em centavos e dias por mês, de SharedPreferences); v1/v2 continuam aceitos e não alteram benefícios.
+Backup criptografado usa payload JSON v3 (schema SQLite 4): além das tabelas, inclui `benefits` (tarifas VR/VT em centavos e dias por mês, de SharedPreferences); v1/v2 continuam aceitos e não alteram benefícios (a versão 0.4 acrescenta o payload v4, descrito acima).
 
 Modelo `Transaction` recebe `category: Category = UNCATEGORIZED`. `Category` contém rótulos em português; `Budget(month, category, limitCents)` identifica limite por mês/categoria. SQLite v2 adiciona coluna com valor padrão e tabela `budgets` via migração aditiva; limpeza integral usa transação para remover ambos os conjuntos.
 
