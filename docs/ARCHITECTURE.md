@@ -1,5 +1,8 @@
 # Arquitetura e contratos
 
+## Atualização 0.4
+SQLite v5. Migrações são aditivas, exceto a v5, que remove a tabela `invoices` e a coluna `transactions.invoice_id`, criadas por engano apenas no caminho v1→v4 e nunca gravadas. Toda instalação converge no schema de `onCreate`; um teste instrumentado compara os caminhos. `BankNotificationListener.onListenerConnected` reenvia à fila as notificações ativas de fontes permitidas; a ingestão é idempotente por `source_key`. Interface: `MainActivity.kt` (navegação), `LedgerViewModel.kt`, `DashboardScreen.kt`, `SettingsScreen.kt`, `TransactionEditor.kt`, `Formatting.kt`.
+
 ## Atualização 0.2
 Backup criptografado usa payload JSON v3 (schema SQLite 4): além das tabelas, inclui `benefits` (tarifas VR/VT em centavos e dias por mês, de SharedPreferences); v1/v2 continuam aceitos e não alteram benefícios.
 

@@ -1,5 +1,19 @@
 # Validação das entregas
 
+## Versão 0.4.0 — 2026-10-10
+
+Correção da migração SQLite (v5), reprocessamento de notificações ativas ao reconectar, benefícios no backup (payload v3), divisão de `MainActivity.kt` por tela e Compose BOM 2026.06.01.
+
+- Comando: `./gradlew.bat :core:test :app:assembleDebug :app:lintDebug :app:connectedDebugAndroidTest`, JDK 21.0.12.
+- JVM: 54 testes aprovados. Lint sem erros; APK debug compilado.
+- Android: 76 testes, 0 falhas, 19 ignorados por pré-condição (ponta a ponta de notificações e telas que exigem ambiente isolado), Pixel 9 Pro AVD API 37. Portanto 57 executados.
+- Novos cenários: schema idêntico entre instalação nova, atualização da v1 e banco v4 com estruturas de fatura residuais; roundtrip de benefícios; payload v2 sem alterar benefícios; 14 payloads v3 malformados rejeitados sem modificar dados.
+- Execuções anteriores da mesma suíte tiveram uma falha intermitente em `CaptureHealthUiTest` ("No compose hierarchies found"), com testes diferentes a cada vez e também com o BOM antigo. Outro aplicativo estava em primeiro plano no mesmo emulador. A execução registrada acima passou integralmente; a causa não foi isolada além dessa observação.
+- Não verificado: reprocessamento ao reconectar não tem teste automatizado próprio (depende do ciclo de vida do serviço no sistema); a nova frase da confirmação de restauração não foi conferida visualmente; nenhum teste em aparelho físico nem com notificação bancária real.
+- Em SQLite anterior a 3.35 a coluna residual `invoice_id` não pode ser removida e permanece sempre nula; migrações futuras devem verificar sua existência antes de criá-la.
+- Se a gravação das preferências falhar depois da restauração SQLite, o histórico já estará substituído e os benefícios permanecerão os anteriores; o erro é propagado.
+- Coordenação: Ruflo executou init check, swarm status e hooks route; roteamento não equivale a execução. Dois subagentes em worktrees isoladas fizeram a divisão da interface e os benefícios no backup; integração e suíte completa pelo coordenador.
+
 ## Incremento M06 — 2026-09-06
 
 Contas locais com tipo, saldo inicial datado, arquivamento e atribuição a lançamentos. Transferências próprias podem ser registradas em par ou vinculadas a registros existentes, sem inflar renda/consumo. SQLite v4 aditivo; backup payload v2 aceita também payload v1/schema3.
