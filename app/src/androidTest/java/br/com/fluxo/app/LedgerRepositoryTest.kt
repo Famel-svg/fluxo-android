@@ -339,7 +339,7 @@ class LedgerRepositoryTest {
         assertEquals(edited, reopened.transactions.value.single())
         assertEquals(Budget("2026-09", Category.TRANSPORT, 50000), reopened.budgets.value.single())
         context.openOrCreateDatabase("fluxo.db", Context.MODE_PRIVATE, null).use { db ->
-            assertEquals(4, db.version)
+            assertEquals(5, db.version)
             db.rawQuery("SELECT category, amount_cents FROM transactions WHERE id = 'old'", null).use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals("TRANSPORT", cursor.getString(0))
@@ -351,6 +351,67 @@ class LedgerRepositoryTest {
             }
         }
         migrated.clear()
+    }
+
+    @Test fun everyUpgradePathConvergesOnTheFreshInstallSchema() = runBlocking {
+        val target = InstrumentationRegistry.getInstrumentation().targetContext
+        fun schema(context: Context): Pair<Set<String>, Map<String, Set<String>>> =
+            context.openOrCreateDatabase("fluxo.db", Context.MODE_PRIVATE, null).use { db ->
+                assertEquals(5, db.version)
+                val tables = db.rawQuery("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'android_%' AND name NOT LIKE 'sqlite_%'", null).use { cursor ->
+                    generateSequence { if (cursor.moveToNext()) cursor.getString(0) else null }.toSet()
+                }
+                tables to tables.associateWith { table ->
+                    db.rawQuery("PRAGMA table_info($table)", null).use { cursor ->
+                        val name = cursor.getColumnIndexOrThrow("name")
+                        // SQLite before 3.35 cannot drop the stray always-null column.
+                        generateSequence { if (cursor.moveToNext()) cursor.getString(name) else null }.toSet() - "invoice_id"
+                    }
+                }
+            }
+        val v1 = """CREATE TABLE transactions (
+            id TEXT PRIMARY KEY NOT NULL, source_key TEXT UNIQUE, bank_package TEXT NOT NULL,
+            amount_cents INTEGER CHECK(amount_cents IS NULL OR amount_cents > 0),
+            direction TEXT NOT NULL, method TEXT NOT NULL, status TEXT NOT NULL,
+            occurred_at INTEGER NOT NULL, description TEXT NOT NULL, reason TEXT NOT NULL,
+            deleted INTEGER NOT NULL DEFAULT 0)"""
+        val row = "INSERT INTO transactions (id, source_key, bank_package, amount_cents, direction, method, status, occurred_at, description, reason, deleted) VALUES ('old', 'key', 'com.nu.production', 12345, 'EXPENSE', 'PIX', 'CONFIRMED', 42, 'Preservado', '', 0)"
+        val fresh = IsolatedContext(target, "schema_fresh_${java.util.UUID.randomUUID()}_")
+        LedgerRepository(fresh).refresh()
+        val expected = schema(fresh)
+        assertFalse("invoices" in expected.first)
+
+        val fromV1 = IsolatedContext(target, "schema_v1_${java.util.UUID.randomUUID()}_")
+        fromV1.openOrCreateDatabase("fluxo.db", Context.MODE_PRIVATE, null).use { db ->
+            db.execSQL(v1); db.execSQL(row); db.version = 1
+        }
+        // Shape left behind by the v4 build that created invoice structures only for v1 upgrades.
+        val fromStrayV4 = IsolatedContext(target, "schema_v4_${java.util.UUID.randomUUID()}_")
+        fromStrayV4.openOrCreateDatabase("fluxo.db", Context.MODE_PRIVATE, null).use { db ->
+            db.execSQL(v1)
+            db.execSQL("ALTER TABLE transactions ADD COLUMN category TEXT NOT NULL DEFAULT 'UNCATEGORIZED'")
+            db.execSQL("CREATE TABLE budgets (month TEXT NOT NULL, category TEXT NOT NULL, limit_cents INTEGER NOT NULL CHECK(limit_cents > 0), PRIMARY KEY(month, category))")
+            db.execSQL("CREATE TABLE invoices (id TEXT PRIMARY KEY NOT NULL, account_id TEXT NOT NULL, month TEXT NOT NULL, due_date INTEGER NOT NULL, closing_date INTEGER NOT NULL, is_paid INTEGER NOT NULL DEFAULT 0, amount_cents INTEGER NOT NULL DEFAULT 0)")
+            db.execSQL("ALTER TABLE transactions ADD COLUMN invoice_id TEXT")
+            db.execSQL("ALTER TABLE transactions ADD COLUMN user_modified INTEGER NOT NULL DEFAULT 1")
+            db.execSQL("ALTER TABLE transactions ADD COLUMN observation_hash TEXT")
+            db.execSQL("ALTER TABLE transactions ADD COLUMN last_observed_at INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("CREATE TABLE notification_aliases (identity_key TEXT PRIMARY KEY NOT NULL, source_key TEXT NOT NULL)")
+            db.execSQL("ALTER TABLE transactions ADD COLUMN account_id TEXT")
+            db.execSQL("ALTER TABLE transactions ADD COLUMN transfer_id TEXT")
+            db.execSQL("CREATE TABLE accounts (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, bank_package TEXT NOT NULL, opening_cents INTEGER NOT NULL, opening_at INTEGER NOT NULL, archived INTEGER NOT NULL DEFAULT 0, type TEXT NOT NULL)")
+            db.execSQL(row); db.version = 4
+        }
+        listOf(fromV1, fromStrayV4).forEach { context ->
+            val upgraded = LedgerRepository(context)
+            upgraded.refresh()
+            assertEquals(12345L, upgraded.transactions.value.single().amountCents)
+            assertEquals(expected, schema(context))
+            upgraded.save(upgraded.transactions.value.single().copy(category = Category.FOOD))
+            assertEquals(Category.FOOD, LedgerRepository(context).also { it.refresh() }.transactions.value.single().category)
+        }
+        // Resolve the isolated path explicitly; never the name of the real ledger file.
+        listOf(fresh, fromV1, fromStrayV4).forEach { SQLiteDatabase.deleteDatabase(it.getDatabasePath("fluxo.db")) }
     }
 
     @Test fun notificationStateChangeReopensReviewAndIdenticalRedeliveryKeepsIt() = runBlocking {
