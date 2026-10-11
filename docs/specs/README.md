@@ -8,7 +8,7 @@ Specs de cada incremento derivadas da auditoria de 05/09/2026. Estados abaixo di
 | M02 | [Atualizações e duplicatas](M02-atualizacoes-idempotentes.md) | Implementado; migração e regressões validadas |
 | M03 | [Diagnóstico da captura](M03-diagnostico-captura.md) | Implementado; 3 testes de interface |
 | M04 | [Corpus e matriz de validação](M04-corpus-bancos.md) | Proposto; validação real depende de amostras consentidas |
-| M05 | [Backup criptografado restaurável](M05-backup-restauracao.md) | Implementado para SQLite v4; importa também backups v3 |
+| M05 | [Backup criptografado restaurável](M05-backup-restauracao.md) | Implementado; payload v3 inclui benefícios e importa payloads v1 e v2 |
 | M06 | [Contas e transferências próprias](M06-contas-transferencias.md) | Implementado; persistência, backup e UI validados |
 | M07 | [Cartões, faturas e parcelas](M07-cartoes-faturas-parcelas.md) | Proposto |
 | M08 | [Estornos e reembolsos](M08-estornos-vinculados.md) | Proposto |
