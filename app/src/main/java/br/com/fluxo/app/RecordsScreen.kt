@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -72,6 +73,7 @@ internal fun RecordsScreen(
     add: () -> Unit = {},
     model: LedgerViewModel = viewModel()
 ) {
+    val shortBank: (String) -> String = { bankLabel(it).removeSuffix(" Bank") }
     val saving by model.saving.collectAsStateWithLifecycle()
     val editError by model.editError.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
@@ -162,34 +164,34 @@ internal fun RecordsScreen(
                     FluxoChip("Saídas", filter == 2, { setFilter(if (filter == 2) 0 else 2) })
                     FluxoChip("Revisar ($reviewCount)", filter == 3, { setFilter(if (filter == 3) 0 else 3) }, tone = FluxoChipTone.Review)
                     chipBanks.forEach { code ->
-                        FluxoChip(bankLabel(code), bank == code, { bank = if (bank == code) null else code })
+                        FluxoChip(shortBank(code), bank == code, { bank = if (bank == code) null else code })
                     }
+                    FluxoChip("Todos os meses", allMonths, { setAllMonths(!allMonths) })
                 }
             }
             item {
-                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(0.dp), itemVerticalAlignment = Alignment.CenterVertically) {
-                    FluxoChip("Todos os meses", allMonths, { setAllMonths(!allMonths) })
-                    FluxoPillButton(if (advanced) "Ocultar filtros" else "Banco, meio e categoria", { advanced = !advanced }, style = FluxoButtonStyle.Quiet)
+                WeekStrip(weekCap)
+            }
+            item {
+                val anyFilter = query.isNotBlank() || bank != null || method != null || category != null || filter != 0 || allMonths
+                // FlowRow keeps the count and actions readable at large font sizes.
+                FlowRow(
+                    Modifier.fillMaxWidth().padding(horizontal = 2.dp), horizontalArrangement = Arrangement.SpaceBetween,
+                    itemVerticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("${filtered.size} lançamento(s)", color = FluxoColors.Mute, style = FluxoType.Caption.copy(fontSize = 11.5.sp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (anyFilter) CompactAction("Limpar filtros", FluxoColors.Mute) {
+                            query = ""; bank = null; method = null; category = null; setFilter(0); setAllMonths(false)
+                        }
+                        CompactAction(if (advanced) "Ocultar filtros" else "Filtros", FluxoColors.Ink, description = "Banco, meio e categoria") { advanced = !advanced }
+                    }
                 }
             }
             if (advanced) {
                 item { Choice("Banco", bank, bankOptions, { it?.let(bankLabel) ?: "Todos" }) { bank = it } }
                 item { Choice("Meio", method, listOf<PaymentMethod?>(null) + PaymentMethod.entries, { it?.let(methodLabel) ?: "Todos" }) { method = it } }
                 item { Choice("Categoria", category, listOf<Category?>(null) + Category.entries, { it?.label ?: "Todas" }) { category = it } }
-            }
-            item {
-                WeekStrip(weekCap)
-            }
-            item {
-                // Vertical layout keeps the count and action readable at large font sizes.
-                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
-                    Text("${filtered.size} lançamento(s)", color = FluxoColors.Mute, style = MaterialTheme.typography.labelMedium)
-                    FluxoPillButton(
-                        "Limpar filtros",
-                        { query = ""; bank = null; method = null; category = null; setFilter(0); setAllMonths(false) },
-                        style = FluxoButtonStyle.Quiet
-                    )
-                }
             }
             if (filtered.isEmpty()) item {
                 FluxoEmptyState("Nenhum lançamento", "Nenhum registro corresponde aos filtros. Altere a busca ou escolha Todos os meses.")
@@ -204,7 +206,7 @@ internal fun RecordsScreen(
                 }
                 items(reviewing, key = { "review-" + it.id }) { row ->
                     Box(Modifier.padding(bottom = 5.dp)) {
-                        ReviewTicket(row, saving, edit, { model.save(it) {} }, bankLabel, directionLabel, methodLabel, zone, timeFormat)
+                        ReviewTicket(row, saving, edit, { model.save(it) {} }, shortBank, directionLabel, methodLabel, zone, timeFormat)
                     }
                 }
             }
@@ -222,10 +224,22 @@ internal fun RecordsScreen(
                     )
                 }
                 items(transactions, key = { it.id }) { transaction ->
-                    RecordRow(transaction, edit, bankLabel, moneyLabel)
+                    RecordRow(transaction, edit, shortBank, moneyLabel)
                 }
             }
         }
+    }
+}
+
+/** Small text action (>= 44dp touch target) for the compact filter line. */
+@Composable
+private fun CompactAction(text: String, color: androidx.compose.ui.graphics.Color, description: String? = null, onClick: () -> Unit) {
+    Box(
+        Modifier.heightIn(min = 44.dp).clickable(role = Role.Button, onClick = onClick).padding(horizontal = 8.dp)
+            .semantics { if (description != null) contentDescription = description },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text, color = color, maxLines = 1, style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold))
     }
 }
 
@@ -317,15 +331,15 @@ private fun RecordRow(
         PaymentMethod.DEBIT_CARD -> "débito"
         PaymentMethod.UNKNOWN -> "meio não informado"
     }
-    val signed = when (row.direction) {
-        Direction.INCOME -> "+" + moneyLabel(row.amountCents)
-        Direction.EXPENSE -> "−" + moneyLabel(row.amountCents)
-        Direction.UNKNOWN -> moneyLabel(row.amountCents)
-    }
+    val full = moneyLabel(row.amountCents)
+    // The list shows only the number (as in the prototype); screen readers still get the currency.
+    val plain = full.replace("R$", "").trim()
+    val signed = when (row.direction) { Direction.INCOME -> "+$plain"; Direction.EXPENSE -> "−$plain"; Direction.UNKNOWN -> plain }
+    val spoken = when (row.direction) { Direction.INCOME -> "mais $full"; Direction.EXPENSE -> "menos $full"; Direction.UNKNOWN -> full }
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button) { edit(row) }.padding(horizontal = 2.dp, vertical = 1.dp),
+        Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button) { edit(row) }.padding(start = 2.dp, end = 0.dp, top = 1.dp, bottom = 1.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(9.dp)
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         FluxoDot(fluxoCategoryColor(row.category))
         Column(Modifier.weight(1f)) {
@@ -333,7 +347,7 @@ private fun RecordRow(
                 row.description.ifBlank { shortMethod }, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, lineHeight = 15.sp, fontWeight = FontWeight.Bold)
             )
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(
                     row.category.label + " · " + bankLabel(row.bankPackage) + " · " + shortMethod,
                     color = FluxoColors.Mute, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -343,7 +357,7 @@ private fun RecordRow(
             }
         }
         Text(
-            signed, maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 2.dp),
+            signed, maxLines = 1, softWrap = false, modifier = Modifier.semantics { contentDescription = spoken },
             color = if (row.direction == Direction.INCOME) FluxoColors.Income else FluxoColors.Ink,
             style = FluxoType.RowNumber
         )

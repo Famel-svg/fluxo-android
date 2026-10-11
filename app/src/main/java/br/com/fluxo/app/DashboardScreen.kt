@@ -22,6 +22,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -77,7 +79,7 @@ internal fun Dashboard(
     rows: List<Transaction>, month: YearMonth, active: Boolean,
     previous: () -> Unit, next: () -> Unit, settings: () -> Unit,
     showAll: () -> Unit, review: () -> Unit, add: () -> Unit,
-    planning: () -> Unit, edit: (Transaction) -> Unit
+    edit: (Transaction) -> Unit
 ) {
     // Baseline accounting: only confirmed, non-transfer records enter totals; credit stays apart from cash.
     val confirmed = rows.filter { it.status == ReviewStatus.CONFIRMED && it.transferId == null }
@@ -260,29 +262,20 @@ internal fun Dashboard(
             }
         }
         item {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                FluxoSectionHeading("Últimos lançamentos", Modifier.weight(1f))
-                Box(Modifier.heightIn(min = 44.dp).clickable(role = Role.Button, onClick = showAll).padding(horizontal = 6.dp), contentAlignment = Alignment.CenterEnd) {
-                    Text("Todos", style = FluxoType.Caption.copy(fontSize = 11.5.sp), color = FluxoColors.Mute)
+            Column {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    FluxoSectionHeading("Últimos lançamentos", Modifier.weight(1f))
+                    Box(Modifier.heightIn(min = 44.dp).clickable(role = Role.Button, onClick = showAll).padding(horizontal = 6.dp), contentAlignment = Alignment.CenterEnd) {
+                        Text("Todos", style = FluxoType.Caption.copy(fontSize = 11.5.sp), color = FluxoColors.Mute)
+                    }
                 }
+                if (rows.isEmpty()) FluxoEmptyState("Seu mês começa aqui", "Adicione um lançamento ou configure a captura. Nenhum histórico anterior será importado.")
+                else if (hidden) Text("Lançamentos ocultos neste resumo.", style = MaterialTheme.typography.bodyMedium, color = FluxoColors.Mute)
+                else rows.take(3).forEach { key(it.id) { TransactionRow(it, today, edit) } }
             }
         }
-        if (rows.isEmpty()) item {
-            FluxoEmptyState("Seu mês começa aqui", "Adicione um lançamento ou configure a captura. Nenhum histórico anterior será importado.")
-        } else if (hidden) item {
-            Text("Lançamentos ocultos neste resumo.", style = MaterialTheme.typography.bodyMedium, color = FluxoColors.Mute)
-        } else item { Column { rows.take(5).forEach { key(it.id) { TransactionRow(it, today, edit) } } } }
-        item {
-            Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                if (pendingCredit > 0) Text("$pendingCredit lançamento(s) de crédito pendente(s) de revisão. Fatura, limite e vencimento não estão disponíveis; confira no emissor do cartão.", style = FluxoType.Caption, color = FluxoColors.Mute)
-                Text("Revisões e transferências próprias não entram nos totais.", style = FluxoType.Caption, color = FluxoColors.Mute)
-            }
-        }
-        item {
-            FluxoAdaptivePair(
-                first = { FluxoPillButton("Planejar", planning, Modifier.fillMaxWidth(), FluxoButtonStyle.Secondary) },
-                second = { FluxoPillButton("Mais opções", settings, Modifier.fillMaxWidth(), FluxoButtonStyle.Quiet) }
-            )
+        if (pendingCredit > 0) item {
+            Text("$pendingCredit lançamento(s) de crédito pendente(s) de revisão. Fatura, limite e vencimento não estão disponíveis; confira no emissor do cartão.", style = FluxoType.Caption, color = FluxoColors.Mute, modifier = Modifier.padding(horizontal = 4.dp))
         }
     }
 }
@@ -306,10 +299,13 @@ private fun TransactionRow(row: Transaction, today: LocalDate, edit: (Transactio
     }
     val automatic = row.sourceKey != null
     val sign = when (row.direction) { Direction.INCOME -> "+"; Direction.EXPENSE -> "−"; Direction.UNKNOWN -> "" }
-    val amountText = if (row.amountCents == null) money(row.amountCents) else sign + money(row.amountCents)
+    val full = money(row.amountCents)
+    // The list shows only the number (as in the prototype); screen readers still get the currency.
+    val amountText = if (row.amountCents == null) full else sign + full.replace("R$", "").trim()
+    val spoken = when (row.direction) { Direction.INCOME -> "mais $full"; Direction.EXPENSE -> "menos $full"; Direction.UNKNOWN -> full }
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button) { edit(row) }.padding(horizontal = 2.dp, vertical = 1.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)
+        Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button) { edit(row) }.padding(start = 2.dp, end = 0.dp, top = 1.dp, bottom = 1.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         FluxoDot(fluxoCategoryColor(row.category))
         Column(Modifier.weight(1f)) {
@@ -317,9 +313,9 @@ private fun TransactionRow(row: Transaction, today: LocalDate, edit: (Transactio
                 row.description.ifBlank { row.method.label() }, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.5.sp, lineHeight = 15.sp)
             )
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(
-                    "${bankName(row.bankPackage)} · $methodText · $whenText", Modifier.weight(1f, fill = false),
+                    "${bankShortName(row.bankPackage)} · $methodText · $whenText", Modifier.weight(1f, fill = false),
                     maxLines = 1, overflow = TextOverflow.Ellipsis, style = FluxoType.Caption, color = FluxoColors.Mute
                 )
                 FluxoBadge(if (automatic) "automático" else "manual", kind = if (automatic) FluxoBadgeKind.Automatic else FluxoBadgeKind.Manual)
@@ -331,7 +327,7 @@ private fun TransactionRow(row: Transaction, today: LocalDate, edit: (Transactio
             }
         }
         Text(
-            amountText, maxLines = 1, textAlign = TextAlign.End,
+            amountText, maxLines = 1, softWrap = false, textAlign = TextAlign.End, modifier = Modifier.semantics { contentDescription = spoken },
             style = FluxoType.RowNumber, color = if (row.direction == Direction.INCOME) FluxoColors.Income else FluxoColors.Ink
         )
     }
