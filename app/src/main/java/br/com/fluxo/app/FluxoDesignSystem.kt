@@ -360,27 +360,11 @@ internal fun FluxoHero(
     }
 }
 
-/** Screen title block: 28sp display title with optional 12sp subtitle and a trailing action slot. */
-@Composable
-internal fun FluxoScreenHeader(
-    title: String,
-    modifier: Modifier = Modifier,
-    subtitle: String? = null,
-    trailing: (@Composable () -> Unit)? = null
-) {
-    Row(modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
-            if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium), color = FluxoColors.Mute)
-        }
-        if (trailing != null) trailing()
-    }
-}
-
 /**
  * Compact top row used instead of screen titles: previous/next arrows around the month label on the
  * start side and an optional [trailing] action group on the end side (stacked below at large font).
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun FluxoMonthBar(
     month: java.time.YearMonth,
@@ -390,30 +374,31 @@ internal fun FluxoMonthBar(
     trailing: (@Composable RowScope.() -> Unit)? = null
 ) {
     val label = month.format(java.time.format.DateTimeFormatter.ofPattern("MMMM 'de' yyyy", ptBr)).replaceFirstChar { it.titlecase(ptBr) }
-    val left: @Composable RowScope.() -> Unit = {
-        MonthArrow(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Mês anterior", previous)
-        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, color = FluxoColors.Ink,
-            style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.5.sp, fontWeight = FontWeight.Bold),
-            modifier = Modifier.weight(1f, fill = false))
-        MonthArrow(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Próximo mês", next)
-    }
-    if (LocalDensity.current.fontScale >= 1.3f) {
-        Column(modifier.fillMaxWidth()) {
-            Row(verticalAlignment = Alignment.CenterVertically, content = left)
-            if (trailing != null) Row(verticalAlignment = Alignment.CenterVertically, content = trailing)
+    // FlowRow: the month label keeps its natural width; the trailing actions drop to a second row when they do not fit.
+    FlowRow(
+        modifier.fillMaxWidth().heightIn(min = 44.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        itemVerticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            MonthArrow(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Mês anterior", previous)
+            Text(label, maxLines = 1, softWrap = false, color = FluxoColors.Ink,
+                style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.5.sp, fontWeight = FontWeight.Bold),
+                modifier = Modifier.weight(1f, fill = false))
+            MonthArrow(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Próximo mês", next)
         }
-    } else {
-        Row(modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
-            Row(Modifier.weight(1f, fill = trailing == null), verticalAlignment = Alignment.CenterVertically, content = left)
-            if (trailing != null) trailing()
-        }
+        // weight(1f): takes the rest of the line (or the whole second line) and keeps the actions end-aligned.
+        if (trailing != null) Row(
+            Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.End, content = trailing
+        )
     }
 }
 
 @Composable
 private fun MonthArrow(icon: ImageVector, description: String, onClick: () -> Unit) {
     Box(
-        Modifier.size(width = 32.dp, height = 44.dp).clickable(role = Role.Button, onClick = onClick),
+        Modifier.size(width = 28.dp, height = 44.dp).clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center
     ) { Icon(icon, description, tint = FluxoColors.Petrol, modifier = Modifier.size(22.dp)) }
 }
@@ -463,28 +448,6 @@ internal fun FluxoEmptyState(
     ) {
         Text(title, style = MaterialTheme.typography.titleMedium)
         Text(description, style = MaterialTheme.typography.bodyMedium, color = FluxoColors.Mute)
-    }
-}
-
-/** Adaptive pair: column below 300dp or fontScale >= 1.3, otherwise equal columns gap 12dp. */
-@Composable
-internal fun FluxoAdaptivePair(
-    modifier: Modifier = Modifier,
-    first: @Composable () -> Unit,
-    second: @Composable () -> Unit
-) {
-    val fontScale = LocalDensity.current.fontScale
-    BoxWithConstraints(modifier.fillMaxWidth()) {
-        if (maxWidth < 300.dp || fontScale >= 1.3f) {
-            Column(verticalArrangement = Arrangement.spacedBy(FluxoDesignTokens.ContentSpacing)) {
-                first(); second()
-            }
-        } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(FluxoDesignTokens.ContentSpacing)) {
-                Box(Modifier.weight(1f)) { first() }
-                Box(Modifier.weight(1f)) { second() }
-            }
-        }
     }
 }
 
@@ -659,22 +622,36 @@ internal fun FluxoCaptureStrip(
     live: Boolean = true,
     action: (@Composable () -> Unit)? = null
 ) {
-    Row(
+    val fontScale = LocalDensity.current.fontScale
+    BoxWithConstraints(
         modifier
             .fillMaxWidth()
             .clip(FluxoShapes.Strip)
             .background(FluxoColors.Ink)
-            .padding(start = 14.dp, end = 3.dp, top = 3.dp, bottom = 3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Column(Modifier.weight(1f).padding(vertical = 5.dp)) {
+        // Large font or narrow width: the action goes under the text instead of squeezing it.
+        val stacked = action != null && (fontScale >= 1.3f || maxWidth < 340.dp)
+        val text: @Composable ColumnScope.() -> Unit = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 FluxoDot(if (live) FluxoColors.Live else FluxoColors.Gray, size = 10.dp)
-                Text(title, color = Color.White, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.5.sp, fontWeight = FontWeight.Bold))
+                Text(title, color = Color.White, modifier = Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.5.sp, fontWeight = FontWeight.Bold))
             }
             Text(detail, color = Color.White, style = MaterialTheme.typography.bodySmall)
         }
-        if (action != null) action()
+        if (stacked) {
+            Column(Modifier.padding(start = 14.dp, end = 3.dp, top = 3.dp, bottom = 3.dp)) {
+                Column(Modifier.padding(vertical = 5.dp), content = text)
+                action?.invoke()
+            }
+        } else {
+            Row(
+                Modifier.padding(start = 14.dp, end = 3.dp, top = 3.dp, bottom = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Column(Modifier.weight(1f).padding(vertical = 5.dp), content = text)
+                if (action != null) action()
+            }
+        }
     }
 }

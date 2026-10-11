@@ -71,6 +71,22 @@ object SpendingAnalytics {
         }
     }
 
+    /**
+     * Seven-day series shown while viewing [month]: ends today for the current month, otherwise on the
+     * month's last day. Pass ALL rows (not just the month slice) so the first days of a month still
+     * include the last days of the previous one.
+     */
+    fun recentDaysForMonth(
+        rows: List<Transaction>,
+        month: YearMonth,
+        today: LocalDate,
+        days: Int = 7,
+        zone: ZoneId = ZoneId.systemDefault(),
+    ): List<DailyExpense> {
+        val end = if (YearMonth.from(today) == month) today else month.atEndOfMonth()
+        return dailyExpenses(rows, end, days, zone)
+    }
+
     /** One entry per month ending at [endMonth] (inclusive), oldest first, zero months included. */
     fun monthlyExpenses(
         rows: List<Transaction>,

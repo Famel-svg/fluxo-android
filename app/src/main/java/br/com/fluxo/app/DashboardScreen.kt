@@ -44,24 +44,6 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle as DayTextStyle
 
-// Thin aliases kept so SettingsScreen keeps compiling; they now resolve to the petrol design system.
-internal val NeonMint = FluxoColors.Petrol
-internal val NeonBlue = FluxoColors.PetrolMid
-internal val NeonLime = FluxoColors.PetrolLight
-internal val NeonAmber = FluxoColors.Amber
-
-@Composable
-internal fun NeonPanel(
-    modifier: Modifier = Modifier,
-    accent: Color = NeonBlue,
-    background: List<Color>? = null,
-    content: @Composable ColumnScope.() -> Unit
-) = FluxoPanel(modifier = modifier, accent = accent, gradient = background, content = content)
-
-@Composable
-internal fun NeonHeading(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, accent: Color = NeonMint) =
-    FluxoSectionHeading(title, icon = icon, accent = accent)
-
 private val HIDDEN = "••••"
 
 private fun cents(value: BigInteger): String = money(BigDecimal(value, 2))
@@ -79,7 +61,8 @@ internal fun Dashboard(
     rows: List<Transaction>, month: YearMonth, active: Boolean,
     previous: () -> Unit, next: () -> Unit, settings: () -> Unit,
     showAll: () -> Unit, review: () -> Unit, add: () -> Unit,
-    edit: (Transaction) -> Unit
+    edit: (Transaction) -> Unit,
+    allRows: List<Transaction> = rows
 ) {
     // Baseline accounting: only confirmed, non-transfer records enter totals; credit stays apart from cash.
     val confirmed = rows.filter { it.status == ReviewStatus.CONFIRMED && it.transferId == null }
@@ -96,8 +79,8 @@ internal fun Dashboard(
 
     val today = LocalDate.now()
     val currentMonth = YearMonth.from(today) == month
-    val endDay = if (currentMonth) today else month.atEndOfMonth()
-    val daily = SpendingAnalytics.dailyExpenses(rows, endDay)
+    // The 7-day series uses every transaction so the first days of a month still see the previous month.
+    val daily = SpendingAnalytics.recentDaysForMonth(allRows, month, today)
     val dailyValues = daily.map { it.totalCents }
     val weekTotal = dailyValues.fold(BigInteger.ZERO, BigInteger::add)
     val byCategory = SpendingAnalytics.byCategory(rows, month).entries.sortedByDescending { it.value }
@@ -190,6 +173,7 @@ internal fun Dashboard(
             val donutTile: @Composable () -> Unit = {
                 FluxoTile(Modifier.fillMaxWidth()) {
                     Text("Despesas do mês", style = TileTitle)
+                    Text("inclui crédito", style = FluxoType.Caption.copy(fontSize = 10.sp), color = FluxoColors.Mute)
                     Text(amount(monthExpenses), style = FluxoType.number(16.sp))
                     DonutChart(
                         slices = legend.map { DonutSlice(it.second, it.third) },
@@ -200,7 +184,7 @@ internal fun Dashboard(
                         if (topCategory != null) Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("${percent(topCategory.value, monthExpenses)}%", style = FluxoType.number(14.sp), color = FluxoColors.Ink)
                             Text(
-                                topCategory.key.label.let { if (it.length > 6) it.take(5) + "." else it },
+                                donutShortLabel(topCategory.key),
                                 style = FluxoType.Caption.copy(fontSize = 9.sp, lineHeight = 11.sp), color = FluxoColors.Mute, maxLines = 1
                             )
                         }
@@ -280,9 +264,20 @@ internal fun Dashboard(
     }
 }
 
+/** Short category label that fits the 80dp donut centre without clipping. */
+private fun donutShortLabel(category: br.com.fluxo.core.Category): String = when (category) {
+    br.com.fluxo.core.Category.FOOD -> "Alim."
+    br.com.fluxo.core.Category.TRANSPORT -> "Transp."
+    br.com.fluxo.core.Category.SERVICES -> "Serv."
+    br.com.fluxo.core.Category.EDUCATION -> "Educ."
+    br.com.fluxo.core.Category.UNCATEGORIZED -> "Sem cat."
+    else -> category.label.let { if (it.length > 8) it.take(7) + "." else it }
+}
+
 private val TileTitle: TextStyle = TextStyle(fontFamily = FluxoType.Body, fontSize = 12.sp, lineHeight = 15.sp, fontWeight = FontWeight.Bold, color = FluxoColors.Ink)
 private val LegendStyle: TextStyle = TextStyle(fontFamily = FluxoType.Body, fontSize = 11.sp, lineHeight = 13.5.sp, fontWeight = FontWeight.Normal, color = FluxoColors.Ink)
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TransactionRow(row: Transaction, today: LocalDate, edit: (Transaction) -> Unit) {
     val zone = ZoneId.systemDefault()
@@ -303,6 +298,7 @@ private fun TransactionRow(row: Transaction, today: LocalDate, edit: (Transactio
     // Início keeps the currency symbol on recent rows, as in the prototype; Registros drops it.
     val amountText = if (row.amountCents == null) full else sign + full
     val spoken = when (row.direction) { Direction.INCOME -> "mais $full"; Direction.EXPENSE -> "menos $full"; Direction.UNKNOWN -> full }
+    val largeFont = LocalDensity.current.fontScale >= 1.3f
     Row(
         Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button) { edit(row) }.padding(start = 2.dp, end = 0.dp, top = 1.dp, bottom = 1.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -310,13 +306,16 @@ private fun TransactionRow(row: Transaction, today: LocalDate, edit: (Transactio
         FluxoDot(fluxoCategoryColor(row.category))
         Column(Modifier.weight(1f)) {
             Text(
-                row.description.ifBlank { row.method.label() }, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                row.description.ifBlank { row.method.label() }, maxLines = if (largeFont) 2 else 1, overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.5.sp, lineHeight = 15.sp)
             )
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            // FlowRow: when the text does not fit, the badges drop to their own line instead of squeezing it.
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(5.dp), itemVerticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    "${bankShortName(row.bankPackage)} · $methodText · $whenText", Modifier.weight(1f, fill = false),
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, style = FluxoType.Caption, color = FluxoColors.Mute
+                    "${bankShortName(row.bankPackage)} · $methodText · $whenText",
+                    style = FluxoType.Caption, color = FluxoColors.Mute
                 )
                 FluxoBadge(if (automatic) "automático" else "manual", kind = if (automatic) FluxoBadgeKind.Automatic else FluxoBadgeKind.Manual)
                 if (row.status == ReviewStatus.REVIEW) Text(

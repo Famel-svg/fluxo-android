@@ -168,7 +168,7 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
                 if (captureError != null) Text(captureError.orEmpty(), modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
                 when (tab) {
                     0 -> Dashboard(
-                        rows = monthly, month = month,
+                        rows = monthly, month = month, allRows = transactions,
                         active = capture && access && (banks.isNotEmpty() || allowOtherApps),
                         previous = { monthText = month.minusMonths(1).toString() },
                         next = { monthText = month.plusMonths(1).toString() },
@@ -180,6 +180,7 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
                     )
                     1 -> RecordsScreen(
                         rows = if (allMonths) transactions else monthly,
+                        allRows = transactions,
                         filter = filter,
                         setFilter = { filter = it },
                         allMonths = allMonths,
@@ -229,14 +230,5 @@ private fun FluxoNavItem(
         if (showIcon) Icon(icon, null, tint = fg, modifier = Modifier.size(20.dp))
         Text(label, color = fg, textAlign = TextAlign.Center, maxLines = 1,
             style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold))
-    }
-}
-
-@Composable
-internal fun MonthPicker(month: YearMonth, previous: () -> Unit, next: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-        IconButton(onClick = previous) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Mês anterior", tint = FluxoColors.Petrol) }
-        Text(month.format(DateTimeFormatter.ofPattern("MMMM 'de' yyyy", ptBr)).replaceFirstChar { it.titlecase(ptBr) }, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.titleMedium)
-        IconButton(onClick = next) { Icon(Icons.AutoMirrored.Filled.ArrowForward, "Próximo mês", tint = FluxoColors.Petrol) }
     }
 }

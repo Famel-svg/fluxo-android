@@ -54,6 +54,9 @@ private fun planningNumber(cents: BigInteger, trimWhole: Boolean = false): Strin
 private fun planningMonthName(month: YearMonth): String =
     month.month.getDisplayName(java.time.format.TextStyle.FULL, ptBr).replaceFirstChar { it.uppercase(ptBr) }
 
+/** "Outubro de 2026": the only form of a month shown to users. */
+private fun planningMonthLabel(month: YearMonth): String = "${planningMonthName(month)} de ${month.year}"
+
 private fun planningMonthShort(month: YearMonth): String =
     month.month.getDisplayName(java.time.format.TextStyle.SHORT, ptBr).trimEnd('.').replaceFirstChar { it.uppercase(ptBr) }
 
@@ -92,7 +95,6 @@ internal fun PlanningScreen(
                 YearMonth.from(Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault())) == month
         }.groupingBy { it.category }.eachCount()
     }
-    val lastWeek = remember(transactions, month) { SpendingAnalytics.dailyExpenses(transactions, month.atEndOfMonth(), 7) }
     var dialogMonth by rememberSaveable { mutableStateOf<String?>(null) }
     var dialogCategory by rememberSaveable { mutableStateOf(Category.UNCATEGORIZED) }
     var dialogLimit by rememberSaveable { mutableStateOf("") }
@@ -133,7 +135,6 @@ internal fun PlanningScreen(
                 benefitDialogMonth = month.toString()
             }
         }
-        item(key = "week") { LastWeekTile(lastWeek) }
         if (totals.isEmpty() && monthBudgets.isEmpty()) item(key = "empty") { FluxoEmptyState("Sem despesas ou limites neste mês.", "Defina um limite ou categorize seus lançamentos.") }
         if (detailCategories.isNotEmpty()) item(key = "details-heading") { PlanningSectionTitle("Categorias") { Text("detalhe do mês", style = FluxoType.Caption.copy(fontSize = 11.5.sp), color = FluxoColors.Mute) } }
         items(detailCategories, key = { "detail-" + it.name }) { category ->
@@ -143,7 +144,7 @@ internal fun PlanningScreen(
             ) { open(it) }
         }
         item(key = "disclaimer") {
-            Text("$month · inclui compras no crédito; itens em revisão e transferências próprias ficam fora. Dados reconhecidos podem ser parciais; valores não representam saldo nem fatura.",
+            Text("${planningMonthLabel(month)} · inclui compras no crédito; itens em revisão e transferências próprias ficam fora. Dados reconhecidos podem ser parciais; valores não representam saldo nem fatura.",
                 style = FluxoType.Caption, color = FluxoColors.Mute, modifier = Modifier.padding(horizontal = 2.dp, vertical = 4.dp))
         }
     }
@@ -163,7 +164,7 @@ internal fun PlanningScreen(
         }
         AlertDialog(onDismissRequest = { if (!saving) dialogMonth = null }, title = { Text(if (existingBudget) "Editar limite mensal" else "Novo limite mensal") }, text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Mês: $targetMonth")
+                Text("Mês: ${planningMonthLabel(YearMonth.parse(targetMonth))}")
                 if (existingBudget) Text("Categoria: ${dialogCategory.label}")
                 else Choice("Categoria", dialogCategory, Category.entries, { it.label }) { dialogCategory = it }
                 OutlinedTextField(dialogLimit, { dialogLimit = it }, label = { Text("Limite em reais") }, supportingText = { Text("Ex.: 500,00 · sem separador de milhar") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), isError = dialogLimit.isNotEmpty() && cents == null)
@@ -175,7 +176,7 @@ internal fun PlanningScreen(
             val limit = cents ?: return@TextButton
             save(Budget(targetMonth, dialogCategory, limit)) { dialogMonth = null }
         }) { Text(if (saving) "Salvando…" else "Salvar limite") } }, dismissButton = { TextButton(enabled = !saving, onClick = { dialogMonth = null }) { Text("Cancelar") } })
-        if (deleting) AlertDialog(onDismissRequest = { if (!saving) deleting = false }, title = { Text("Remover este limite?") }, text = { Text(editError ?: "Somente o limite de ${dialogCategory.label} em $targetMonth será removido. Os lançamentos serão mantidos.") }, confirmButton = { TextButton(enabled = !saving, onClick = { delete(targetMonth, dialogCategory) { deleting = false; dialogMonth = null } }) { Text(if (saving) "Removendo…" else "Remover") } }, dismissButton = { TextButton(enabled = !saving, onClick = { deleting = false }) { Text("Cancelar") } })
+        if (deleting) AlertDialog(onDismissRequest = { if (!saving) deleting = false }, title = { Text("Remover este limite?") }, text = { Text(editError ?: "Somente o limite de ${dialogCategory.label} em ${planningMonthLabel(YearMonth.parse(targetMonth))} será removido. Os lançamentos serão mantidos.") }, confirmButton = { TextButton(enabled = !saving, onClick = { delete(targetMonth, dialogCategory) { deleting = false; dialogMonth = null } }) { Text(if (saving) "Removendo…" else "Remover") } }, dismissButton = { TextButton(enabled = !saving, onClick = { deleting = false }) { Text("Cancelar") } })
     }
 }
 
@@ -310,33 +311,13 @@ private fun CategoryDetail(category: Category, spent: BigInteger, total: BigInte
 }
 
 @Composable
-private fun LastWeekTile(values: List<DailyExpense>) {
-    val description = "Gastos diários nos últimos sete dias do mês. " + values.joinToString("; ") { "${it.day.dayOfMonth}: ${planningMoney(it.totalCents)}" }
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(FluxoColors.Soft).padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 6.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-            Text("Últimos 7 dias do mês", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold), modifier = Modifier.weight(1f))
-            Text("por dia", style = FluxoType.Caption, color = FluxoColors.Mute)
-        }
-        Spacer(Modifier.height(2.dp))
-        BarChart(
-            entries = values.map { BarEntry(it.totalCents, it.day.dayOfMonth.toString()) },
-            contentDescription = description,
-            modifier = Modifier.fillMaxWidth().height(96.dp),
-            highlightedIndex = values.lastIndex.takeIf { it >= 0 },
-            baselineColor = FluxoColors.PetrolLight
-        )
-        if (values.all { it.totalCents.signum() == 0 }) Text("Sem despesas reconhecidas neste período.", style = FluxoType.Caption, color = FluxoColors.Mute)
-    }
-}
-
-@Composable
 internal fun BenefitSummary(month: YearMonth, settings: BenefitSettings, edit: () -> Unit) {
     val estimate = BenefitCalculator.estimate(month, settings)
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         PlanningSectionTitle("Benefícios") { Text("estimativa", style = FluxoType.Caption.copy(fontSize = 11.5.sp), color = FluxoColors.Mute) }
         BenefitRow("VR", "Vale-refeição", estimate.vrDays, settings.vrDailyCents, estimate.vrCents, FluxoColors.Petrol)
         BenefitRow("VT", "Vale-transporte", estimate.vtDays, settings.vtDailyCents, estimate.vtCents, FluxoColors.PetrolMid)
-        Text("$month · ${estimate.automaticDays} dias úteis automáticos", style = FluxoType.Caption, color = FluxoColors.Mute,
+        Text("${planningMonthLabel(month)} · ${estimate.automaticDays} dias úteis automáticos", style = FluxoType.Caption, color = FluxoColors.Mute,
             modifier = Modifier.padding(horizontal = 2.dp))
         Text("Total estimado: ${planningMoney(estimate.totalCents)}", modifier = Modifier.padding(horizontal = 2.dp).testTag("benefits.total"),
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
@@ -385,16 +366,16 @@ internal fun BenefitEditor(
         title = { Text("Configurar VR e VT") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Mês dos dias ajustados: $month")
+                Text("Mês dos dias ajustados: ${planningMonthLabel(month)}")
                 Text("Tarifas diárias valem para todos os meses. Ajustes de dias valem somente para o mês indicado.")
                 Text("Dias automáticos: ${BenefitCalculator.automaticDays(month)} (segunda a sexta). Feriados, ausências e escalas não são inferidos; ajuste os dias quando necessário.")
                 BenefitField("VR diário em R$", "benefits.vrRate", vr, { vr = it }, saving,
                     vrCents == null, "Use 0 ou valor em R$, como 25,50. Máximo: 92.233.720.368.547.758,07.", KeyboardType.Decimal)
                 BenefitField("VT diário em R$", "benefits.vtRate", vt, { vt = it }, saving,
                     vtCents == null, "Informe o total diário de transporte, incluindo ida e volta. Use vírgula para centavos.", KeyboardType.Decimal)
-                BenefitField("Dias de VR em $month", "benefits.vrDays", vrDays, { vrDays = it }, saving,
+                BenefitField("Dias de VR em ${planningMonthLabel(month)}", "benefits.vrDays", vrDays, { vrDays = it }, saving,
                     parsedVrDays.isFailure, "De 0 a ${month.lengthOfMonth()}. Vazio restaura automático.", KeyboardType.Number)
-                BenefitField("Dias de VT em $month", "benefits.vtDays", vtDays, { vtDays = it }, saving,
+                BenefitField("Dias de VT em ${planningMonthLabel(month)}", "benefits.vtDays", vtDays, { vtDays = it }, saving,
                     parsedVtDays.isFailure, "De 0 a ${month.lengthOfMonth()}. Vazio restaura automático.", KeyboardType.Number)
                 if (preview != null) {
                     Text("VR: ${preview.vrDays} dias · ${planningMoney(preview.vrCents)}")
