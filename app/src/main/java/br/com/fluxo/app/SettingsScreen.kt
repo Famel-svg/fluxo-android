@@ -7,6 +7,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -22,6 +24,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -29,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import br.com.fluxo.core.SalaryPlanner
 import br.com.fluxo.core.Transaction
 import java.time.Instant
 import java.time.LocalDate
@@ -213,9 +218,11 @@ internal fun SettingsScreen(capture: Boolean, allowOtherApps: Boolean, banks: Se
     val editError by model.editError.collectAsStateWithLifecycle()
     val snapshot by CaptureHealth.state.collectAsStateWithLifecycle()
     val profileName by model.profileName.collectAsStateWithLifecycle()
+    val salary by model.salaryMonthlyCents.collectAsStateWithLifecycle()
     var clear by rememberSaveable { mutableStateOf(false) }
     var editingProfile by rememberSaveable { mutableStateOf(false) }
     var profileDraft by rememberSaveable { mutableStateOf("") }
+    var salaryDraft by rememberSaveable { mutableStateOf("") }
     var settingsError by remember { mutableStateOf(false) }
     var reconnectMessage by remember { mutableStateOf<String?>(null) }
     // Keep document pickers registered even when their cards scroll off screen.
@@ -301,11 +308,16 @@ internal fun SettingsScreen(capture: Boolean, allowOtherApps: Boolean, banks: Se
                 Column(Modifier.fillMaxWidth()) {
                     FluxoDataRow(
                         "Nome", caption = profileName.ifBlank { "Não informado" },
-                        onClick = { profileDraft = profileName; model.resetEditError(); editingProfile = true },
+                        onClick = { profileDraft = profileName; salaryDraft = centsFieldText(salary); model.resetEditError(); editingProfile = true },
                         modifier = Modifier.testTag("settings.profile")
                     )
                     FluxoDataRow(
-                        "Rever configuração inicial", caption = "Nome, VR e VT, dias de depósito.",
+                        "Salário mensal", caption = if (salary > 0) money(salary) else "Não informado",
+                        onClick = { profileDraft = profileName; salaryDraft = centsFieldText(salary); model.resetEditError(); editingProfile = true },
+                        modifier = Modifier.testTag("settings.salary")
+                    )
+                    FluxoDataRow(
+                        "Rever configuração inicial", caption = "Nome, salário, VR e VT, dias de depósito.",
                         onClick = { model.reopenOnboarding() }, modifier = Modifier.testTag("settings.onboarding")
                     )
                 }
@@ -379,23 +391,34 @@ internal fun SettingsScreen(capture: Boolean, allowOtherApps: Boolean, banks: Se
             }
         }
     }
+    val salaryProblem = salaryError(salaryDraft)
+    // Blank clears the salary; anything else must be a valid amount greater than zero.
+    val salaryCents = if (salaryDraft.isBlank()) 0L else SalaryPlanner.parseMonthlyCents(salaryDraft)
     if (editingProfile) AlertDialog(
         onDismissRequest = { if (!saving) editingProfile = false },
-        title = { Text("Seu nome") },
+        title = { Text("Seu perfil") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = profileDraft, onValueChange = { profileDraft = it.take(40) },
                     modifier = Modifier.fillMaxWidth().testTag("settings.profile.input"),
                     label = { Text("Como podemos te chamar?") }, singleLine = true, enabled = !saving,
                     supportingText = { Text("Opcional. Fica só neste aparelho.") }
                 )
+                OutlinedTextField(
+                    value = salaryDraft, onValueChange = { salaryDraft = it.take(32) },
+                    modifier = Modifier.fillMaxWidth().testTag("settings.salary.input"),
+                    label = { Text("Salário líquido por mês") }, singleLine = true, enabled = !saving,
+                    isError = salaryProblem != null, prefix = { Text("R$") },
+                    supportingText = { Text(salaryProblem ?: "Opcional, como 3.500,00. Deixe vazio para remover. Fica só neste aparelho.") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                )
                 if (editError != null) Text(editError.orEmpty(), color = FluxoColors.Expense, style = MaterialTheme.typography.bodySmall)
             }
         },
         confirmButton = {
-            TextButton(enabled = !saving, modifier = Modifier.heightIn(min = 48.dp).testTag("settings.profile.save"),
-                onClick = { model.saveProfileName(profileDraft) { editingProfile = false } }) { Text(if (saving) "Salvando…" else "Salvar") }
+            TextButton(enabled = !saving && salaryCents != null, modifier = Modifier.heightIn(min = 48.dp).testTag("settings.profile.save"),
+                onClick = { salaryCents?.let { model.saveProfile(profileDraft, it) { editingProfile = false } } }) { Text(if (saving) "Salvando…" else "Salvar") }
         },
         dismissButton = { TextButton(enabled = !saving, onClick = { editingProfile = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancelar") } }
     )

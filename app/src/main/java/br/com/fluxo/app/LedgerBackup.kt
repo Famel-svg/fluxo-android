@@ -19,10 +19,12 @@ internal object LedgerBackup {
         "budgets" to listOf("month", "category", "limit_cents"),
         "notification_aliases" to listOf("identity_key", "source_key"),
     )
-    data class Validated(val rows: Map<String, List<ContentValues>>, val summary: BackupSummary, val benefits: BenefitSettings? = null)
+    data class Validated(val rows: Map<String, List<ContentValues>>, val summary: BackupSummary, val benefits: BenefitSettings? = null,
+        val salaryMonthlyCents: Long? = null)
 
-    fun export(db: SQLiteDatabase, benefits: BenefitSettings): ByteArray {
-        val root = JSONObject().put("format", "fluxo-ledger").put("version", 4).put("schema", 4)
+    fun export(db: SQLiteDatabase, benefits: BenefitSettings, salaryMonthlyCents: Long = 0): ByteArray {
+        require(salaryMonthlyCents >= 0)
+        val root = JSONObject().put("format", "fluxo-ledger").put("version", 5).put("schema", 4)
         columns.forEach { (table, names) ->
             val rows = JSONArray()
             db.query(table, names.toTypedArray(), null, null, null, null, null).use { cursor ->
@@ -41,6 +43,8 @@ internal object LedgerBackup {
             root.put(table, rows)
         }
         root.put("benefits", benefitsJson(benefits))
+        // Only the salary: the profile name never enters the backup.
+        root.put("profile", JSONObject().put("salary_monthly_cents", salaryMonthlyCents))
         return root.toString().toByteArray(Charsets.UTF_8).also {
             require(it.size <= BackupCipher.MAX_PLAINTEXT_BYTES) { "Backup acima do limite de 16 MiB." }
             validate(it)
@@ -80,11 +84,13 @@ internal object LedgerBackup {
             root.put("accounts", JSONArray()).put("version", 2).put("schema", 4)
         }
         val version = number(root, "version")
-        require((version == 2L || version == 3L || version == 4L) && number(root, "schema") == 4L)
+        require(version in 2L..5L && number(root, "schema") == 4L)
         val withBenefits = version >= 3L
         require(root.keys().asSequence().toSet() ==
-            columns.keys + setOf("format", "version", "schema") + (if (withBenefits) setOf("benefits") else emptySet()))
-        val benefits = if (withBenefits) parseBenefits(root.get("benefits"), withWeekdays = version == 4L) else null
+            columns.keys + setOf("format", "version", "schema") + (if (withBenefits) setOf("benefits") else emptySet()) +
+                (if (version >= 5L) setOf("profile") else emptySet()))
+        val benefits = if (withBenefits) parseBenefits(root.get("benefits"), withWeekdays = version >= 4L) else null
+        val salary = if (version >= 5L) parseProfile(root.get("profile")) else null
         val allRows = linkedMapOf<String, List<ContentValues>>()
         val sourceKeys = mutableSetOf<String>()
         val accountIds = mutableSetOf<String>()
@@ -157,7 +163,7 @@ internal object LedgerBackup {
             require(pair[0].getAsLong("amount_cents") == pair[1].getAsLong("amount_cents"))
         }
         return Validated(allRows, BackupSummary(allRows.getValue("transactions").size - deleted,
-            allRows.getValue("budgets").size, deleted, accountIds.size, withBenefits), benefits)
+            allRows.getValue("budgets").size, deleted, accountIds.size, withBenefits), benefits, salary)
     }
 
     fun restore(db: SQLiteDatabase, validated: Validated) {
@@ -201,6 +207,13 @@ internal object LedgerBackup {
             days += java.time.DayOfWeek.of(value.toInt())
         }
         return days
+    }
+
+    /** v5 profile object: exactly the salary in cents, a non-negative integer (0 = not set). */
+    private fun parseProfile(value: Any): Long {
+        val obj = value as? JSONObject ?: throw IllegalArgumentException("Perfil inválido.")
+        require(obj.keys().asSequence().toSet() == setOf("salary_monthly_cents"))
+        return number(obj, "salary_monthly_cents").also { require(it >= 0) }
     }
 
     private fun parseBenefits(value: Any, withWeekdays: Boolean): BenefitSettings {
