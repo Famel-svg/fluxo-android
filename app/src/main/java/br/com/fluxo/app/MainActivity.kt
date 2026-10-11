@@ -176,7 +176,6 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
                         showAll = { filter = 0; allMonths = false; tab = 1 },
                         review = { filter = 3; allMonths = false; tab = 1 },
                         add = { model.resetEditError(); adding = true },
-                        planning = { tab = 2 },
                         edit = { model.resetEditError(); editingId = it.id }
                     )
                     1 -> RecordsScreen(

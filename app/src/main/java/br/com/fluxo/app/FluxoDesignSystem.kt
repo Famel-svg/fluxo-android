@@ -535,7 +535,7 @@ internal fun FluxoBadge(text: String, modifier: Modifier = Modifier, kind: Fluxo
     val (bg, fg) = if (kind == FluxoBadgeKind.Manual) FluxoColors.Soft to FluxoColors.Ink else FluxoColors.Ink to Color.White
     Text(
         text, color = fg, maxLines = 1, softWrap = false,
-        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.02.em),
+        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.sp),
         modifier = modifier.clip(FluxoShapes.Badge).background(bg).padding(horizontal = 6.dp)
     )
 }

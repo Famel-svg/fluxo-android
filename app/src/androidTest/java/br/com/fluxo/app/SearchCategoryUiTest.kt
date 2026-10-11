@@ -49,7 +49,8 @@ class SearchCategoryUiTest {
         scrollTo("Nenhum lançamento")
         compose.onNodeWithText("Nenhum lançamento").assertIsDisplayed()
         scrollTo("Todos os meses")
-        compose.onNodeWithText("Todos os meses").performClick()
+        // The chip sits in the horizontally scrolling filter row.
+        compose.onNodeWithText("Todos os meses").performScrollTo().performClick()
         scrollTo("Mercado histórico sintético")
         compose.onNodeWithText("Mercado histórico sintético").assertIsDisplayed().performClick()
         compose.onNodeWithText("Categoria: Sem categoria").performScrollTo().performClick()
@@ -60,8 +61,9 @@ class SearchCategoryUiTest {
         assertEquals(Category.FOOD, repository.transactions.value.single().category)
         compose.waitForIdle()
 
-        scrollTo("Banco, meio e categoria")
-        compose.onNodeWithText("Banco, meio e categoria").performClick()
+        // Compact "Filtros" action; its accessibility label keeps the former wording.
+        scrollTo("Filtros")
+        compose.onNodeWithContentDescription("Banco, meio e categoria").performClick()
         scrollTo("Meio: Todos")
         compose.onNodeWithText("Meio: Todos").performClick()
         compose.onNodeWithText("Cartão de crédito", substring = false).performClick()

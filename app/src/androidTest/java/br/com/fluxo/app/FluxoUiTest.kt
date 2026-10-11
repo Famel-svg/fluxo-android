@@ -67,14 +67,17 @@ class FluxoUiTest {
         compose.onNodeWithTag("navigation.1").performClick()
         compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Mercado sintético"))
         compose.onNodeWithText("Mercado sintético").performScrollTo().assertIsDisplayed()
-        // Day-list rows show the signed amount; the exact unsigned text belongs to the 7-day strip, which is not clickable.
-        compose.onNodeWithText("−" + currency("125.90")).performScrollTo().assertIsDisplayed().performClick()
+        // Day-list rows show the signed number without the currency symbol; the full amount is their spoken description.
+        compose.onNodeWithContentDescription("menos " + currency("125.90")).assertExists()
+        compose.onNodeWithText(signedPlain("125.90")).performScrollTo().assertIsDisplayed().performClick()
 
         compose.onNodeWithText("Valor em reais").performTextReplacement("130,45")
         compose.onNodeWithText("Salvar lançamento").performClick()
         compose.waitUntil(10_000) { repository.transactions.value.singleOrNull()?.amountCents == 13045L }
-        compose.onNodeWithText("−" + currency("130.45")).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("−" + currency("125.90")).assertDoesNotExist()
+        compose.onNodeWithText(signedPlain("130.45")).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("menos " + currency("130.45")).assertExists()
+        compose.onNodeWithText(signedPlain("125.90")).assertDoesNotExist()
+        compose.onNodeWithContentDescription("menos " + currency("125.90")).assertDoesNotExist()
 
         compose.onNodeWithText("Mercado sintético").performScrollTo().performClick()
         compose.onNodeWithText("Excluir lançamento").performScrollTo().performClick()
@@ -115,6 +118,9 @@ class FluxoUiTest {
         compose.waitUntil(10_000) { repository.transactions.value.size == previousCount + 1 }
         compose.waitForIdle()
     }
+
+    /** Row amount as displayed in lists: U+2212 minus and the number only, no currency symbol. */
+    private fun signedPlain(value: String): String = "−" + currency(value).replace("R$", "").trim()
 
     private fun currency(value: String): String = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("pt-BR")).format(BigDecimal(value))
 }
