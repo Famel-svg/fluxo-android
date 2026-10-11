@@ -98,6 +98,20 @@ class LedgerRepository(context: Context) {
             }
         }
 
+    /** Caller holds the mutex. Replaces stored benefits entirely; runs only after the SQLite restore succeeded. */
+    private fun replaceBenefits(settings: BenefitSettings) {
+        val editor = benefitPreferences.edit()
+        benefitPreferences.all.keys.filter { it.startsWith("vr_days:") || it.startsWith("vt_days:") }
+            .forEach { editor.remove(it) }
+        editor.putLong("vr_daily_cents", settings.vrDailyCents).putLong("vt_daily_cents", settings.vtDailyCents)
+        settings.overrides.forEach { (month, days) ->
+            days.vr?.let { editor.putInt("vr_days:$month", it) }
+            days.vt?.let { editor.putInt("vt_days:$month", it) }
+        }
+        check(editor.commit()) { "Não foi possível salvar os benefícios no aparelho." }
+        _benefits.value = settings
+    }
+
     @Synchronized
     fun setCaptureEnabled(value: Boolean) {
         preferences.edit().putBoolean("enabled", value).apply()
@@ -133,7 +147,7 @@ class LedgerRepository(context: Context) {
     suspend fun refresh() = withContext(Dispatchers.IO) { mutex.withLock { readAll() } }
 
     suspend fun exportBackupPayload(): ByteArray = withContext(Dispatchers.IO) {
-        mutex.withLock { LedgerBackup.export(database.readableDatabase) }
+        mutex.withLock { LedgerBackup.export(database.readableDatabase, readBenefits()) }
     }
 
     fun inspectBackupPayload(payload: ByteArray): BackupSummary = LedgerBackup.validate(payload).summary
@@ -144,6 +158,7 @@ class LedgerRepository(context: Context) {
             // Device permissions and bank selection are not imported. Consent stays local.
             setCaptureEnabled(false)
             LedgerBackup.restore(database.writableDatabase, validated)
+            validated.benefits?.let { replaceBenefits(it) }
             _captureError.value = null
             readAll()
         }
