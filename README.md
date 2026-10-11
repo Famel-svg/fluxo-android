@@ -11,7 +11,7 @@ Aplicativo Android de controle financeiro pessoal, em português e com dados som
 - Lançamentos manuais, categorias, busca sem acentos e filtros combinados por banco, meio e categoria.
 - Planejamento mensal: limite por categoria, gasto, restante/excesso e comparação com o mês anterior.
 - Contas locais com saldo inicial datado e transferências próprias, que não inflam renda nem consumo.
-- Configuração inicial no primeiro uso (também em Ajustes › Rever configuração inicial): nome opcional e, para VR e VT, valor por dia e dias da semana em que cai (por exemplo VR de segunda a sexta e VT de segunda a quinta); o app calcula a estimativa do mês e o nome fica só no aparelho.
+- Configuração inicial no primeiro uso (também em Ajustes › Rever configuração inicial): nome opcional e, para VR e VT, valor por dia e dias da semana em que cai (por exemplo VR de segunda a sexta e VT de segunda a quinta); o app calcula a estimativa do mês e o nome fica só no aparelho. O assistente tem três páginas (nome, salário mensal, VR e VT) e permite pular cada etapa; com o salário informado, Planejar mostra a renda prevista do mês (salário + VR + VT) e quanto do salário os gastos já representam, só como estimativa; o salário entra no backup criptografado (v5) e fica fora do CSV.
 - Estimativa de benefícios (VR/VT) pelos dias da semana de cada benefício, com ajuste manual de dias por mês.
 - Saldo de VR (e VT) no Início: gastos marcados com Vale-refeição/Vale-transporte abatem a estimativa do mês e ficam fora das saídas de caixa; é uma estimativa, sem repasse de meses anteriores.
 - Backup restaurável protegido por senha (lançamentos, orçamentos, contas, benefícios e identificadores contra duplicatas).
