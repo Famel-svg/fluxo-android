@@ -13,6 +13,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.Density
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.After
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -21,6 +23,13 @@ import org.junit.runner.RunWith
 class LargeFontNavigationUiTest {
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
+
+    private val repository get() = (compose.activity.application as FluxoApplication).repository
+    private var profile: ProfileSnapshot? = null
+
+    @Before fun skipOnboarding() { profile = OnboardingTestSupport.skip(repository) }
+
+    @After fun restoreProfile() { profile?.let { OnboardingTestSupport.restore(repository, it) } }
 
     @Test
     fun allDestinationsRemainReachableWithDoubleFontScale() {

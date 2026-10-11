@@ -23,12 +23,14 @@ class SearchCategoryUiTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     private val repository get() = (compose.activity.application as FluxoApplication).repository
     private var fixtureStarted = false
+    private var profile: ProfileSnapshot? = null
 
     @Before fun seedPreviousMonth() {
         assumeTrue("Pass disposableEmulator=true only from the guarded ApkPreview runner",
             InstrumentationRegistry.getArguments().getString("disposableEmulator") == "true")
         assumeTrue("Integration tests require an emulator", Build.HARDWARE in setOf("ranchu", "goldfish"))
         fixtureStarted = true
+        profile = OnboardingTestSupport.skip(repository)
         runBlocking {
             repository.clear()
             repository.save(Transaction(
@@ -41,7 +43,10 @@ class SearchCategoryUiTest {
         compose.waitForIdle()
     }
 
-    @After fun clearFixtures() { if (fixtureStarted) runBlocking { repository.clear() } }
+    @After fun clearFixtures() {
+        if (fixtureStarted) runBlocking { repository.clear() }
+        profile?.let { OnboardingTestSupport.restore(repository, it) }
+    }
 
     @Test fun accentInsensitiveSearchFindsOldTransactionAndEditedCategoryCombinesWithFilters() {
         compose.onNodeWithTag("navigation.1").performClick()
