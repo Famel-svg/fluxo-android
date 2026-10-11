@@ -155,7 +155,8 @@ private fun money(cents: Long?) = cents?.let { money(BigDecimal.valueOf(it, 2)) 
 private fun money(value: BigDecimal) = NumberFormat.getCurrencyInstance(ptBr).format(value)
 private fun Direction.label() = when (this) { Direction.INCOME -> "Entrada"; Direction.EXPENSE -> "Saída"; Direction.UNKNOWN -> "Não definida" }
 private fun PaymentMethod.label() = when (this) { PaymentMethod.PIX -> "Pix"; PaymentMethod.CREDIT_CARD -> "Cartão de crédito"; PaymentMethod.DEBIT_CARD -> "Cartão de débito"; PaymentMethod.UNKNOWN -> "Outro / não informado" }
-private fun bankName(packageName: String) = supportedBanks.firstOrNull { it.packageName == packageName }?.name ?: "Manual"
+private fun bankName(packageName: String) = supportedBanks.firstOrNull { it.packageName == packageName }?.name
+    ?: if (packageName == "manual") "Manual" else "Outro app"
 
 @Composable
 private fun FluxoTheme(content: @Composable () -> Unit) {
