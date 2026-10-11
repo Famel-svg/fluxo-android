@@ -12,6 +12,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.math.BigDecimal
 import java.text.NumberFormat
+import java.time.DayOfWeek
 import java.time.YearMonth
 import java.time.ZoneId
 import java.util.Locale
@@ -28,7 +29,7 @@ class PlanningUiTest {
             expense("pending", 9000, PaymentMethod.DEBIT_CARD).copy(status = ReviewStatus.REVIEW),
             expense("old", 5000, PaymentMethod.DEBIT_CARD).copy(occurredAt = month.minusMonths(1).atDay(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli())
         )
-        compose.setContent { MaterialTheme { PlanningScreen(rows, listOf(Budget(month.toString(), Category.FOOD, 10000)), month, false, null, {}, { _, _ -> }, { _, _, _ -> }, BenefitSettings(), { _, _, _, _, _ -> }) } }
+        compose.setContent { MaterialTheme { PlanningScreen(rows, listOf(Budget(month.toString(), Category.FOOD, 10000)), month, false, null, {}, { _, _ -> }, { _, _, _ -> }, BenefitSettings(), { _, _, _, _, _, _, _ -> }) } }
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Excesso: ${currency("20.00")}"))
         compose.onNodeWithText("Excesso: ${currency("20.00")}").assertIsDisplayed()
         compose.onNodeWithText("2 lançamento(s) · 100,0% das despesas").assertIsDisplayed()
@@ -38,7 +39,7 @@ class PlanningUiTest {
         val selectedMonth = mutableStateOf(month)
         val error = mutableStateOf<String?>(null)
         var saved: Budget? = null
-        compose.setContent { MaterialTheme { PlanningScreen(emptyList(), emptyList(), selectedMonth.value, false, error.value, { error.value = null }, { budget, _ -> saved = budget; error.value = "Falha de gravação" }, { _, _, _ -> }, BenefitSettings(), { _, _, _, _, _ -> }) } }
+        compose.setContent { MaterialTheme { PlanningScreen(emptyList(), emptyList(), selectedMonth.value, false, error.value, { error.value = null }, { budget, _ -> saved = budget; error.value = "Falha de gravação" }, { _, _, _ -> }, BenefitSettings(), { _, _, _, _, _, _, _ -> }) } }
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Definir limite mensal"))
         compose.onNodeWithText("Definir limite mensal").performClick()
         compose.onNodeWithText("Limite em reais").performTextInput("150,25")
@@ -52,7 +53,7 @@ class PlanningUiTest {
     @Test fun removingBudgetRequiresConfirmationAndPreservesDialogOnFailure() {
         val error = mutableStateOf<String?>(null)
         var requested: Pair<String, Category>? = null
-        compose.setContent { MaterialTheme { PlanningScreen(emptyList(), listOf(Budget(month.toString(), Category.FOOD, 10000)), month, false, error.value, { error.value = null }, { _, _ -> }, { targetMonth, category, _ -> requested = targetMonth to category; error.value = "Falha ao remover" }, BenefitSettings(), { _, _, _, _, _ -> }) } }
+        compose.setContent { MaterialTheme { PlanningScreen(emptyList(), listOf(Budget(month.toString(), Category.FOOD, 10000)), month, false, error.value, { error.value = null }, { _, _ -> }, { targetMonth, category, _ -> requested = targetMonth to category; error.value = "Falha ao remover" }, BenefitSettings(), { _, _, _, _, _, _, _ -> }) } }
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Editar limite de Alimentação"))
         compose.onNodeWithText("Editar limite de Alimentação").performClick()
         compose.onNodeWithText("Remover limite").performScrollTo().performClick()
@@ -69,8 +70,8 @@ class PlanningUiTest {
         compose.setContent { MaterialTheme {
             PlanningScreen(emptyList(), emptyList(), selected.value, false, null, {},
                 { _, _ -> }, { _, _, _ -> }, settings.value,
-                { target, vr, vt, days, done ->
-                    settings.value = BenefitSettings(vr, vt, settings.value.overrides + (target to days))
+                { target, vr, vt, days, vrWeekdays, vtWeekdays, done ->
+                    settings.value = BenefitSettings(vr, vt, settings.value.overrides + (target to days), vrWeekdays, vtWeekdays)
                     done()
                 })
         } }
@@ -109,7 +110,7 @@ class PlanningUiTest {
         compose.setContent { MaterialTheme {
             PlanningScreen(emptyList(), emptyList(), selected.value, false, error.value,
                 { error.value = null }, { _, _ -> }, { _, _, _ -> }, BenefitSettings(),
-                { target, vr, _, _, _ ->
+                { target, vr, _, _, _, _, _ ->
                     requestedMonth = target
                     requestedRate = vr
                     error.value = "Falha de gravação"
@@ -131,6 +132,32 @@ class PlanningUiTest {
             assertEquals(month, requestedMonth)
             assertEquals(123456L, requestedRate)
         }
+    }
+
+    @Test fun benefitEditorWeekdayChipsSaveSeparateSchedulesAndSummaryFollowsEachOne() {
+        val monThu = BenefitCalculator.WORKDAYS - DayOfWeek.FRIDAY
+        val settings = mutableStateOf(BenefitSettings(3900, 1080))
+        compose.setContent { MaterialTheme {
+            PlanningScreen(emptyList(), emptyList(), month, false, null, {}, { _, _ -> }, { _, _, _ -> }, settings.value,
+                { target, vr, vt, days, vrWeekdays, vtWeekdays, done ->
+                    settings.value = BenefitSettings(vr, vt, settings.value.overrides + (target to days), vrWeekdays, vtWeekdays)
+                    done()
+                })
+        } }
+        val vrCount = BenefitCalculator.scheduledDays(month, BenefitCalculator.WORKDAYS)
+        val vtCount = BenefitCalculator.scheduledDays(month, monThu)
+        compose.onNodeWithTag("benefits.configure").performScrollTo().performClick()
+        for (day in 1..5) compose.onNodeWithTag("benefits.vrDay.$day").performScrollTo().assertIsOn()
+        compose.onNodeWithTag("benefits.vrDay.6").performScrollTo().assertIsOff()
+        compose.onNodeWithTag("benefits.vtDay.5").performScrollTo().assertIsOn().performClick().assertIsOff()
+        compose.onNodeWithTag("benefits.save").performClick()
+        compose.runOnIdle {
+            assertEquals(BenefitCalculator.WORKDAYS, settings.value.vrWeekdays)
+            assertEquals(monThu, settings.value.vtWeekdays)
+        }
+        compose.onNodeWithText("VR: $vrCount dias (seg–sex) · VT: $vtCount dias (seg–qui)", substring = true)
+            .performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("benefits.total").assertTextEquals("Total estimado: ${currency("%d.%02d".format((3900L * vrCount + 1080L * vtCount) / 100, (3900L * vrCount + 1080L * vtCount) % 100))}")
     }
 
     private fun expense(id: String, amount: Long, method: PaymentMethod) = Transaction(

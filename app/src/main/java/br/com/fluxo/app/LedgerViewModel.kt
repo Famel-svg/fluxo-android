@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.DayOfWeek
 import java.time.YearMonth
 
 class LedgerViewModel(application: Application) : AndroidViewModel(application) {
@@ -24,6 +25,8 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
     val accounts = repository.accounts
     val budgets = repository.budgets
     val benefits = repository.benefits
+    val profileName = repository.profileName
+    val onboardingDone = repository.onboardingDone
     val captureEnabled = repository.captureEnabled
     val allowOtherApps = repository.allowOtherApps
     val enabledBanks = repository.enabledBanks
@@ -60,8 +63,16 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
     fun delete(id: String, onSuccess: () -> Unit) = edit(onSuccess) { repository.delete(id) }
     fun saveBudget(budget: Budget, onSuccess: () -> Unit) = edit(onSuccess) { repository.saveBudget(budget) }
     fun deleteBudget(month: String, category: Category, onSuccess: () -> Unit) = edit(onSuccess) { repository.deleteBudget(month, category) }
-    fun saveBenefits(month: YearMonth, vr: Long, vt: Long, days: BenefitDays, onSuccess: () -> Unit) =
-        edit(onSuccess) { repository.saveBenefits(month, vr, vt, days) }
+    fun saveBenefits(
+        month: YearMonth, vr: Long, vt: Long, days: BenefitDays,
+        vrWeekdays: Set<DayOfWeek>, vtWeekdays: Set<DayOfWeek>, onSuccess: () -> Unit,
+    ) = edit(onSuccess) { repository.saveBenefits(month, vr, vt, days, vrWeekdays, vtWeekdays) }
+    fun completeOnboarding(
+        name: String, vr: Long, vt: Long, vrWeekdays: Set<DayOfWeek>, vtWeekdays: Set<DayOfWeek>, onSuccess: () -> Unit = {},
+    ) = edit(onSuccess) { repository.completeOnboarding(name, vr, vt, vrWeekdays, vtWeekdays) }
+    fun skipOnboarding() = edit({}) { repository.setOnboardingDone(true) }
+    fun reopenOnboarding() = edit({}) { repository.setOnboardingDone(false) }
+    fun saveProfileName(name: String, onSuccess: () -> Unit) = edit(onSuccess) { repository.setProfileName(name) }
     fun resetEditError() { _editError.value = null }
     fun clear() = execute { repository.clear() }
     fun capture(enabled: Boolean) = execute { repository.setCaptureEnabled(enabled) }

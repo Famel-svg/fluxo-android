@@ -10,6 +10,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import br.com.fluxo.core.BenefitCalculator
 import br.com.fluxo.core.BenefitDays
 import br.com.fluxo.core.BenefitSettings
+import java.time.DayOfWeek
 import java.time.YearMonth
 import br.com.fluxo.core.Direction
 import br.com.fluxo.core.Budget
@@ -633,13 +634,14 @@ class LedgerRepositoryTest {
         try { runBlocking { block(isolated, prefs) } } finally {
             runBlocking { isolated.clear() }
             prefs.edit().clear().commit()
+            context.getSharedPreferences("profile", Context.MODE_PRIVATE).edit().clear().commit()
         }
     }
 
     private fun mutated(payload: ByteArray, change: (org.json.JSONObject) -> Unit): ByteArray =
         org.json.JSONObject(payload.toString(Charsets.UTF_8)).also(change).toString().toByteArray()
 
-    @Test fun backupV3RoundTripRestoresBenefitsAndReplacesExistingOverrides() = withBenefitRepository { repo, prefs ->
+    @Test fun backupV4RoundTripRestoresBenefitsAndReplacesExistingOverrides() = withBenefitRepository { repo, prefs ->
         val sep = YearMonth.of(2026, 9)
         val oct = sep.plusMonths(1)
         repo.save(manualTransaction())
@@ -648,7 +650,7 @@ class LedgerRepositoryTest {
         val expected = repo.benefits.value
         val payload = repo.exportBackupPayload()
         val json = org.json.JSONObject(payload.toString(Charsets.UTF_8))
-        assertEquals(3, json.getInt("version"))
+        assertEquals(4, json.getInt("version"))
         assertEquals(4, json.getInt("schema"))
         assertEquals(listOf("2026-09", "2026-10"), (0 until 2).map { json.getJSONObject("benefits").getJSONArray("days").getJSONObject(it).getString("month") })
         assertEquals(BackupSummary(1, 0, 0, 0, true), repo.inspectBackupPayload(payload))
@@ -711,6 +713,157 @@ class LedgerRepositoryTest {
             assertEquals(benefits, repo.benefits.value)
             assertEquals(stored, prefs.all)
         }
+    }
+
+    private val monThu = BenefitCalculator.WORKDAYS - DayOfWeek.FRIDAY
+
+    @Test fun backupV4RoundTripPreservesBothWeekdaySetsAndNeverCarriesTheName() = withBenefitRepository { repo, prefs ->
+        val sep = YearMonth.of(2026, 9)
+        repo.setProfileName("Rafael")
+        repo.saveBenefits(sep, 3900, 1080, BenefitDays(), setOf(DayOfWeek.MONDAY, DayOfWeek.SATURDAY), monThu)
+        val payload = repo.exportBackupPayload()
+        val text = payload.toString(Charsets.UTF_8)
+        assertFalse("name must not be exported", text.contains("Rafael"))
+        val benefitsJson = org.json.JSONObject(text).getJSONObject("benefits")
+        assertEquals("[1,6]", benefitsJson.getJSONArray("vr_weekdays").toString())
+        assertEquals("[1,2,3,4]", benefitsJson.getJSONArray("vt_weekdays").toString())
+        repo.saveBenefits(sep, 1, 2, BenefitDays(), emptySet(), setOf(DayOfWeek.SUNDAY))
+        repo.restoreBackupPayload(payload)
+        assertEquals(setOf(DayOfWeek.MONDAY, DayOfWeek.SATURDAY), repo.benefits.value.vrWeekdays)
+        assertEquals(monThu, repo.benefits.value.vtWeekdays)
+        assertEquals(3900L, repo.benefits.value.vrDailyCents)
+        assertEquals("Rafael", repo.profileName.value)
+        assertEquals(0b100001, prefs.getInt("vr_weekdays", -1))
+    }
+
+    @Test fun backupV3PayloadStillRestoresWithMondayToFriday() = withBenefitRepository { repo, _ ->
+        repo.save(manualTransaction())
+        repo.saveBenefits(YearMonth.of(2026, 9), 2550, 1050, BenefitDays(7, 8), setOf(DayOfWeek.SUNDAY), emptySet())
+        val v3 = mutated(repo.exportBackupPayload()) {
+            it.put("version", 3)
+            it.getJSONObject("benefits").remove("vr_weekdays")
+            it.getJSONObject("benefits").remove("vt_weekdays")
+        }
+        assertEquals(BackupSummary(1, 0, 0, 0, true), repo.inspectBackupPayload(v3))
+        repo.restoreBackupPayload(v3)
+        assertEquals(BenefitCalculator.WORKDAYS, repo.benefits.value.vrWeekdays)
+        assertEquals(BenefitCalculator.WORKDAYS, repo.benefits.value.vtWeekdays)
+        assertEquals(2550L, repo.benefits.value.vrDailyCents)
+        assertEquals(BenefitDays(7, 8), repo.benefits.value.overrides[YearMonth.of(2026, 9)])
+        // A v3 file must not carry the v4 keys.
+        val v3WithKeys = mutated(v3) { it.getJSONObject("benefits").put("vr_weekdays", org.json.JSONArray()) }
+        try { repo.inspectBackupPayload(v3WithKeys); fail("v3 must not carry weekdays") } catch (_: IllegalArgumentException) { }
+    }
+
+    @Test fun malformedWeekdayArraysAreRejectedWithoutChangingData() = withBenefitRepository { repo, prefs ->
+        repo.save(manualTransaction())
+        repo.saveBenefits(YearMonth.of(2026, 9), 2550, 1050, BenefitDays(), monThu, BenefitCalculator.WORKDAYS)
+        val good = repo.exportBackupPayload()
+        val ledger = repo.transactions.value
+        val benefits = repo.benefits.value
+        val stored = prefs.all.toMap()
+        fun ben(o: org.json.JSONObject) = o.getJSONObject("benefits")
+        fun jsonArray(vararg values: Any) = org.json.JSONArray().also { array -> values.forEach { array.put(it) } }
+        val bad = listOf<(org.json.JSONObject) -> Unit>(
+            { ben(it).put("vr_weekdays", jsonArray(0, 1)) },
+            { ben(it).put("vt_weekdays", jsonArray(1, 8)) },
+            { ben(it).put("vr_weekdays", jsonArray(1, 1)) },
+            { ben(it).put("vt_weekdays", jsonArray(2, 1)) },
+            { ben(it).put("vr_weekdays", jsonArray(1.5)) },
+            { ben(it).put("vt_weekdays", jsonArray("1")) },
+            { ben(it).put("vr_weekdays", jsonArray(-1)) },
+            { ben(it).put("vr_weekdays", jsonArray(1, 2, 3, 4, 5, 6, 7, 7)) },
+            { ben(it).put("vr_weekdays", "1,2") },
+            { ben(it).put("vt_weekdays", org.json.JSONObject.NULL) },
+            { ben(it).remove("vr_weekdays") },
+            { ben(it).remove("vt_weekdays") },
+        )
+        bad.forEachIndexed { index, change ->
+            val payload = mutated(good, change)
+            try { repo.inspectBackupPayload(payload); fail("case $index accepted") } catch (_: IllegalArgumentException) { }
+            try { repo.restoreBackupPayload(payload); fail("case $index restored") } catch (_: IllegalArgumentException) { }
+            assertEquals(ledger, repo.transactions.value)
+            assertEquals(benefits, repo.benefits.value)
+            assertEquals(stored, prefs.all)
+        }
+    }
+
+    @Test fun weekdaySetsPersistAsCompactMasksAndMalformedStoredValuesFallBackToMondayToFriday() {
+        val context = IsolatedContext(InstrumentationRegistry.getInstrumentation().targetContext,
+            "benefits_weekdays_${java.util.UUID.randomUUID()}_")
+        val prefs = context.getSharedPreferences("benefits", Context.MODE_PRIVATE)
+        try {
+            val repo = LedgerRepository(context)
+            assertEquals(BenefitCalculator.WORKDAYS, repo.benefits.value.vrWeekdays)
+            runBlocking {
+                repo.saveBenefits(YearMonth.of(2026, 10), 3900, 1080, BenefitDays(), BenefitCalculator.WORKDAYS, monThu)
+            }
+            assertEquals(0b0011111, prefs.getInt("vr_weekdays", -1))
+            assertEquals(0b0001111, prefs.getInt("vt_weekdays", -1))
+            assertEquals(monThu, LedgerRepository(context).benefits.value.vtWeekdays)
+            // A save with null weekdays keeps the stored sets.
+            runBlocking { repo.saveBenefits(YearMonth.of(2026, 10), 1, 2, BenefitDays()) }
+            assertEquals(monThu, LedgerRepository(context).benefits.value.vtWeekdays)
+            // Empty set is valid and distinct from "missing".
+            runBlocking { repo.saveBenefits(YearMonth.of(2026, 10), 1, 2, BenefitDays(), emptySet(), emptySet()) }
+            assertEquals(emptySet<DayOfWeek>(), LedgerRepository(context).benefits.value.vrWeekdays)
+            assertEquals(0, prefs.getInt("vr_weekdays", -1))
+            for (malformed in listOf(128, -1, Int.MAX_VALUE)) {
+                assertTrue(prefs.edit().putInt("vr_weekdays", malformed).commit())
+                assertEquals(BenefitCalculator.WORKDAYS, LedgerRepository(context).benefits.value.vrWeekdays)
+            }
+            assertTrue(prefs.edit().putString("vr_weekdays", "31").putLong("vt_weekdays", 15L).commit())
+            val loaded = LedgerRepository(context).benefits.value
+            assertEquals(BenefitCalculator.WORKDAYS, loaded.vrWeekdays)
+            assertEquals(BenefitCalculator.WORKDAYS, loaded.vtWeekdays)
+            assertTrue(prefs.edit().remove("vr_weekdays").remove("vt_weekdays").commit())
+            assertEquals(BenefitCalculator.WORKDAYS, LedgerRepository(context).benefits.value.vtWeekdays)
+        } finally {
+            prefs.edit().clear().commit()
+        }
+    }
+
+    @Test fun profileNameIsTrimmedLimitedAndOnboardingFlagPersistsAcrossRecreation() {
+        val context = IsolatedContext(InstrumentationRegistry.getInstrumentation().targetContext,
+            "profile_${java.util.UUID.randomUUID()}_")
+        try {
+            val repo = LedgerRepository(context)
+            assertEquals("", repo.profileName.value)
+            assertFalse(repo.onboardingDone.value)
+            runBlocking { repo.setProfileName("  " + "a".repeat(60) + "  ") }
+            assertEquals("a".repeat(40), repo.profileName.value)
+            runBlocking { repo.setProfileName("   ") }
+            assertEquals("", repo.profileName.value)
+            runBlocking { repo.setProfileName(" Rafael "); repo.setOnboardingDone(true) }
+            val reopened = LedgerRepository(context)
+            assertEquals("Rafael", reopened.profileName.value)
+            assertTrue(reopened.onboardingDone.value)
+            runBlocking { reopened.setOnboardingDone(false) }
+            assertFalse(LedgerRepository(context).onboardingDone.value)
+            // Completing writes rates, both weekday sets, name and flag together.
+            runBlocking { reopened.completeOnboarding("Ana", 3900, 1080, BenefitCalculator.WORKDAYS, monThu) }
+            val done = LedgerRepository(context)
+            assertTrue(done.onboardingDone.value)
+            assertEquals("Ana", done.profileName.value)
+            assertEquals(BenefitSettings(3900, 1080, vtWeekdays = monThu), done.benefits.value)
+            // The name lives only in the private "profile" preferences, never in the benefits file.
+            assertFalse(context.getSharedPreferences("benefits", Context.MODE_PRIVATE).all.values.contains("Ana"))
+        } finally {
+            context.getSharedPreferences("profile", Context.MODE_PRIVATE).edit().clear().commit()
+            context.getSharedPreferences("benefits", Context.MODE_PRIVATE).edit().clear().commit()
+            runBlocking { LedgerRepository(context).clear() }
+        }
+    }
+
+    @Test fun clearKeepsProfileOnboardingFlagAndBenefits() = withBenefitRepository { repo, _ ->
+        repo.save(manualTransaction())
+        repo.completeOnboarding("Ana", 3900, 1080, BenefitCalculator.WORKDAYS, monThu)
+        val benefits = repo.benefits.value
+        repo.clear()
+        assertTrue(repo.transactions.value.isEmpty())
+        assertEquals("Ana", repo.profileName.value)
+        assertTrue(repo.onboardingDone.value)
+        assertEquals(benefits, repo.benefits.value)
     }
 
     private fun enableCapture() {

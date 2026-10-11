@@ -22,7 +22,7 @@ internal object LedgerBackup {
     data class Validated(val rows: Map<String, List<ContentValues>>, val summary: BackupSummary, val benefits: BenefitSettings? = null)
 
     fun export(db: SQLiteDatabase, benefits: BenefitSettings): ByteArray {
-        val root = JSONObject().put("format", "fluxo-ledger").put("version", 3).put("schema", 4)
+        val root = JSONObject().put("format", "fluxo-ledger").put("version", 4).put("schema", 4)
         columns.forEach { (table, names) ->
             val rows = JSONArray()
             db.query(table, names.toTypedArray(), null, null, null, null, null).use { cursor ->
@@ -80,11 +80,11 @@ internal object LedgerBackup {
             root.put("accounts", JSONArray()).put("version", 2).put("schema", 4)
         }
         val version = number(root, "version")
-        require((version == 2L || version == 3L) && number(root, "schema") == 4L)
-        val withBenefits = version == 3L
+        require((version == 2L || version == 3L || version == 4L) && number(root, "schema") == 4L)
+        val withBenefits = version >= 3L
         require(root.keys().asSequence().toSet() ==
             columns.keys + setOf("format", "version", "schema") + (if (withBenefits) setOf("benefits") else emptySet()))
-        val benefits = if (withBenefits) parseBenefits(root.get("benefits")) else null
+        val benefits = if (withBenefits) parseBenefits(root.get("benefits"), withWeekdays = version == 4L) else null
         val allRows = linkedMapOf<String, List<ContentValues>>()
         val sourceKeys = mutableSetOf<String>()
         val accountIds = mutableSetOf<String>()
@@ -177,11 +177,36 @@ internal object LedgerBackup {
         }
         return JSONObject().put("vr_daily_cents", settings.vrDailyCents)
             .put("vt_daily_cents", settings.vtDailyCents).put("days", days)
+            .put("vr_weekdays", weekdaysJson(settings.vrWeekdays))
+            .put("vt_weekdays", weekdaysJson(settings.vtWeekdays))
     }
 
-    private fun parseBenefits(value: Any): BenefitSettings {
+    private fun weekdaysJson(days: Set<java.time.DayOfWeek>) =
+        JSONArray().also { array -> days.map { it.value }.sorted().forEach { array.put(it) } }
+
+    /** ISO day numbers 1..7, strictly ascending (sorted and unique); anything else is rejected. */
+    private fun parseWeekdays(obj: JSONObject, name: String): Set<java.time.DayOfWeek> {
+        val array = obj.get(name) as? JSONArray ?: throw IllegalArgumentException("Dias da semana inválidos.")
+        require(array.length() <= 7)
+        var previous = 0L
+        val days = linkedSetOf<java.time.DayOfWeek>()
+        for (i in 0 until array.length()) {
+            val value = when (val item = array.get(i)) {
+                is Int -> item.toLong()
+                is Long -> item
+                else -> throw IllegalArgumentException("Dia da semana inválido.")
+            }
+            require(value in 1L..7L && value > previous) { "Dia da semana inválido." }
+            previous = value
+            days += java.time.DayOfWeek.of(value.toInt())
+        }
+        return days
+    }
+
+    private fun parseBenefits(value: Any, withWeekdays: Boolean): BenefitSettings {
         val obj = value as? JSONObject ?: throw IllegalArgumentException("Benefícios inválidos.")
-        require(obj.keys().asSequence().toSet() == setOf("vr_daily_cents", "vt_daily_cents", "days"))
+        require(obj.keys().asSequence().toSet() == setOf("vr_daily_cents", "vt_daily_cents", "days") +
+            (if (withWeekdays) setOf("vr_weekdays", "vt_weekdays") else emptySet()))
         val vrRate = number(obj, "vr_daily_cents").also { require(it >= 0) }
         val vtRate = number(obj, "vt_daily_cents").also { require(it >= 0) }
         val days = obj.get("days") as? JSONArray ?: throw IllegalArgumentException("Benefícios inválidos.")
@@ -200,7 +225,9 @@ internal object LedgerBackup {
             require(vr != null || vt != null)
             require(overrides.put(month, BenefitDays(vr, vt)) == null)
         }
-        return BenefitSettings(vrRate, vtRate, overrides.toMap())
+        val vrWeekdays = if (withWeekdays) parseWeekdays(obj, "vr_weekdays") else BenefitCalculator.WORKDAYS
+        val vtWeekdays = if (withWeekdays) parseWeekdays(obj, "vt_weekdays") else BenefitCalculator.WORKDAYS
+        return BenefitSettings(vrRate, vtRate, overrides.toMap(), vrWeekdays, vtWeekdays)
     }
 
     private fun number(row: JSONObject, name: String): Long = when (val value = row.get(name)) {
