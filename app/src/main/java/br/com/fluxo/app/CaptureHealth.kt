@@ -53,13 +53,16 @@ fun CaptureHealthCard(access: Boolean, capture: Boolean, banks: Set<String>, all
     val context = LocalContext.current
     var message by remember { mutableStateOf<String?>(null) }
     CaptureHealthContent(snapshot, access, capture, banks, message, allowOtherApps) {
-        message = try {
-            NotificationListenerService.requestRebind(ComponentName(context, BankNotificationListener::class.java))
-            "Reconexão solicitada. Aguarde a confirmação do Android."
-        } catch (_: Exception) {
-            "Não foi possível solicitar conexão. Confira o acesso nas configurações Android."
-        }
+        message = requestListenerRebind(context)
     }
+}
+
+/** Asks Android to rebind the notification listener; returns the user-facing outcome message. */
+internal fun requestListenerRebind(context: android.content.Context): String = try {
+    NotificationListenerService.requestRebind(ComponentName(context, BankNotificationListener::class.java))
+    "Reconexão solicitada. Aguarde a confirmação do Android."
+} catch (_: Exception) {
+    "Não foi possível solicitar conexão. Confira o acesso nas configurações Android."
 }
 
 @Composable
@@ -67,8 +70,9 @@ internal fun CaptureHealthContent(
     snapshot: CaptureSnapshot, access: Boolean, capture: Boolean, banks: Set<String>,
     message: String? = null, allowOtherApps: Boolean = false, reconnect: () -> Unit = {},
 ) {
-    OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val note = MaterialTheme.typography.bodySmall.copy(color = FluxoColors.Mute)
+    FluxoSettingsCard {
+        run {
             Text("Diagnóstico da captura", style = MaterialTheme.typography.titleMedium)
             Text(if (access) "Permissão: concedida" else "Permissão: não concedida")
             Text(if (capture) "Captura: habilitada" else "Captura: pausada")
@@ -96,13 +100,13 @@ internal fun CaptureHealthContent(
                     ?: "nenhuma notificação observada nesta sessão"}")
             }
             Text("Observada não significa lançamento confirmado. Mensagens sem valor ou promocionais podem ser descartadas. Ausência de notificações não comprova falha.",
-                style = MaterialTheme.typography.bodySmall)
+                style = note)
             if (access && capture && (banks.isNotEmpty() || allowOtherApps) && snapshot.connected != true) {
-                OutlinedButton(onClick = reconnect) { Text("Solicitar reconexão") }
+                FluxoWrapButton("Solicitar reconexão", onClick = reconnect)
             }
-            message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            message?.let { Text(it, style = note) }
             Text("Mantenha notificações do banco ativas. O Android pode ocultar conteúdo sensível. Confira pendências e complete manualmente o que faltar.",
-                style = MaterialTheme.typography.bodySmall)
+                style = note)
         }
     }
 }

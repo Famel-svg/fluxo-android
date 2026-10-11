@@ -34,15 +34,17 @@ fun AccountsPanel(accounts: List<Account>, rows: List<Transaction>, model: Ledge
     var transfer by rememberSaveable { mutableStateOf(false) }
     var linkOut by rememberSaveable { mutableStateOf<String?>(null) }
     var linkIn by rememberSaveable { mutableStateOf<String?>(null) }
-    OutlinedCard { Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Contas e transferências", style = MaterialTheme.typography.titleMedium)
-        Text("Saldo informado + movimentos de caixa confirmados desde a data inicial. Cobertura parcial; confira com seu banco.")
+    FluxoSettingsCard {
+        FluxoSectionHeading("Contas e transferências")
+        Text("Saldo informado + movimentos de caixa confirmados desde a data inicial. Cobertura parcial; confira com seu banco.",
+            color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
         accounts.forEach { account ->
-            Text("${account.name}${if (account.archived) " (arquivada)" else ""}: ${AccountBalances.observed(account, rows)?.let(::accountMoney) ?: "Saldo inicial futuro"}")
-            TextButton(onClick = { model.resetEditError(); editing = account.id }) { Text("Editar ${account.name}") }
+            Text("${account.name}${if (account.archived) " (arquivada)" else ""}: ${AccountBalances.observed(account, rows)?.let(::accountMoney) ?: "Saldo inicial futuro"}",
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold))
+            FluxoWrapButton("Editar ${account.name}", quiet = true, onClick = { model.resetEditError(); editing = account.id })
         }
-        OutlinedButton(onClick = { model.resetEditError(); newAccount = true }) { Text("Adicionar conta") }
-        OutlinedButton(enabled = accounts.count { !it.archived } >= 2, onClick = { model.resetEditError(); transfer = true }) { Text("Registrar transferência própria") }
+        FluxoWrapButton("Adicionar conta", onClick = { model.resetEditError(); newAccount = true })
+        FluxoWrapButton("Registrar transferência própria", enabled = accounts.count { !it.archived } >= 2, onClick = { model.resetEditError(); transfer = true })
         val candidates = remember(rows) {
             val available = rows.filter { it.transferId == null && it.accountId != null && it.status == ReviewStatus.CONFIRMED && it.method != PaymentMethod.CREDIT_CARD }
             val outgoing = available.filter { it.direction == Direction.EXPENSE }.take(50)
@@ -51,14 +53,15 @@ fun AccountsPanel(accounts: List<Account>, rows: List<Transaction>, model: Ledge
                 kotlin.math.abs(it.occurredAt - out.occurredAt) <= 3 * 86400000L }.map { out to it } }.take(10)
         }
         if (candidates.isNotEmpty()) {
-            Text("Possíveis transferências entre registros recentes. Valor e data semelhantes não comprovam vínculo.")
+            Text("Possíveis transferências entre registros recentes. Valor e data semelhantes não comprovam vínculo.",
+                color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
             candidates.forEach { (out, input) ->
-                TextButton(onClick = { model.resetEditError(); linkOut = out.id; linkIn = input.id }) {
-                    Text("Vincular ${accounts.firstOrNull { it.id == out.accountId }?.name} → ${accounts.firstOrNull { it.id == input.accountId }?.name}: ${accountMoney(java.math.BigInteger.valueOf(out.amountCents ?: 0))}")
-                }
+                FluxoWrapButton(
+                    "Vincular ${accounts.firstOrNull { it.id == out.accountId }?.name} → ${accounts.firstOrNull { it.id == input.accountId }?.name}: ${accountMoney(java.math.BigInteger.valueOf(out.amountCents ?: 0))}",
+                    quiet = true, onClick = { model.resetEditError(); linkOut = out.id; linkIn = input.id })
             }
         }
-    } }
+    }
     val account = accounts.firstOrNull { it.id == editing }
     if (newAccount || account != null) AccountEditor(account, saving, error, { newAccount = false; editing = null }) {
         model.saveAccount(it) { newAccount = false; editing = null }

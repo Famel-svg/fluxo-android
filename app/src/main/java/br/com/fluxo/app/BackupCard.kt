@@ -151,13 +151,16 @@ fun rememberBackupActions(model: BackupViewModel = viewModel()): BackupActions {
 
 @Composable
 fun BackupCard(actions: BackupActions) {
-    OutlinedCard { Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Backup e recuperação", style = MaterialTheme.typography.titleMedium)
-        Text("Guarde histórico, orçamentos e identificadores contra duplicatas em arquivo criptografado. Diferente do CSV, permite restaurar o aplicativo. Até 50 mil lançamentos e arquivo de 16 MiB.")
-        val enabled = !actions.state.busy && actions.state.mode == null && actions.state.preview == null
-        OutlinedButton(onClick = actions.export, enabled = enabled) { Text("Criar backup protegido") }
-        OutlinedButton(onClick = actions.import, enabled = enabled) { Text("Restaurar backup") }
-        if (actions.state.busy) Text("Processando backup…")
-        actions.state.message?.let { Text(it) }
-    } }
+    val enabled = !actions.state.busy && actions.state.mode == null && actions.state.preview == null
+    Column(Modifier.fillMaxWidth()) {
+        FluxoDataRow(
+            "Backup protegido por senha", onClick = actions.export, enabled = enabled,
+            caption = "Guarde histórico, orçamentos e identificadores contra duplicatas em arquivo criptografado. Diferente do CSV, permite restaurar o aplicativo. Até 50 mil lançamentos e arquivo de 16 MiB."
+        )
+        FluxoDataRow("Restaurar backup", onClick = actions.import, enabled = enabled)
+        if (actions.state.busy) Text("Processando backup…", color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 6.dp))
+        actions.state.message?.let { Text(it, color = FluxoColors.Ink, style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 6.dp)) }
+    }
 }
