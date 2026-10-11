@@ -93,6 +93,8 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
     val accounts by model.accounts.collectAsStateWithLifecycle()
     val budgets by model.budgets.collectAsStateWithLifecycle()
     val benefits by model.benefits.collectAsStateWithLifecycle()
+    val profileName by model.profileName.collectAsStateWithLifecycle()
+    val onboardingDone by model.onboardingDone.collectAsStateWithLifecycle()
     val capture by model.captureEnabled.collectAsStateWithLifecycle()
     val allowOtherApps by model.allowOtherApps.collectAsStateWithLifecycle()
     val banks by model.enabledBanks.collectAsStateWithLifecycle()
@@ -125,6 +127,13 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
     LaunchedEffect(model) { model.events.collect { snackbar.showSnackbar(it) } }
     val monthly = remember(transactions, month) { transactions.filter { YearMonth.from(Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault())) == month }.sortedByDescending { it.occurredAt } }
     FluxoVisualTheme {
+    if (!onboardingDone) {
+        OnboardingScreen(
+            initialName = profileName, initialSettings = benefits, saving = saving, error = editError,
+            onStart = { name, vr, vt, vrDays, vtDays -> model.completeOnboarding(name, vr, vt, vrDays, vtDays) },
+            onSkip = { model.skipOnboarding() }
+        )
+    } else
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
@@ -176,7 +185,8 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
                         showAll = { filter = 0; allMonths = false; tab = 1 },
                         review = { filter = 3; allMonths = false; tab = 1 },
                         add = { model.resetEditError(); adding = true },
-                        edit = { model.resetEditError(); editingId = it.id }
+                        edit = { model.resetEditError(); editingId = it.id },
+                        greetingName = profileName
                     )
                     1 -> RecordsScreen(
                         rows = if (allMonths) transactions else monthly,

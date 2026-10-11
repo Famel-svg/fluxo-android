@@ -62,7 +62,8 @@ internal fun Dashboard(
     previous: () -> Unit, next: () -> Unit, settings: () -> Unit,
     showAll: () -> Unit, review: () -> Unit, add: () -> Unit,
     edit: (Transaction) -> Unit,
-    allRows: List<Transaction> = rows
+    allRows: List<Transaction> = rows,
+    greetingName: String = ""
 ) {
     // Baseline accounting: only confirmed, non-transfer records enter totals; credit stays apart from cash.
     val confirmed = rows.filter { it.status == ReviewStatus.CONFIRMED && it.transferId == null }
@@ -99,6 +100,11 @@ internal fun Dashboard(
                 }
                 FluxoPillButton("Manual", add, style = FluxoButtonStyle.Quiet, icon = Icons.Default.Add)
             }
+        }
+        if (greetingName.isNotBlank()) item {
+            Text("Olá, $greetingName", color = FluxoColors.Mute, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                modifier = Modifier.padding(horizontal = 4.dp).testTag("dashboard.greeting"))
         }
         item {
             FluxoHero(
