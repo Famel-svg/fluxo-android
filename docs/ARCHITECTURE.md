@@ -1,6 +1,8 @@
 # Arquitetura e contratos
 
 ## Atualização 0.2
+Backup criptografado usa payload JSON v3 (schema SQLite 4): além das tabelas, inclui `benefits` (tarifas VR/VT em centavos e dias por mês, de SharedPreferences); v1/v2 continuam aceitos e não alteram benefícios.
+
 Modelo `Transaction` recebe `category: Category = UNCATEGORIZED`. `Category` contém rótulos em português; `Budget(month, category, limitCents)` identifica limite por mês/categoria. SQLite v2 adiciona coluna com valor padrão e tabela `budgets` via migração aditiva; limpeza integral usa transação para remover ambos os conjuntos.
 
 `SpendingAnalytics.byCategory` agrega centavos em `BigInteger`, usa mês/fuso explícitos e somente despesas confirmadas. `TransactionSearch.filter` combina condições por AND e normaliza acentos/caixa. `CsvExport.write` produz UTF-8/BOM, CSV separado por ponto e vírgula com proteção de fórmulas; nenhum identificador interno ou texto bruto exportado.

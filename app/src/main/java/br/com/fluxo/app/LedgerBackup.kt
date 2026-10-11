@@ -8,7 +8,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.time.YearMonth
 
-data class BackupSummary(val transactions: Int, val budgets: Int, val deleted: Int, val accounts: Int = 0)
+data class BackupSummary(val transactions: Int, val budgets: Int, val deleted: Int, val accounts: Int = 0, val benefits: Boolean = false)
 
 /** Versioned logical snapshot. Never executes SQL or table names supplied by a file. */
 internal object LedgerBackup {
@@ -19,10 +19,10 @@ internal object LedgerBackup {
         "budgets" to listOf("month", "category", "limit_cents"),
         "notification_aliases" to listOf("identity_key", "source_key"),
     )
-    data class Validated(val rows: Map<String, List<ContentValues>>, val summary: BackupSummary)
+    data class Validated(val rows: Map<String, List<ContentValues>>, val summary: BackupSummary, val benefits: BenefitSettings? = null)
 
-    fun export(db: SQLiteDatabase): ByteArray {
-        val root = JSONObject().put("format", "fluxo-ledger").put("version", 2).put("schema", 4)
+    fun export(db: SQLiteDatabase, benefits: BenefitSettings): ByteArray {
+        val root = JSONObject().put("format", "fluxo-ledger").put("version", 3).put("schema", 4)
         columns.forEach { (table, names) ->
             val rows = JSONArray()
             db.query(table, names.toTypedArray(), null, null, null, null, null).use { cursor ->
@@ -40,6 +40,7 @@ internal object LedgerBackup {
             }
             root.put(table, rows)
         }
+        root.put("benefits", benefitsJson(benefits))
         return root.toString().toByteArray(Charsets.UTF_8).also {
             require(it.size <= BackupCipher.MAX_PLAINTEXT_BYTES) { "Backup acima do limite de 16 MiB." }
             validate(it)
@@ -78,8 +79,12 @@ internal object LedgerBackup {
             }
             root.put("accounts", JSONArray()).put("version", 2).put("schema", 4)
         }
-        require(number(root, "version") == 2L && number(root, "schema") == 4L)
-        require(root.keys().asSequence().toSet() == columns.keys + setOf("format", "version", "schema"))
+        val version = number(root, "version")
+        require((version == 2L || version == 3L) && number(root, "schema") == 4L)
+        val withBenefits = version == 3L
+        require(root.keys().asSequence().toSet() ==
+            columns.keys + setOf("format", "version", "schema") + (if (withBenefits) setOf("benefits") else emptySet()))
+        val benefits = if (withBenefits) parseBenefits(root.get("benefits")) else null
         val allRows = linkedMapOf<String, List<ContentValues>>()
         val sourceKeys = mutableSetOf<String>()
         val accountIds = mutableSetOf<String>()
@@ -152,7 +157,7 @@ internal object LedgerBackup {
             require(pair[0].getAsLong("amount_cents") == pair[1].getAsLong("amount_cents"))
         }
         return Validated(allRows, BackupSummary(allRows.getValue("transactions").size - deleted,
-            allRows.getValue("budgets").size, deleted, accountIds.size))
+            allRows.getValue("budgets").size, deleted, accountIds.size, withBenefits), benefits)
     }
 
     fun restore(db: SQLiteDatabase, validated: Validated) {
@@ -162,6 +167,40 @@ internal object LedgerBackup {
             validated.rows.forEach { (table, rows) -> rows.forEach { db.insertOrThrow(table, null, it) } }
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
+    }
+
+    private fun benefitsJson(settings: BenefitSettings): JSONObject {
+        val days = JSONArray()
+        settings.overrides.toSortedMap().forEach { (month, d) ->
+            days.put(JSONObject().put("month", month.toString())
+                .put("vr", d.vr ?: JSONObject.NULL).put("vt", d.vt ?: JSONObject.NULL))
+        }
+        return JSONObject().put("vr_daily_cents", settings.vrDailyCents)
+            .put("vt_daily_cents", settings.vtDailyCents).put("days", days)
+    }
+
+    private fun parseBenefits(value: Any): BenefitSettings {
+        val obj = value as? JSONObject ?: throw IllegalArgumentException("Benefícios inválidos.")
+        require(obj.keys().asSequence().toSet() == setOf("vr_daily_cents", "vt_daily_cents", "days"))
+        val vrRate = number(obj, "vr_daily_cents").also { require(it >= 0) }
+        val vtRate = number(obj, "vt_daily_cents").also { require(it >= 0) }
+        val days = obj.get("days") as? JSONArray ?: throw IllegalArgumentException("Benefícios inválidos.")
+        require(days.length() <= 1200)
+        val overrides = linkedMapOf<YearMonth, BenefitDays>()
+        for (i in 0 until days.length()) {
+            val entry = days.get(i) as? JSONObject ?: throw IllegalArgumentException("Benefícios inválidos.")
+            require(entry.keys().asSequence().toSet() == setOf("month", "vr", "vt"))
+            val text = string(entry, "month", 20)
+            val month = try { YearMonth.parse(text) } catch (_: java.time.DateTimeException) { throw IllegalArgumentException("Mês inválido.") }
+            require(month.toString() == text)
+            fun count(name: String): Int? = if (entry.isNull(name)) null
+                else number(entry, name).also { require(it in 0L..month.lengthOfMonth().toLong()) }.toInt()
+            val vr = count("vr")
+            val vt = count("vt")
+            require(vr != null || vt != null)
+            require(overrides.put(month, BenefitDays(vr, vt)) == null)
+        }
+        return BenefitSettings(vrRate, vtRate, overrides.toMap())
     }
 
     private fun number(row: JSONObject, name: String): Long = when (val value = row.get(name)) {

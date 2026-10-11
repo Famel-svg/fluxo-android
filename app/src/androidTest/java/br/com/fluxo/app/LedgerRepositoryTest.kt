@@ -56,7 +56,7 @@ class LedgerRepositoryTest {
         assertEquals(java.math.BigInteger.valueOf(50000), br.com.fluxo.core.AccountBalances.observed(a, rows))
         assertEquals(java.math.BigInteger.valueOf(70000), br.com.fluxo.core.AccountBalances.observed(b, rows))
         val payload = repository.exportBackupPayload()
-        assertEquals(BackupSummary(2, 0, 0, 2), repository.inspectBackupPayload(payload))
+        assertEquals(BackupSummary(2, 0, 0, 2, true), repository.inspectBackupPayload(payload))
         repository.clear(); repository.restoreBackupPayload(payload)
         assertEquals(setOf(a, b), repository.accounts.value.toSet())
         assertEquals(rows, repository.transactions.value)
@@ -91,7 +91,7 @@ class LedgerRepositoryTest {
         repository.save(manualTransaction())
         val original = repository.transactions.value
         val old = org.json.JSONObject(repository.exportBackupPayload().toString(Charsets.UTF_8))
-        old.remove("accounts"); old.put("version", 1); old.put("schema", 3)
+        old.remove("accounts"); old.remove("benefits"); old.put("version", 1); old.put("schema", 3)
         old.getJSONArray("transactions").getJSONObject(0).apply { remove("account_id"); remove("transfer_id") }
         repository.restoreBackupPayload(old.toString().toByteArray())
         assertEquals(original, repository.transactions.value)
@@ -114,7 +114,7 @@ class LedgerRepositoryTest {
         val budget = Budget("2026-09", Category.FOOD, 20000)
         repository.saveBudget(budget)
         val payload = repository.exportBackupPayload()
-        assertEquals(BackupSummary(1, 1, 1), repository.inspectBackupPayload(payload))
+        assertEquals(BackupSummary(1, 1, 1, 0, true), repository.inspectBackupPayload(payload))
         repository.clear()
         repository.restoreBackupPayload(payload)
         assertFalse(repository.captureEnabled.value)
@@ -605,6 +605,94 @@ class LedgerRepositoryTest {
         } finally {
             prefs.edit().clear().commit()
             context.getSharedPreferences("benefits_vr_vt", Context.MODE_PRIVATE).edit().clear().commit()
+        }
+    }
+
+    private fun withBenefitRepository(block: suspend (LedgerRepository, android.content.SharedPreferences) -> Unit) {
+        val context = IsolatedContext(InstrumentationRegistry.getInstrumentation().targetContext,
+            "benefits_backup_${java.util.UUID.randomUUID()}_")
+        val isolated = LedgerRepository(context)
+        val prefs = context.getSharedPreferences("benefits", Context.MODE_PRIVATE)
+        try { runBlocking { block(isolated, prefs) } } finally {
+            runBlocking { isolated.clear() }
+            prefs.edit().clear().commit()
+        }
+    }
+
+    private fun mutated(payload: ByteArray, change: (org.json.JSONObject) -> Unit): ByteArray =
+        org.json.JSONObject(payload.toString(Charsets.UTF_8)).also(change).toString().toByteArray()
+
+    @Test fun backupV3RoundTripRestoresBenefitsAndReplacesExistingOverrides() = withBenefitRepository { repo, prefs ->
+        val sep = YearMonth.of(2026, 9)
+        val oct = sep.plusMonths(1)
+        repo.save(manualTransaction())
+        repo.saveBenefits(oct, 2550, 1050, BenefitDays(5, null))
+        repo.saveBenefits(sep, 2550, 1050, BenefitDays(0, 12))
+        val expected = repo.benefits.value
+        val payload = repo.exportBackupPayload()
+        val json = org.json.JSONObject(payload.toString(Charsets.UTF_8))
+        assertEquals(3, json.getInt("version"))
+        assertEquals(4, json.getInt("schema"))
+        assertEquals(listOf("2026-09", "2026-10"), (0 until 2).map { json.getJSONObject("benefits").getJSONArray("days").getJSONObject(it).getString("month") })
+        assertEquals(BackupSummary(1, 0, 0, 0, true), repo.inspectBackupPayload(payload))
+        // Device drifts: different rates and an override that is absent from the backup.
+        repo.saveBenefits(YearMonth.of(2027, 1), 1, 2, BenefitDays(3, 4))
+        repo.saveBenefits(oct, 1, 2, BenefitDays())
+        repo.restoreBackupPayload(payload)
+        assertEquals(expected, repo.benefits.value)
+        assertFalse(prefs.contains("vr_days:2027-01"))
+        assertFalse(prefs.contains("vt_days:$oct"))
+        assertEquals(5, prefs.getInt("vr_days:$oct", -1))
+        assertEquals(1, repo.transactions.value.size)
+    }
+
+    @Test fun backupV2LeavesDeviceBenefitsUntouched() = withBenefitRepository { repo, prefs ->
+        repo.save(manualTransaction())
+        repo.saveBenefits(YearMonth.of(2026, 9), 2550, 1050, BenefitDays(7, 8))
+        val v2 = mutated(repo.exportBackupPayload()) { it.remove("benefits"); it.put("version", 2) }
+        assertEquals(BackupSummary(1, 0, 0, 0, false), repo.inspectBackupPayload(v2))
+        repo.saveBenefits(YearMonth.of(2026, 10), 100, 200, BenefitDays(1, null))
+        val before = repo.benefits.value
+        val storedBefore = prefs.all.toMap()
+        repo.restoreBackupPayload(v2)
+        assertEquals(before, repo.benefits.value)
+        assertEquals(storedBefore, prefs.all)
+        val withBenefitsKey = mutated(v2) { it.put("benefits", org.json.JSONObject()) }
+        try { repo.restoreBackupPayload(withBenefitsKey); fail("v2 must not carry benefits") } catch (_: IllegalArgumentException) { }
+    }
+
+    @Test fun malformedBenefitsAreRejectedWithoutChangingLedgerOrBenefits() = withBenefitRepository { repo, prefs ->
+        repo.save(manualTransaction())
+        repo.saveBenefits(YearMonth.of(2026, 9), 2550, 1050, BenefitDays(7, 8))
+        val good = repo.exportBackupPayload()
+        val ledger = repo.transactions.value
+        val benefits = repo.benefits.value
+        val stored = prefs.all.toMap()
+        fun ben(o: org.json.JSONObject) = o.getJSONObject("benefits")
+        fun entry(o: org.json.JSONObject) = ben(o).getJSONArray("days").getJSONObject(0)
+        val bad = listOf<(org.json.JSONObject) -> Unit>(
+            { ben(it).put("vr_daily_cents", -1) },
+            { ben(it).put("vt_daily_cents", 1.5) },
+            { entry(it).put("vr", 32) },
+            { entry(it).put("vt", -1) },
+            { entry(it).put("vr", org.json.JSONObject.NULL).put("vt", org.json.JSONObject.NULL) },
+            { entry(it).put("month", "2026-9") },
+            { ben(it).getJSONArray("days").put(org.json.JSONObject(entry(it).toString())) },
+            { ben(it).put("extra", 1) },
+            { entry(it).put("extra", 1) },
+            { ben(it).remove("days") },
+            { ben(it).remove("vt_daily_cents") },
+            { entry(it).remove("vt") },
+            { it.remove("benefits") },
+            { it.put("benefits", "x") },
+        )
+        bad.forEachIndexed { index, change ->
+            val payload = mutated(good, change)
+            try { repo.inspectBackupPayload(payload); fail("case $index accepted") } catch (_: IllegalArgumentException) { }
+            try { repo.restoreBackupPayload(payload); fail("case $index restored") } catch (_: IllegalArgumentException) { }
+            assertEquals(ledger, repo.transactions.value)
+            assertEquals(benefits, repo.benefits.value)
+            assertEquals(stored, prefs.all)
         }
     }
 
