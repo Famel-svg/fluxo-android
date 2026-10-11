@@ -1,5 +1,20 @@
 # Validação das entregas
 
+## Versão 0.4.0, redesign e parser — 2026-10-11
+
+Redesign completo a partir do protótipo aprovado, ampliação do parser e correção do CI.
+
+- JVM: 66 testes, 0 falhas. Lint: 0 erros, 16 avisos (APIs KTX e versões de dependências).
+- Android com `disposableEmulator=true`: 77 testes, 0 falhas, 15 ignorados (ponta a ponta de notificações, executados pelo script abaixo), AVD descartável API 37. Até esta data os testes de interface com esse parâmetro eram ignorados em silêncio nas execuções comuns e no CI; agora o CI passa o parâmetro.
+- `tools/notification-e2e/run.ps1`: 8 testes de entrega pelo Android aprovados, mais fases de reinício do processo; execução com reboot aprovada antes da ampliação do parser.
+- Parser: 22 mensagens em formato realista, redigidas à mão, serviram de sonda; 6 eram descartadas e 2 perdiam o valor. Casos cobertos por testes novos. Não são capturas reais de bancos.
+- Revisão independente somente leitura antes da release: sem bloqueadores. Achados corrigidos: rótulo do mês cortado em 320dp, quebra de palavra e cortes com fonte 1,5, bloco de 7 dias com dias futuros em Planejar, série de 7 dias ignorando o mês anterior, mês em formato ISO, rótulo da rosca cortado e código morto.
+- CI: `android-actions/setup-android@v3` falhava no aceite de licenças desde 25/09. Workflow passou a usar o SDK da imagem com aceite explícito; primeira execução completa aprovada nos dois jobs em 11/10/2026.
+- Comparação visual com o protótipo feita por capturas em 340x720 com dados equivalentes. Diferenças conhecidas: Registros mantém busca, seletor de mês e linha de filtros; faixa de captura e bloco Estado só foram vistos na variante sem permissão concedida; Planejar e Ajustes mantêm seções existentes abaixo do conteúdo do protótipo.
+- Não verificado: notificação bancária real; aparelho físico; fonte em escala 2 visualmente; Planejar, Ajustes e o editor com fonte ampliada; botão "Confirmar" corta em escala 1,5; modo escuro (o tema é somente claro); build de release com R8.
+- Incidente: uma captura de tela travou e encerrou o emulador descartável; foi reaberto e os resultados acima vêm da nova instância. Causa não identificada.
+- Coordenação: Ruflo executou status e route; implementação por subagentes em worktrees isoladas, integração e publicação pelo coordenador.
+
 ## Versão 0.4.0 — 2026-10-10
 
 Correção da migração SQLite (v5), reprocessamento de notificações ativas ao reconectar, benefícios no backup (payload v3), divisão de `MainActivity.kt` por tela e Compose BOM 2026.06.01.
