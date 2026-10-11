@@ -20,7 +20,7 @@ class BankNotificationListener : NotificationListenerService() {
         data class Removed(val packageName: String, val identity: String) : Event
     }
     // Callback order matters: a removal must finish before an Android key is reused.
-    private val events = Channel<Event>(64)
+    private val events = Channel<Event>(256)
 
     override fun onCreate() {
         super.onCreate()
@@ -53,6 +53,13 @@ class BankNotificationListener : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         CaptureHealth.connected(true)
+        // Notifications posted while the listener was unbound never reach onNotificationPosted.
+        // Replaying the ones still visible is safe: ingestion is idempotent per source key.
+        val repository = (application as FluxoApplication).repository
+        val active = try { activeNotifications.orEmpty() } catch (_: RuntimeException) { return }
+        active.filter { repository.allowsNotification(it.packageName) }.forEach { sbn ->
+            if (!events.trySend(Event.Posted(sbn)).isSuccess) repository.reportCaptureError()
+        }
     }
 
     override fun onListenerDisconnected() {
