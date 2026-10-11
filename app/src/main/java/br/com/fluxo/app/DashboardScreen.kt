@@ -300,8 +300,8 @@ private fun TransactionRow(row: Transaction, today: LocalDate, edit: (Transactio
     val automatic = row.sourceKey != null
     val sign = when (row.direction) { Direction.INCOME -> "+"; Direction.EXPENSE -> "−"; Direction.UNKNOWN -> "" }
     val full = money(row.amountCents)
-    // The list shows only the number (as in the prototype); screen readers still get the currency.
-    val amountText = if (row.amountCents == null) full else sign + full.replace("R$", "").trim()
+    // Início keeps the currency symbol on recent rows, as in the prototype; Registros drops it.
+    val amountText = if (row.amountCents == null) full else sign + full
     val spoken = when (row.direction) { Direction.INCOME -> "mais $full"; Direction.EXPENSE -> "menos $full"; Direction.UNKNOWN -> full }
     Row(
         Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button) { edit(row) }.padding(start = 2.dp, end = 0.dp, top = 1.dp, bottom = 1.dp),
