@@ -1,6 +1,7 @@
 package br.com.fluxo.app
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,24 +15,42 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import br.com.fluxo.core.Category
 import br.com.fluxo.core.Direction
 import br.com.fluxo.core.PaymentMethod
 import br.com.fluxo.core.ReviewStatus
+import br.com.fluxo.core.SpendingAnalytics
 import br.com.fluxo.core.Transaction
 import br.com.fluxo.core.TransactionSearch
+import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.Locale
 
-/** Presentation only. The caller supplies the month slice and the existing edit action. */
+private val weekdayShort = listOf("Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom")
+
+/** Parser wording for rows whose only open question is the payment method. */
+private const val METHOD_ONLY_REASON = "Meio de pagamento não identificado"
+
+/**
+ * Presentation of the records. The caller supplies the month slice and the existing edit action;
+ * one-tap review actions save through the same activity-scoped [LedgerViewModel.save] path (and its
+ * saving/error state) that the editor uses.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun RecordsScreen(
     rows: List<Transaction>,
@@ -44,8 +63,11 @@ internal fun RecordsScreen(
     bankLabel: (String) -> String,
     moneyLabel: (Long?) -> String,
     directionLabel: (Direction) -> String,
-    methodLabel: (PaymentMethod) -> String
+    methodLabel: (PaymentMethod) -> String,
+    model: LedgerViewModel = viewModel()
 ) {
+    val saving by model.saving.collectAsStateWithLifecycle()
+    val editError by model.editError.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var bank by rememberSaveable { mutableStateOf<String?>(null) }
     var method by rememberSaveable { mutableStateOf<PaymentMethod?>(null) }
@@ -56,153 +78,238 @@ internal fun RecordsScreen(
     }
     val zone = ZoneId.systemDefault()
     val today = LocalDate.now(zone)
+    val reviewing = remember(filtered) { filtered.filter { it.status == ReviewStatus.REVIEW } }
     val groups = remember(filtered, zone) {
-        filtered.groupBy { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() }
+        filtered.filter { it.status != ReviewStatus.REVIEW }
+            .groupBy { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() }
     }
-    val dateFormat = remember { DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.forLanguageTag("pt-BR")) }
-    val timeFormat = remember { DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm", Locale.forLanguageTag("pt-BR")) }
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            LazyColumn(
-                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 100.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                item {
-                    Text("Registros", style = MaterialTheme.typography.headlineLarge,
-                        fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
-                }
-                item {
-                    OutlinedTextField(
-                        value = query, onValueChange = { query = it },
-                        label = { Text("Buscar descrição, banco ou categoria") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                        shape = RoundedCornerShape(20.dp),
-                        // Allow the label and input to grow at accessibility font sizes.
-                        singleLine = false
-                    )
-                }
-                item {
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("Todos", "Entradas", "Saídas", "Revisar").forEachIndexed { index, label ->
-                            RecordFilterChip(filter == index, { setFilter(index) }, label)
-                        }
-                    }
-                }
-                item { RecordFilterChip(allMonths, { setAllMonths(!allMonths) }, "Todos os meses") }
-                item {
-                    TextButton(onClick = { advanced = !advanced }, modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text(if (advanced) "Ocultar filtros" else "Banco, meio e categoria")
-                    }
-                }
-                if (advanced) {
-                    item { Choice("Banco", bank, bankOptions, { it?.let(bankLabel) ?: "Todos" }) { bank = it } }
-                    item { Choice("Meio", method, listOf<PaymentMethod?>(null) + PaymentMethod.entries, { it?.let(methodLabel) ?: "Todos" }) { method = it } }
-                    item { Choice("Categoria", category, listOf<Category?>(null) + Category.entries, { it?.label ?: "Todas" }) { category = it } }
-                }
-                item {
-                    // Vertical controls keep the count and action readable at large font sizes.
-                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("${filtered.size} lançamento(s)", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        TextButton(
-                            onClick = { query = ""; bank = null; method = null; category = null; setFilter(0); setAllMonths(false) },
-                            modifier = Modifier.heightIn(min = 48.dp)
-                        ) { Text("Limpar filtros") }
-                    }
-                }
-                if (filtered.isEmpty()) item {
-                    Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Nenhum lançamento", style = MaterialTheme.typography.titleMedium)
-                        Text("Nenhum registro corresponde aos filtros. Altere a busca ou escolha Todos os meses.")
-                    }
-                }
-                groups.forEach { (date, transactions) ->
-                    item {
-                        val title = when (date) {
-                            today -> "Hoje"
-                            today.minusDays(1) -> "Ontem"
-                            else -> date.format(dateFormat)
-                        }
-                        Column(Modifier.padding(top = 8.dp).semantics { heading() }) {
-                            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                            if (date == today || date == today.minusDays(1)) {
-                                Text(date.format(dateFormat), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    }
-                    items(transactions, key = { it.id }) { transaction ->
-                        RecordCard(transaction, edit, bankLabel, moneyLabel, directionLabel, methodLabel, zone, timeFormat)
+    val reviewCount = remember(rows) { rows.count { it.status == ReviewStatus.REVIEW } }
+    val chipBanks = remember(rows, bankOptions) {
+        val present = rows.map { it.bankPackage }.toSet()
+        bankOptions.filterNotNull().filter { it in present }
+    }
+    val dateFormat = remember { DateTimeFormatter.ofPattern("dd/MM/yyyy", ptBr) }
+    val timeFormat = remember { DateTimeFormatter.ofPattern("dd/MM HH:mm", ptBr) }
+    val weekCap = remember(rows, zone, today) {
+        val latest = rows.maxOfOrNull { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() }
+        val end = if (latest == null || !latest.isBefore(today.minusDays(6))) today else latest
+        SpendingAnalytics.dailyExpenses(rows, end, 7, zone)
+    }
+    Surface(modifier = Modifier.fillMaxSize(), color = FluxoColors.Paper) {
+        LazyColumn(
+            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 100.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            item {
+                OutlinedTextField(
+                    value = query, onValueChange = { query = it },
+                    label = { Text("Buscar descrição, banco ou categoria") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 13.5.sp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = FluxoColors.Ink, unfocusedBorderColor = FluxoColors.Ink,
+                        focusedContainerColor = FluxoColors.Paper, unfocusedContainerColor = FluxoColors.Paper,
+                        focusedLabelColor = FluxoColors.Mute, unfocusedLabelColor = FluxoColors.Mute,
+                        focusedLeadingIconColor = FluxoColors.Ink, unfocusedLeadingIconColor = FluxoColors.Ink,
+                        cursorColor = FluxoColors.Ink
+                    ),
+                    // Allow the label and input to grow at accessibility font sizes.
+                    singleLine = false
+                )
+            }
+            item {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    FluxoChip("Todos", filter == 0 && bank == null, { setFilter(0); bank = null })
+                    FluxoChip("Entradas", filter == 1, { setFilter(if (filter == 1) 0 else 1) })
+                    FluxoChip("Saídas", filter == 2, { setFilter(if (filter == 2) 0 else 2) })
+                    FluxoChip("Revisar ($reviewCount)", filter == 3, { setFilter(if (filter == 3) 0 else 3) }, tone = FluxoChipTone.Review)
+                    chipBanks.forEach { code ->
+                        FluxoChip(bankLabel(code), bank == code, { bank = if (bank == code) null else code })
                     }
                 }
             }
+            item {
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(0.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                    FluxoChip("Todos os meses", allMonths, { setAllMonths(!allMonths) })
+                    FluxoPillButton(if (advanced) "Ocultar filtros" else "Banco, meio e categoria", { advanced = !advanced }, style = FluxoButtonStyle.Quiet)
+                }
+            }
+            if (advanced) {
+                item { Choice("Banco", bank, bankOptions, { it?.let(bankLabel) ?: "Todos" }) { bank = it } }
+                item { Choice("Meio", method, listOf<PaymentMethod?>(null) + PaymentMethod.entries, { it?.let(methodLabel) ?: "Todos" }) { method = it } }
+                item { Choice("Categoria", category, listOf<Category?>(null) + Category.entries, { it?.label ?: "Todas" }) { category = it } }
+            }
+            item {
+                WeekStrip(weekCap)
+            }
+            item {
+                // Vertical layout keeps the count and action readable at large font sizes.
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                    Text("${filtered.size} lançamento(s)", color = FluxoColors.Mute, style = MaterialTheme.typography.labelMedium)
+                    FluxoPillButton(
+                        "Limpar filtros",
+                        { query = ""; bank = null; method = null; category = null; setFilter(0); setAllMonths(false) },
+                        style = FluxoButtonStyle.Quiet
+                    )
+                }
+            }
+            if (filtered.isEmpty()) item {
+                FluxoEmptyState("Nenhum lançamento", "Nenhum registro corresponde aos filtros. Altere a busca ou escolha Todos os meses.")
+            }
+            if (reviewing.isNotEmpty()) {
+                item {
+                    FluxoSectionHeading("Revisar", Modifier.padding(start = 2.dp, top = 6.dp, end = 2.dp, bottom = 2.dp), trailing = "um toque resolve")
+                }
+                if (editError != null) item {
+                    Text(editError.orEmpty(), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 2.dp))
+                }
+                items(reviewing, key = { "review-" + it.id }) { row ->
+                    Box(Modifier.padding(bottom = 5.dp)) {
+                        ReviewTicket(row, saving, edit, { model.save(it) {} }, bankLabel, directionLabel, methodLabel, zone, timeFormat)
+                    }
+                }
+            }
+            groups.forEach { (date, transactions) ->
+                item(key = "day-$date") {
+                    val title = when (date) {
+                        today -> "Hoje"
+                        today.minusDays(1) -> "Ontem"
+                        else -> date.format(dateFormat)
+                    }
+                    Text(
+                        title.uppercase(ptBr), color = FluxoColors.Mute,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.08.em),
+                        modifier = Modifier.padding(start = 2.dp, top = 8.dp, end = 2.dp, bottom = 1.dp).semantics { heading() }
+                    )
+                }
+                items(transactions, key = { it.id }) { transaction ->
+                    RecordRow(transaction, edit, bankLabel, moneyLabel)
+                }
+            }
+        }
     }
 }
 
+/** Slim soft strip: seven-day spending total beside seven small bars. */
 @Composable
-private fun RecordFilterChip(selected: Boolean, onClick: () -> Unit, label: String) {
-    FilterChip(
-        selected = selected, onClick = onClick, label = { Text(label) },
-        modifier = Modifier.heightIn(min = 48.dp), shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
-        colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-        )
-    )
+private fun WeekStrip(days: List<br.com.fluxo.core.DailyExpense>) {
+    val total = days.fold(java.math.BigInteger.ZERO) { sum, day -> sum + day.totalCents }
+    val totalText = money(BigDecimal(total, 2))
+    val description = "Gastos por dia nos últimos 7 dias, total $totalText; " +
+        days.joinToString(", ") { weekdayShort[it.day.dayOfWeek.value - 1] + " " + money(BigDecimal(it.totalCents, 2)) }
+    val entries = days.map { BarEntry(it.totalCents, weekdayShort[it.day.dayOfWeek.value - 1]) }
+    val stacked = LocalDensity.current.fontScale >= 1.3f
+    val label: @Composable () -> Unit = {
+        Column {
+            Text("Gastos · 7 dias", color = FluxoColors.Mute, style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold))
+            Text(totalText, style = FluxoType.number(16.sp), maxLines = 1)
+        }
+    }
+    val chart: @Composable (Modifier) -> Unit = { modifier ->
+        BarChart(entries, description, modifier, highlightedIndex = entries.lastIndex)
+    }
+    Box(Modifier.padding(top = 2.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(FluxoColors.Soft).padding(horizontal = 8.dp, vertical = 6.dp)) {
+        if (stacked) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { label(); chart(Modifier.fillMaxWidth().height(72.dp)) }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(Modifier.widthIn(min = 92.dp)) { label() }
+                chart(Modifier.weight(1f).height(48.dp))
+            }
+        }
+    }
 }
 
+/** Amber-striped ticket with real one-tap actions; nothing is confirmed without amount and direction. */
 @Composable
-private fun RecordCard(
+private fun ReviewTicket(
     row: Transaction,
+    saving: Boolean,
     edit: (Transaction) -> Unit,
+    save: (Transaction) -> Unit,
     bankLabel: (String) -> String,
-    moneyLabel: (Long?) -> String,
     directionLabel: (Direction) -> String,
     methodLabel: (PaymentMethod) -> String,
     zone: ZoneId,
     timeFormat: DateTimeFormatter
 ) {
-    val fontScale = LocalDensity.current.fontScale
-    val reviewing = row.status == ReviewStatus.REVIEW
-    OutlinedCard(
-        onClick = { edit(row) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-        shape = RoundedCornerShape(20.dp),
-        border = BorderStroke(1.dp, if (reviewing) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline),
-        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-    ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(bankLabel(row.bankPackage) + " · " + directionLabel(row.direction),
-                style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val description: @Composable () -> Unit = {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(row.description.ifBlank { methodLabel(row.method) },
-                            style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text(row.category.label, style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-                val amount: @Composable () -> Unit = {
-                    Text(moneyLabel(row.amountCents), style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (row.direction == Direction.INCOME) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-                }
-                if (maxWidth < 360.dp || fontScale >= 1.3f) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { description(); amount() }
-                } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-                        Box(Modifier.weight(1f)) { description() }
-                        Box(Modifier.weight(1f)) { amount() }
-                    }
-                }
-            }
-            Text(methodLabel(row.method) + " · " + Instant.ofEpochMilli(row.occurredAt).atZone(zone).format(timeFormat),
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (reviewing) {
-                Text("Revisar · ${row.reason.ifBlank { "Confirme valor e classificação" }}",
-                    color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+    val amount = row.amountCents
+    val known = amount != null && amount > 0 && row.direction != Direction.UNKNOWN
+    val methodOnly = known && row.direction == Direction.EXPENSE && row.method == PaymentMethod.UNKNOWN &&
+        row.reason.startsWith(METHOD_ONLY_REASON)
+    fun confirmed(method: PaymentMethod = row.method) = row.copy(status = ReviewStatus.CONFIRMED, reason = "", method = method)
+    FluxoTicket {
+        FluxoTicketHeader(
+            (row.description.ifBlank { methodLabel(row.method) }) + " · " + money(amount),
+            badge = bankLabel(row.bankPackage)
+        )
+        Text(
+            row.reason.ifBlank { "Confirme valor e classificação" } + if (!known) " Informe valor e direção em Editar." else "",
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, lineHeight = 15.sp, fontWeight = FontWeight.Bold)
+        )
+        Text(
+            directionLabel(row.direction) + " · " + methodLabel(row.method) + " · " +
+                Instant.ofEpochMilli(row.occurredAt).atZone(zone).format(timeFormat),
+            color = FluxoColors.Mute, style = FluxoType.Caption
+        )
+        FluxoTicketActions {
+            if (methodOnly) {
+                FluxoPillButton("Crédito", { save(confirmed(PaymentMethod.CREDIT_CARD)) }, Modifier.weight(1f), FluxoButtonStyle.Primary, enabled = !saving)
+                FluxoPillButton("Débito", { save(confirmed(PaymentMethod.DEBIT_CARD)) }, Modifier.weight(1f), FluxoButtonStyle.Secondary, enabled = !saving)
             } else {
-                Text("Confirmada", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+                FluxoPillButton("Confirmar", { save(confirmed()) }, Modifier.weight(1f), FluxoButtonStyle.Primary, enabled = known && !saving)
+                FluxoPillButton("Editar", { edit(row) }, Modifier.weight(1f), FluxoButtonStyle.Secondary)
             }
         }
+    }
+}
+
+/** Day-list row: category dot, title, "categoria · banco · meio" line with origin badge, signed amount. */
+@Composable
+private fun RecordRow(
+    row: Transaction,
+    edit: (Transaction) -> Unit,
+    bankLabel: (String) -> String,
+    moneyLabel: (Long?) -> String
+) {
+    val shortMethod = when (row.method) {
+        PaymentMethod.PIX -> "Pix"
+        PaymentMethod.CREDIT_CARD -> "crédito"
+        PaymentMethod.DEBIT_CARD -> "débito"
+        PaymentMethod.UNKNOWN -> "meio não informado"
+    }
+    val signed = when (row.direction) {
+        Direction.INCOME -> "+" + moneyLabel(row.amountCents)
+        Direction.EXPENSE -> "−" + moneyLabel(row.amountCents)
+        Direction.UNKNOWN -> moneyLabel(row.amountCents)
+    }
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { edit(row) }.padding(horizontal = 2.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(9.dp)
+    ) {
+        FluxoDot(fluxoCategoryColor(row.category))
+        Column(Modifier.weight(1f)) {
+            Text(
+                row.description.ifBlank { shortMethod }, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, lineHeight = 16.sp, fontWeight = FontWeight.Bold)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    row.category.label + " · " + bankLabel(row.bankPackage) + " · " + shortMethod,
+                    color = FluxoColors.Mute, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    style = FluxoType.Caption, modifier = Modifier.weight(1f, fill = false)
+                )
+                if (row.sourceKey != null) FluxoBadge("automático") else FluxoBadge("manual", kind = FluxoBadgeKind.Manual)
+            }
+        }
+        Text(
+            signed, maxLines = 1, softWrap = false,
+            color = if (row.direction == Direction.INCOME) FluxoColors.Income else FluxoColors.Ink,
+            style = FluxoType.RowNumber
+        )
     }
 }

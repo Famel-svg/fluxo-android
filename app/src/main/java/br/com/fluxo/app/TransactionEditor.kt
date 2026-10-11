@@ -2,6 +2,8 @@ package br.com.fluxo.app
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -16,14 +18,15 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import br.com.fluxo.core.Direction
@@ -61,7 +64,7 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
     val cents = remember(amount) { runCatching { require(amount.matches(Regex("[0-9]+([,.][0-9]{1,2})?"))); BigDecimal(amount.replace(',', '.')).movePointRight(2).longValueExact().also { require(it > 0) } }.getOrNull() }
     val parsedDate = remember(date) { runCatching { LocalDate.parse(date, DateTimeFormatter.ofPattern("dd/MM/uuuu").withResolverStyle(java.time.format.ResolverStyle.STRICT)) }.getOrNull() }
     Dialog(onDismissRequest = { if (!saving) onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Surface(Modifier.fillMaxSize(), color = FluxoColors.Paper) {
             Column(Modifier.fillMaxSize().imePadding()) {
                 Row(
                     Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp),
@@ -76,7 +79,6 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                         if (existing == null) "Novo lançamento" else "Revisar lançamento",
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
                         maxLines = 1
                     )
                 }
@@ -84,71 +86,60 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                     Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    if (existing?.status == ReviewStatus.REVIEW) Text(existing.reason.ifBlank { "Confira os dados antes de confirmar." }, color = MaterialTheme.colorScheme.error)
+                    if (existing?.status == ReviewStatus.REVIEW) FluxoTicket {
+                        Text(existing.reason.ifBlank { "Confira os dados antes de confirmar." }, modifier = Modifier.padding(vertical = 6.dp),
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                    }
                     if (editError != null) Text(editError, color = MaterialTheme.colorScheme.error)
-                    FluxoPanel(
-                        accent = FluxoDesignTokens.Mint,
-                        gradient = listOf(Color(0xFF003C3D), Color(0xFF06213A))
-                    ) {
-                        Text("Valor", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    FluxoPanel(accent = FluxoColors.Petrol) {
+                        Text("Valor", style = MaterialTheme.typography.titleMedium, color = FluxoColors.Mute)
                         OutlinedTextField(
                             value = amount,
                             onValueChange = { amount = it },
                             label = { Text("Valor em reais") },
                             placeholder = { Text("R$ 0,00") },
                             supportingText = { Text("Ex.: 125,90 · sem separador de milhar") },
-                            textStyle = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
+                            textStyle = FluxoType.number(32.sp, FontWeight.ExtraBold),
+                            shape = RoundedCornerShape(16.dp), colors = editorFieldColors(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             isError = amount.isNotEmpty() && cents == null,
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
-                        Row(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surfaceContainer),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(Direction.EXPENSE, Direction.INCOME).forEach { option ->
-                                val selected = direction == option
-                                Button(
-                                    onClick = { direction = option },
-                                    modifier = Modifier.weight(1f).heightIn(min = 52.dp),
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (selected) FluxoDesignTokens.Mint else Color.Transparent,
-                                        contentColor = if (selected) Color(0xFF002D26) else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                ) { Text(option.label(), fontWeight = FontWeight.SemiBold) }
+                                FluxoChip(option.label(), direction == option, { direction = option }, Modifier.weight(1f))
                             }
                         }
                     }
-                    FluxoPanel(accent = FluxoDesignTokens.Blue) {
-                        FluxoSectionHeading("Detalhes", icon = Icons.AutoMirrored.Filled.ReceiptLong)
-                        OutlinedTextField(value = description, onValueChange = { description = it.take(120) }, label = { Text("Descrição") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(value = date, onValueChange = { date = it }, label = { Text("Data (dd/mm/aaaa)") }, isError = parsedDate == null, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii), modifier = Modifier.fillMaxWidth())
+                    FluxoPanel(accent = FluxoColors.PetrolMid) {
+                        FluxoSectionHeading("Detalhes", icon = Icons.AutoMirrored.Filled.ReceiptLong, accent = FluxoColors.Petrol)
+                        OutlinedTextField(value = description, onValueChange = { description = it.take(120) }, label = { Text("Descrição") }, singleLine = true, shape = RoundedCornerShape(16.dp), colors = editorFieldColors(), modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = date, onValueChange = { date = it }, label = { Text("Data (dd/mm/aaaa)") }, isError = parsedDate == null, singleLine = true, shape = RoundedCornerShape(16.dp), colors = editorFieldColors(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii), modifier = Modifier.fillMaxWidth())
                     }
-                    FluxoPanel(accent = FluxoDesignTokens.Mint) {
-                        FluxoSectionHeading("Classificação", icon = Icons.Default.PieChart)
+                    FluxoPanel(accent = FluxoColors.Petrol) {
+                        FluxoSectionHeading("Classificação", icon = Icons.Default.PieChart, accent = FluxoColors.Petrol)
                         Choice("Categoria", category, Category.entries, { it.label }) { category = it }
-                        Choice("Pagamento", method, PaymentMethod.entries, { it.label() }) { method = it }
+                        Choice("Meio", method, PaymentMethod.entries, { it.label() }) { method = it }
                         Choice("Origem", bank, listOf("manual") + supportedBanks.map { it.packageName }, ::bankName) { bank = it; accountId = null }
                         Choice("Conta", accountId, listOf<String?>(null) + accounts.filter { !it.archived || it.id == accountId }.map { it.id },
                             { id -> accounts.firstOrNull { it.id == id }?.name ?: "Não atribuída" }) { id -> accountId = id; accounts.firstOrNull { it.id == id }?.let { bank = it.bankPackage } }
-                        if (method == PaymentMethod.CREDIT_CARD) Text("Compras no crédito ficam separadas das saídas de caixa.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (existing != null) TextButton(enabled = !saving, onClick = { deleting = true }) { Text("Excluir lançamento", color = MaterialTheme.colorScheme.error) }
+                        if (method == PaymentMethod.CREDIT_CARD) Text("Compras no crédito ficam separadas das saídas de caixa.", style = MaterialTheme.typography.bodySmall, color = FluxoColors.Mute)
+                        if (existing != null) TextButton(enabled = !saving, onClick = { deleting = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Excluir lançamento", color = FluxoColors.Expense, style = MaterialTheme.typography.labelLarge) }
                     }
                     Spacer(Modifier.height(4.dp))
                 }
-                Button(
-                    enabled = !saving && cents != null && direction != Direction.UNKNOWN && parsedDate != null,
+                FluxoPillButton(
+                    if (saving) "Salvando…" else "Salvar lançamento",
                     modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp).heightIn(min = 56.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = FluxoDesignTokens.Mint, contentColor = Color(0xFF002D26)),
+                    enabled = !saving && cents != null && direction != Direction.UNKNOWN && parsedDate != null,
                     onClick = {
-        val validDate = parsedDate ?: return@Button
+        val validDate = parsedDate ?: return@FluxoPillButton
         val originalDate = existing?.let { Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate() }
         val occurred = if (existing != null && originalDate == validDate) existing.occurredAt else validDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
         onSave(Transaction(existing?.id ?: UUID.randomUUID().toString(), existing?.sourceKey, bank, cents, direction, method, ReviewStatus.CONFIRMED, occurred, description.ifBlank { "Lançamento manual" }, "", category, accountId))
                     }
-                ) { Text(if (saving) "Salvando…" else "Salvar lançamento", fontWeight = FontWeight.Bold) }
+                )
             }
         }
     }
@@ -156,10 +147,31 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
 }
 
 @Composable
+private fun editorFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedBorderColor = FluxoColors.Ink, unfocusedBorderColor = FluxoColors.Ink,
+    focusedContainerColor = FluxoColors.Paper, unfocusedContainerColor = FluxoColors.Paper,
+    focusedLabelColor = FluxoColors.Mute, unfocusedLabelColor = FluxoColors.Mute,
+    cursorColor = FluxoColors.Ink
+)
+
+/** Dropdown choice shown as an outlined pill row; the single text node keeps the "label: value" form. */
+@Composable
 internal fun <T> Choice(label: String, selected: T, options: List<T>, display: (T) -> String, change: (T) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) { Text("$label: ${display(selected)}", modifier = Modifier.weight(1f)); Icon(Icons.Default.ArrowDropDown, null) }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) { options.forEach { option -> DropdownMenuItem(text = { Text(display(option)) }, onClick = { change(option); expanded = false }) } }
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(FluxoShapes.Pill).background(FluxoColors.Paper)
+                .border(2.dp, FluxoColors.Ink, FluxoShapes.Pill)
+                .clickable(role = Role.Button) { expanded = true }
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("$label: ${display(selected)}", modifier = Modifier.weight(1f), color = FluxoColors.Ink,
+                style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp))
+            Icon(Icons.Default.ArrowDropDown, null, tint = FluxoColors.Ink)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, containerColor = FluxoColors.Paper) {
+            options.forEach { option -> DropdownMenuItem(text = { Text(display(option)) }, onClick = { change(option); expanded = false }) }
+        }
     }
 }
