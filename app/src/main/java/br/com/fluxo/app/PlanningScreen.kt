@@ -77,7 +77,9 @@ internal fun PlanningScreen(
     save: (Budget, () -> Unit) -> Unit,
     delete: (String, Category, () -> Unit) -> Unit,
     benefits: BenefitSettings,
-    saveBenefits: (YearMonth, Long, Long, BenefitDays, () -> Unit) -> Unit
+    saveBenefits: (YearMonth, Long, Long, BenefitDays, () -> Unit) -> Unit,
+    previousMonth: (() -> Unit)? = null,
+    nextMonth: (() -> Unit)? = null
 ) {
     val totals = remember(transactions, month) { SpendingAnalytics.byCategory(transactions, month) }
     val monthly = remember(transactions, month) { SpendingAnalytics.monthlyExpenses(transactions, month, 6) }
@@ -108,11 +110,11 @@ internal fun PlanningScreen(
     val detailCategories = Category.entries.filter { (totals[it] ?: BigInteger.ZERO) > BigInteger.ZERO || monthBudgets.any { budget -> budget.category == it } }
     LazyColumn(
         modifier = Modifier.background(FluxoColors.Paper),
-        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 24.dp),
+        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         item(key = "header") {
-            FluxoScreenHeader("Planejar", subtitle = "${planningMonthName(month)} de ${month.year}")
+            if (previousMonth != null && nextMonth != null) FluxoMonthBar(month, previousMonth, nextMonth)
         }
         item(key = "hero") { PlanningHero(total, previousTotal, month) }
         item(key = "monthly") { MonthlyExpensesTile(monthly) }
@@ -244,12 +246,12 @@ private fun BudgetRow(budget: Budget, spent: BigInteger, edit: () -> Unit) {
     val percent = if (limit.signum() > 0) spent.multiply(BigInteger.valueOf(100)).divide(limit) else BigInteger.ZERO
     val stacked = LocalDensity.current.fontScale >= 1.3f
     val pill: @Composable () -> Unit = {
-        Text("estourou ${planningMoney(over)}", color = Color.White, maxLines = 1,
+        Text("estourou ${planningNumber(over)}", color = Color.White, maxLines = 1,
             style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp, fontWeight = FontWeight.ExtraBold),
             modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(FluxoColors.Expense).padding(horizontal = 9.dp, vertical = 1.dp))
     }
     Column(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "Editar limite de ${budget.category.label}", role = Role.Button, onClick = edit)
+        Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(onClickLabel = "Editar limite de ${budget.category.label}", role = Role.Button, onClick = edit)
             .padding(horizontal = 2.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.Center
     ) {

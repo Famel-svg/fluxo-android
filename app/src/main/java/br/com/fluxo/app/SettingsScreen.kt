@@ -221,13 +221,12 @@ internal fun SettingsScreen(capture: Boolean, allowOtherApps: Boolean, banks: Se
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         LazyColumn(
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            item { FluxoScreenHeader("Captura", subtitle = "Ajustes") }
             item {
                 Column(
-                    Modifier.fillMaxWidth().padding(top = 6.dp)
+                    Modifier.fillMaxWidth()
                         .clip(FluxoShapes.Hero)
                         .background(if (allOk) FluxoColors.Income else FluxoColors.Soft)
                         .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
