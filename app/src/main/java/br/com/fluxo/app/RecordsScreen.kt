@@ -321,8 +321,15 @@ private fun ReviewTicket(
         )
         FluxoTicketActions {
             if (methodOnly) {
-                FluxoPillButton("Crédito", { save(confirmed(PaymentMethod.CREDIT_CARD)) }, Modifier.weight(1f), FluxoButtonStyle.Primary, enabled = !saving)
-                FluxoPillButton("Débito", { save(confirmed(PaymentMethod.DEBIT_CARD)) }, Modifier.weight(1f), FluxoButtonStyle.Secondary, enabled = !saving)
+                // Three compact choices; FlowRow wraps to a second line instead of clipping at 320dp or large fonts.
+                FlowRow(
+                    Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp), itemVerticalAlignment = Alignment.CenterVertically
+                ) {
+                    FluxoPillButton("Crédito", { save(confirmed(PaymentMethod.CREDIT_CARD)) }, Modifier.weight(1f), FluxoButtonStyle.Primary, enabled = !saving)
+                    FluxoPillButton("Débito", { save(confirmed(PaymentMethod.DEBIT_CARD)) }, Modifier.weight(1f), FluxoButtonStyle.Secondary, enabled = !saving)
+                    FluxoPillButton("VR", { save(confirmed(PaymentMethod.MEAL_VOUCHER)) }, Modifier.weight(1f), FluxoButtonStyle.Secondary, enabled = !saving)
+                }
             } else {
                 FluxoPillButton("Confirmar", { save(confirmed()) }, Modifier.weight(1f), FluxoButtonStyle.Primary, enabled = known && !saving)
                 FluxoPillButton("Editar", { edit(row) }, Modifier.weight(1f), FluxoButtonStyle.Secondary)
@@ -340,12 +347,7 @@ private fun RecordRow(
     bankLabel: (String) -> String,
     moneyLabel: (Long?) -> String
 ) {
-    val shortMethod = when (row.method) {
-        PaymentMethod.PIX -> "Pix"
-        PaymentMethod.CREDIT_CARD -> "crédito"
-        PaymentMethod.DEBIT_CARD -> "débito"
-        PaymentMethod.UNKNOWN -> "meio não informado"
-    }
+    val shortMethod = if (row.method == PaymentMethod.UNKNOWN) "meio não informado" else row.method.shortLabel
     val full = moneyLabel(row.amountCents)
     // The list shows only the number (as in the prototype); screen readers still get the currency.
     val plain = full.replace("R$", "").trim()
