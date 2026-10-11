@@ -496,7 +496,7 @@ class LedgerRepository(context: Context) {
         require(outgoing.accountId != null && incoming.accountId != null && outgoing.accountId != incoming.accountId)
         require(outgoing.direction == Direction.EXPENSE && incoming.direction == Direction.INCOME)
         require(outgoing.status == ReviewStatus.CONFIRMED && incoming.status == ReviewStatus.CONFIRMED)
-        require(outgoing.method != PaymentMethod.CREDIT_CARD && incoming.method != PaymentMethod.CREDIT_CARD)
+        require(outgoing.method.affectsCash && incoming.method.affectsCash)
         require(outgoing.amountCents != null && outgoing.amountCents == incoming.amountCents)
         val values = ContentValues().apply { put("transfer_id", UUID.randomUUID().toString()); put("user_modified", 1) }
         database.writableDatabase.update("transactions", values, "id IN (?, ?) AND deleted = 0", arrayOf(outgoingId, incomingId))
