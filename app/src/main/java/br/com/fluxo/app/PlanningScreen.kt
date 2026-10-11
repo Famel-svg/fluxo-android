@@ -1,29 +1,35 @@
 package br.com.fluxo.app
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import br.com.fluxo.core.*
 import java.math.BigDecimal
 import java.math.BigInteger
@@ -32,10 +38,37 @@ import java.text.NumberFormat
 import java.time.Instant
 import java.time.YearMonth
 import java.time.ZoneId
-import java.util.Locale
 
-private fun planningMoney(cents: BigInteger): String =
-    NumberFormat.getCurrencyInstance(Locale.forLanguageTag("pt-BR")).format(BigDecimal(cents, 2))
+private fun planningMoney(cents: BigInteger): String = money(BigDecimal(cents, 2))
+
+/** pt-BR number without currency symbol; [trimWhole] drops ",00" for whole reais (chart labels). */
+private fun planningNumber(cents: BigInteger, trimWhole: Boolean = false): String {
+    val whole = trimWhole && cents.mod(BigInteger.valueOf(100)).signum() == 0
+    val format = NumberFormat.getNumberInstance(ptBr).apply {
+        minimumFractionDigits = if (whole) 0 else 2
+        maximumFractionDigits = if (whole) 0 else 2
+    }
+    return format.format(BigDecimal(cents, 2))
+}
+
+private fun planningMonthName(month: YearMonth): String =
+    month.month.getDisplayName(java.time.format.TextStyle.FULL, ptBr).replaceFirstChar { it.uppercase(ptBr) }
+
+private fun planningMonthShort(month: YearMonth): String =
+    month.month.getDisplayName(java.time.format.TextStyle.SHORT, ptBr).trimEnd('.').replaceFirstChar { it.uppercase(ptBr) }
+
+/** Signed one-decimal percentage of the change, or null when the base is not positive. */
+private fun planningVariation(total: BigInteger, previous: BigInteger): String? {
+    if (previous.signum() <= 0) return null
+    val difference = total - previous
+    val value = BigDecimal(difference.abs()).multiply(BigDecimal(100))
+        .divide(BigDecimal(previous), 1, RoundingMode.HALF_UP).toPlainString().replace('.', ',')
+    return when {
+        difference.signum() > 0 -> "+$value%"
+        difference.signum() < 0 -> "\u2212$value%"
+        else -> "0,0%"
+    }
+}
 
 @Composable
 internal fun PlanningScreen(
@@ -47,27 +80,17 @@ internal fun PlanningScreen(
     saveBenefits: (YearMonth, Long, Long, BenefitDays, () -> Unit) -> Unit
 ) {
     val totals = remember(transactions, month) { SpendingAnalytics.byCategory(transactions, month) }
-    val previous = remember(transactions, month) { SpendingAnalytics.byCategory(transactions, month.minusMonths(1)) }
+    val monthly = remember(transactions, month) { SpendingAnalytics.monthlyExpenses(transactions, month, 6) }
     val total = totals.values.fold(BigInteger.ZERO, BigInteger::add)
-    val previousTotal = previous.values.fold(BigInteger.ZERO, BigInteger::add)
-    val monthBudgets = budgets.filter { it.month == month.toString() }
+    val previousTotal = monthly.getOrNull(monthly.size - 2)?.totalCents ?: BigInteger.ZERO
+    val monthBudgets = budgets.filter { it.month == month.toString() }.sortedBy { it.category.ordinal }
     val counts = remember(transactions, month) {
         transactions.filter {
             it.status == ReviewStatus.CONFIRMED && it.transferId == null && it.direction == Direction.EXPENSE && (it.amountCents ?: 0) > 0 &&
                 YearMonth.from(Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault())) == month
         }.groupingBy { it.category }.eachCount()
     }
-    val lastWeek = remember(transactions, month) {
-        (0L..6L).map { offset ->
-            val date = month.atEndOfMonth().minusDays(6 - offset)
-            val cents = transactions.asSequence().filter {
-                it.status == ReviewStatus.CONFIRMED && it.transferId == null && it.direction == Direction.EXPENSE &&
-                    (it.amountCents ?: 0) > 0 &&
-                    Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate() == date
-            }.fold(BigInteger.ZERO) { sum, transaction -> sum + BigInteger.valueOf(transaction.amountCents ?: 0) }
-            date to cents
-        }
-    }
+    val lastWeek = remember(transactions, month) { SpendingAnalytics.dailyExpenses(transactions, month.atEndOfMonth(), 7) }
     var dialogMonth by rememberSaveable { mutableStateOf<String?>(null) }
     var dialogCategory by rememberSaveable { mutableStateOf(Category.UNCATEGORIZED) }
     var dialogLimit by rememberSaveable { mutableStateOf("") }
@@ -82,65 +105,44 @@ internal fun PlanningScreen(
         deleting = false
     }
     var benefitDialogMonth by rememberSaveable { mutableStateOf<String?>(null) }
-    LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    val detailCategories = Category.entries.filter { (totals[it] ?: BigInteger.ZERO) > BigInteger.ZERO || monthBudgets.any { budget -> budget.category == it } }
+    LazyColumn(
+        modifier = Modifier.background(FluxoColors.Paper),
+        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        item(key = "header") {
+            FluxoScreenHeader("Planejar", subtitle = "${planningMonthName(month)} de ${month.year}")
+        }
+        item(key = "hero") { PlanningHero(total, previousTotal, month) }
+        item(key = "monthly") { MonthlyExpensesTile(monthly) }
+        item(key = "budgets-heading") { PlanningSectionTitle("Orçamentos") { BudgetMarkerLegend() } }
+        if (monthBudgets.isEmpty()) item(key = "budgets-empty") {
+            Text("Nenhum limite definido para este mês.", style = MaterialTheme.typography.bodyMedium, color = FluxoColors.Mute,
+                modifier = Modifier.padding(horizontal = 2.dp, vertical = 4.dp))
+        }
+        items(monthBudgets, key = { "budget-" + it.category.name }) { budget ->
+            BudgetRow(budget, totals[budget.category] ?: BigInteger.ZERO) { open(budget) }
+        }
+        item(key = "define") { FluxoPillButton("Definir limite mensal", onClick = { open(null) }, modifier = Modifier.fillMaxWidth()) }
         item(key = "benefits") {
             BenefitSummary(month, benefits) {
                 resetError()
                 benefitDialogMonth = month.toString()
             }
         }
-        item {
-            FluxoPanel(accent = FluxoDesignTokens.Blue, gradient = listOf(Color(0xFF002B3B), Color(0xFF061C34), Color(0xFF001020))) {
-                FluxoSectionHeading("Despesas confirmadas", accent = FluxoDesignTokens.Blue)
-                Text(planningMoney(total), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                Text("$month · inclui compras no crédito; itens em revisão e transferências próprias ficam fora.",
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Últimos 7 dias do mês", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                LastWeekSpendChart(lastWeek)
-                Text("Dados reconhecidos podem ser parciais; valores não representam saldo nem fatura.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+        item(key = "week") { LastWeekTile(lastWeek) }
+        if (totals.isEmpty() && monthBudgets.isEmpty()) item(key = "empty") { FluxoEmptyState("Sem despesas ou limites neste mês.", "Defina um limite ou categorize seus lançamentos.") }
+        if (detailCategories.isNotEmpty()) item(key = "details-heading") { PlanningSectionTitle("Categorias") { Text("detalhe do mês", style = FluxoType.Caption.copy(fontSize = 11.5.sp), color = FluxoColors.Mute) } }
+        items(detailCategories, key = { "detail-" + it.name }) { category ->
+            CategoryDetail(
+                category, totals[category] ?: BigInteger.ZERO, total, counts[category] ?: 0,
+                monthBudgets.firstOrNull { it.category == category }
+            ) { open(it) }
         }
-        item {
-            FluxoPanel(accent = FluxoDesignTokens.Mint) {
-                FluxoSectionHeading("Comparação mensal")
-                Text("${month.minusMonths(1)} · ${planningMoney(previousTotal)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                val difference = total - previousTotal
-                Text(when {
-                    previousTotal == BigInteger.ZERO && total == BigInteger.ZERO -> "Sem despesas confirmadas nos dois meses."
-                    previousTotal == BigInteger.ZERO -> "Sem base no mês anterior para calcular variação percentual."
-                    difference == BigInteger.ZERO -> "Mesmo total de despesas do mês anterior."
-                    else -> {
-                        val percentage = BigDecimal(difference.abs()).multiply(BigDecimal(100)).divide(BigDecimal(previousTotal), 1, RoundingMode.HALF_UP).toPlainString().replace('.', ',')
-                        "${if (difference.signum() > 0) "Aumento" else "Redução"} de ${planningMoney(difference.abs())} ($percentage%)."
-                    }
-                }, style = MaterialTheme.typography.titleMedium)
-            }
-        }
-        item { Button(onClick = { open(null) }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Definir limite mensal") } }
-        if (totals.isEmpty() && monthBudgets.isEmpty()) item { FluxoEmptyState("Sem despesas ou limites neste mês.", "Defina um limite ou categorize seus lançamentos.") }
-        item { FluxoSectionHeading("Categorias", accent = FluxoDesignTokens.Blue) }
-        items(Category.entries.filter { (totals[it] ?: BigInteger.ZERO) > BigInteger.ZERO || monthBudgets.any { budget -> budget.category == it } }, key = { it.name }) { category ->
-            val spent = totals[category] ?: BigInteger.ZERO
-            val budget = monthBudgets.firstOrNull { it.category == category }
-            val share = if (total.signum() == 0) 0f else BigDecimal(spent).divide(BigDecimal(total), 6, RoundingMode.HALF_UP).toFloat().coerceIn(0f, 1f)
-            FluxoPanel(accent = if (category.ordinal % 2 == 0) FluxoDesignTokens.Mint else FluxoDesignTokens.Blue) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text(category.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text(planningMoney(spent), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                }
-                LinearProgressIndicator(progress = { share }, modifier = Modifier.fillMaxWidth())
-                val percentage = if (total.signum() == 0) "0" else BigDecimal(spent).multiply(BigDecimal(100)).divide(BigDecimal(total), 1, RoundingMode.HALF_UP).toPlainString().replace('.', ',')
-                Text("${counts[category] ?: 0} lançamento(s) · $percentage% das despesas", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (budget != null) {
-                    val limit = BigInteger.valueOf(budget.limitCents)
-                    val remaining = limit - spent
-                    Text("Limite: ${planningMoney(limit)}")
-                    LinearProgressIndicator(progress = { BigDecimal(spent).divide(BigDecimal(limit), 6, RoundingMode.HALF_UP).toFloat().coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth(), color = FluxoDesignTokens.Blue)
-                    Text(if (remaining.signum() < 0) "Excesso: ${planningMoney(remaining.abs())}" else "Restante: ${planningMoney(remaining)}", color = if (remaining.signum() < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
-                    TextButton(onClick = { open(budget) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Editar limite de ${category.label}") }
-                } else Text("Sem limite definido", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+        item(key = "disclaimer") {
+            Text("$month · inclui compras no crédito; itens em revisão e transferências próprias ficam fora. Dados reconhecidos podem ser parciais; valores não representam saldo nem fatura.",
+                style = FluxoType.Caption, color = FluxoColors.Mute, modifier = Modifier.padding(horizontal = 2.dp, vertical = 4.dp))
         }
     }
     benefitDialogMonth?.let { selected ->
@@ -175,78 +177,190 @@ internal fun PlanningScreen(
     }
 }
 
+@Composable
+private fun PlanningSectionTitle(title: String, trailing: @Composable () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(start = 2.dp, end = 2.dp, top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.Bottom) {
+        FluxoSectionHeading(title, modifier = Modifier.weight(1f))
+        trailing()
+    }
+}
+
+@Composable
+private fun BudgetMarkerLegend() {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.width(2.dp).height(12.dp).clip(RoundedCornerShape(1.dp)).background(FluxoColors.Ink))
+        Text("100% do limite", style = FluxoType.Caption.copy(fontSize = 11.5.sp), color = FluxoColors.Mute)
+    }
+}
+
+@Composable
+private fun PlanningHero(total: BigInteger, previousTotal: BigInteger, month: YearMonth) {
+    val previousMonth = month.minusMonths(1)
+    val variation = planningVariation(total, previousTotal)
+    FluxoHero(label = "Gastos do mês", value = planningNumber(total)) {
+        Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("${planningMonthName(previousMonth)} ${planningMoney(previousTotal)}", color = Color.White,
+                style = FluxoType.Caption.copy(fontSize = 12.5.sp, fontFeatureSettings = "tnum"), modifier = Modifier.weight(1f, fill = false))
+            if (variation != null) {
+                Text(variation, color = FluxoColors.Ink, maxLines = 1,
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, fontSize = 11.5.sp),
+                    modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(FluxoColors.Soft).padding(horizontal = 10.dp, vertical = 3.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun MonthlyExpensesTile(monthly: List<MonthlyExpense>) {
+    val last = monthly.lastIndex
+    val description = "Despesas por mês em reais: " + monthly.joinToString(", ") {
+        "${it.month.month.getDisplayName(java.time.format.TextStyle.FULL, ptBr)} ${planningNumber(it.totalCents, trimWhole = true)}"
+    }
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(FluxoColors.Soft).padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 6.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+            Text("Despesas por mês", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold), modifier = Modifier.weight(1f))
+            Text("últimos 6 meses", style = FluxoType.Caption, color = FluxoColors.Mute)
+        }
+        Spacer(Modifier.height(2.dp))
+        BarChart(
+            entries = monthly.map {
+                BarEntry(it.totalCents, planningMonthShort(it.month), if (it.totalCents.signum() > 0) planningNumber(it.totalCents, trimWhole = true) else null)
+            },
+            contentDescription = description,
+            modifier = Modifier.fillMaxWidth().height(116.dp),
+            highlightedIndex = last.takeIf { it >= 0 },
+            showValueLabels = true,
+            baselineColor = FluxoColors.PetrolLight
+        )
+    }
+}
+
+@Composable
+private fun BudgetRow(budget: Budget, spent: BigInteger, edit: () -> Unit) {
+    val limit = BigInteger.valueOf(budget.limitCents)
+    val over = spent - limit
+    val percent = if (limit.signum() > 0) spent.multiply(BigInteger.valueOf(100)).divide(limit) else BigInteger.ZERO
+    val stacked = LocalDensity.current.fontScale >= 1.3f
+    val pill: @Composable () -> Unit = {
+        Text("estourou ${planningMoney(over)}", color = Color.White, maxLines = 1,
+            style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp, fontWeight = FontWeight.ExtraBold),
+            modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(FluxoColors.Expense).padding(horizontal = 9.dp, vertical = 1.dp))
+    }
+    Column(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "Editar limite de ${budget.category.label}", role = Role.Button, onClick = edit)
+            .padding(horizontal = 2.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.Center
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FluxoDot(fluxoCategoryColor(budget.category))
+                Text(budget.category.label, style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                if (over.signum() > 0 && !stacked) pill()
+            }
+            Text(
+                buildAnnotatedString {
+                    withStyle(SpanStyle(color = FluxoColors.Ink, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)) { append(planningNumber(spent)) }
+                    append(" de ${planningNumber(limit)}")
+                },
+                color = FluxoColors.Mute, style = FluxoType.number(13.sp, FontWeight.SemiBold), maxLines = 1
+            )
+        }
+        if (over.signum() > 0 && stacked) Box(Modifier.padding(top = 2.dp)) { pill() }
+        BudgetBar(
+            spent = spent, limit = limit,
+            contentDescription = "${budget.category.label} a $percent% do orçamento",
+            modifier = Modifier.fillMaxWidth().height(14.dp).padding(top = 2.dp)
+        )
+    }
+}
+
+@Composable
+private fun CategoryDetail(category: Category, spent: BigInteger, total: BigInteger, count: Int, budget: Budget?, edit: (Budget) -> Unit) {
+    FluxoTile(Modifier.fillMaxWidth(), role = FluxoTileRole.Outlined) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FluxoDot(fluxoCategoryColor(category))
+                Text(category.label, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
+            }
+            Text(planningMoney(spent), style = FluxoType.RowNumber)
+        }
+        val percentage = if (total.signum() == 0) "0" else BigDecimal(spent).multiply(BigDecimal(100)).divide(BigDecimal(total), 1, RoundingMode.HALF_UP).toPlainString().replace('.', ',')
+        SplitBar(
+            first = spent, second = (total - spent).max(BigInteger.ZERO),
+            contentDescription = "${category.label}: $percentage% das despesas",
+            modifier = Modifier.fillMaxWidth().height(8.dp).padding(vertical = 0.dp),
+            firstColor = fluxoCategoryColor(category), secondColor = FluxoColors.Soft
+        )
+        Text("$count lançamento(s) · $percentage% das despesas", style = MaterialTheme.typography.bodySmall, color = FluxoColors.Mute)
+        if (budget != null) {
+            val limit = BigInteger.valueOf(budget.limitCents)
+            val remaining = limit - spent
+            Text("Limite: ${planningMoney(limit)}", style = MaterialTheme.typography.bodySmall)
+            Text(if (remaining.signum() < 0) "Excesso: ${planningMoney(remaining.abs())}" else "Restante: ${planningMoney(remaining)}",
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                color = if (remaining.signum() < 0) FluxoColors.Expense else FluxoColors.Ink)
+            TextButton(onClick = { edit(budget) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Editar limite de ${category.label}", color = FluxoColors.Petrol) }
+        } else Text("Sem limite definido", style = MaterialTheme.typography.bodySmall, color = FluxoColors.Mute)
+    }
+}
+
+@Composable
+private fun LastWeekTile(values: List<DailyExpense>) {
+    val description = "Gastos diários nos últimos sete dias do mês. " + values.joinToString("; ") { "${it.day.dayOfMonth}: ${planningMoney(it.totalCents)}" }
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(FluxoColors.Soft).padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 6.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+            Text("Últimos 7 dias do mês", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold), modifier = Modifier.weight(1f))
+            Text("por dia", style = FluxoType.Caption, color = FluxoColors.Mute)
+        }
+        Spacer(Modifier.height(2.dp))
+        BarChart(
+            entries = values.map { BarEntry(it.totalCents, it.day.dayOfMonth.toString()) },
+            contentDescription = description,
+            modifier = Modifier.fillMaxWidth().height(96.dp),
+            highlightedIndex = values.lastIndex.takeIf { it >= 0 },
+            baselineColor = FluxoColors.PetrolLight
+        )
+        if (values.all { it.totalCents.signum() == 0 }) Text("Sem despesas reconhecidas neste período.", style = FluxoType.Caption, color = FluxoColors.Mute)
+    }
+}
 
 @Composable
 internal fun BenefitSummary(month: YearMonth, settings: BenefitSettings, edit: () -> Unit) {
     val estimate = BenefitCalculator.estimate(month, settings)
-    FluxoPanel(accent = FluxoDesignTokens.Mint, gradient = listOf(Color(0xFF004A42), Color(0xFF003247), Color(0xFF001020))) {
-        FluxoSectionHeading("Benefícios estimados", accent = FluxoDesignTokens.Mint)
-        Text("$month · ${estimate.automaticDays} dias úteis automáticos", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        FluxoAdaptivePair(
-            first = {
-                BenefitValueCard("Vale-refeição", "VR", estimate.vrDays, settings.vrDailyCents, estimate.vrCents, FluxoDesignTokens.Mint)
-            },
-            second = {
-                BenefitValueCard("Vale-transporte", "VT", estimate.vtDays, settings.vtDailyCents, estimate.vtCents, FluxoDesignTokens.Blue)
-            }
-        )
-        Text("Total estimado: ${planningMoney(estimate.totalCents)}", modifier = Modifier.testTag("benefits.total"),
-            style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        PlanningSectionTitle("Benefícios") { Text("estimativa", style = FluxoType.Caption.copy(fontSize = 11.5.sp), color = FluxoColors.Mute) }
+        BenefitRow("VR", "Vale-refeição", estimate.vrDays, settings.vrDailyCents, estimate.vrCents, FluxoColors.Petrol)
+        BenefitRow("VT", "Vale-transporte", estimate.vtDays, settings.vtDailyCents, estimate.vtCents, FluxoColors.PetrolMid)
+        Text("$month · ${estimate.automaticDays} dias úteis automáticos", style = FluxoType.Caption, color = FluxoColors.Mute,
+            modifier = Modifier.padding(horizontal = 2.dp))
+        Text("Total estimado: ${planningMoney(estimate.totalCents)}", modifier = Modifier.padding(horizontal = 2.dp).testTag("benefits.total"),
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
         Text("Feriados, ausências e escalas não são inferidos. Ajustes de dias valem só para este mês; tarifa diária vale para todos. Estimativa separada de renda, despesas, caixa e saldo.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedButton(onClick = edit, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-            .testTag("benefits.configure")) { Text("Configurar VR e VT") }
+            style = FluxoType.Caption, color = FluxoColors.Mute, modifier = Modifier.padding(horizontal = 2.dp))
+        FluxoPillButton("Configurar VR e VT", onClick = edit, style = FluxoButtonStyle.Secondary,
+            modifier = Modifier.fillMaxWidth().testTag("benefits.configure"))
     }
 }
 
 @Composable
-private fun BenefitValueCard(title: String, code: String, days: Int, dailyCents: Long, totalCents: BigInteger, accent: Color) {
-    Surface(color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = .88f), shape = MaterialTheme.shapes.large) {
-        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(code, style = MaterialTheme.typography.labelLarge, color = accent, fontWeight = FontWeight.Bold)
-            Text(title, style = MaterialTheme.typography.bodyMedium)
-            Text(planningMoney(totalCents), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("$days dias · ${planningMoney(BigInteger.valueOf(dailyCents))}/dia",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun BenefitRow(code: String, title: String, days: Int, dailyCents: Long, totalCents: BigInteger, badge: Color) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(RoundedCornerShape(14.dp)).background(FluxoColors.Soft).padding(horizontal = 12.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(badge), contentAlignment = Alignment.Center) {
+            Text(code, color = Color.White, style = FluxoType.number(14.sp, FontWeight.ExtraBold))
         }
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall.copy(fontSize = 13.5.sp, fontWeight = FontWeight.Bold))
+            Text("$days dias \u00d7 ${planningMoney(BigInteger.valueOf(dailyCents))}", style = FluxoType.Caption.copy(fontSize = 12.sp), color = FluxoColors.Mute)
+        }
+        Text(planningMoney(totalCents), style = FluxoType.RowNumber, maxLines = 1)
     }
 }
-
-@Composable
-private fun LastWeekSpendChart(values: List<Pair<java.time.LocalDate, BigInteger>>) {
-    val max = values.maxOfOrNull { it.second }?.takeIf { it.signum() > 0 } ?: BigInteger.ONE
-    val grid = MaterialTheme.colorScheme.outlineVariant
-    val description = values.joinToString("; ") { (date, cents) -> "${date.dayOfMonth}: ${planningMoney(cents)}" }
-    Canvas(Modifier.fillMaxWidth().height(112.dp).semantics { contentDescription = "Gastos diários nos últimos sete dias do mês. $description" }) {
-        val baseline = size.height - 2.dp.toPx()
-        val chartHeight = size.height - 8.dp.toPx()
-        val step = size.width / (values.size * 1f)
-        val barWidth = step * .46f
-        repeat(3) { line ->
-            val y = chartHeight * (line + 1) / 4f
-            drawLine(grid.copy(alpha = .45f), Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
-        }
-        values.forEachIndexed { index, (_, cents) ->
-            val barHeight = BigDecimal(cents).divide(BigDecimal(max), 5, RoundingMode.HALF_UP).toFloat() * chartHeight
-            if (barHeight > 0f) {
-                drawRoundRect(
-                    color = if (index == values.lastIndex) FluxoDesignTokens.Mint else FluxoDesignTokens.Blue,
-                    topLeft = Offset(index * step + (step - barWidth) / 2f, baseline - barHeight),
-                    size = androidx.compose.ui.geometry.Size(barWidth, barHeight),
-                    cornerRadius = CornerRadius(4.dp.toPx())
-                )
-            }
-        }
-    }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        values.forEach { (date, _) ->
-            Text(date.dayOfMonth.toString(), style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-    if (values.all { it.second.signum() == 0 }) Text("Sem despesas reconhecidas neste período.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-}
-
 @Composable
 internal fun BenefitEditor(
     month: YearMonth, settings: BenefitSettings, saving: Boolean, error: String?,
