@@ -54,7 +54,7 @@ class SearchCategoryUiTest {
         compose.onNodeWithText("Mercado histórico sintético").assertIsDisplayed().performClick()
         compose.onNodeWithText("Categoria: Sem categoria").performScrollTo().performClick()
         compose.onNode(hasText("Alimentação") and hasAnyAncestor(isPopup())).performClick()
-        compose.onNodeWithText("Salvar e confirmar").performClick()
+        compose.onNodeWithText("Salvar lançamento").performClick()
         compose.waitUntil(10_000) { repository.transactions.value.singleOrNull()?.category == Category.FOOD }
         runBlocking { repository.refresh() }
         assertEquals(Category.FOOD, repository.transactions.value.single().category)
