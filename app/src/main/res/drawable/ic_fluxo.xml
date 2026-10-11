@@ -4,20 +4,20 @@
     android:height="48dp"
     android:viewportWidth="48"
     android:viewportHeight="48">
+    <!-- Launcher icon: letter F built from chart bars on the petrol brand colour. -->
     <path
-        android:fillColor="#001020"
+        android:fillColor="#0B5C73"
         android:pathData="M0,0 H48 V48 H0 Z" />
-    <!-- Brand B: flowing upper stroke. -->
+    <!-- Middle arm, drawn like a chart bar. -->
     <path
-        android:fillColor="#00E5B5"
-        android:pathData="M8.2,24.8 L8.2,18.7 C8.2,12.1 13.1,7.2 19.6,7.2 L35.2,7.2 C36.9,7.2 38.3,7.0 39.7,6.5 C40.2,12.5 37.3,17.6 31.1,17.6 L20.7,17.6 C15.0,17.6 10.5,20.1 8.2,24.8 Z" />
-    <!-- Brand B: lower-left ribbon, flattened to the approved solid cyan. -->
+        android:fillColor="#7FB5C2"
+        android:pathData="M17,21.5 H24 A3,3 0 0 1 27,24.5 V24.5 A3,3 0 0 1 24,27.5 H17 A3,3 0 0 1 14,24.5 V24.5 A3,3 0 0 1 17,21.5 Z" />
+    <!-- Stem and top arm of the F. -->
     <path
-        android:fillColor="#51C8FF"
-        android:pathData="M8.2,41.5 L8.2,30.0 C8.2,23.2 13.1,19.3 20.2,19.3 L23.5,19.3 L23.5,27.9 C22.0,28.7 20.4,29.1 18.6,29.1 L18.6,33.2 C18.6,38.5 14.6,41.5 8.2,41.5 Z" />
-    <!-- The evenOdd aperture reveals the background; no painted hole. -->
+        android:fillColor="#FBFCFC"
+        android:pathData="M17,12 H17 A3,3 0 0 1 20,15 V33 A3,3 0 0 1 17,36 H17 A3,3 0 0 1 14,33 V15 A3,3 0 0 1 17,12 Z M17,12 H32 A3,3 0 0 1 35,15 V15 A3,3 0 0 1 32,18 H17 A3,3 0 0 1 14,15 V15 A3,3 0 0 1 17,12 Z" />
+    <!-- Amber node: the highlighted point of the app's charts. -->
     <path
-        android:fillColor="#00E5B5"
-        android:fillType="evenOdd"
-        android:pathData="M23.5,19.3 L30.8,19.3 C32.3,19.3 33.5,20.5 33.5,22.0 L33.5,25.2 C33.5,26.7 32.3,27.9 30.8,27.9 L23.5,27.9 Z M30.95,23.6 A1.6,1.6 0,1 1,27.75,23.6 A1.6,1.6 0,1 1,30.95,23.6 Z" />
+        android:fillColor="#D9962B"
+        android:pathData="M29.3,24.5 A3.2,3.2 0 1 1 35.7,24.5 A3.2,3.2 0 1 1 29.3,24.5 Z" />
 </vector>
