@@ -26,6 +26,7 @@ class BenefitBalanceUiTest {
         Transaction(id, null, "manual", cents, Direction.EXPENSE, method, ReviewStatus.CONFIRMED, monday, "Almoço")
     private fun settings(vr: Long = 3900, vt: Long = 0) = BenefitSettings(vrDailyCents = vr, vtDailyCents = vt, vrWeekdays = BenefitCalculator.WORKDAYS)
 
+    // dashboard.vr merges its descendants into one node (spoken summary), so the number itself is read from the unmerged tree.
     private fun show(rows: List<Transaction>, benefits: BenefitSettings) {
         compose.setContent {
             MaterialTheme { Dashboard(rows, month, false, {}, {}, {}, {}, {}, {}, {}, benefits = benefits) }
@@ -35,15 +36,15 @@ class BenefitBalanceUiTest {
     @Test fun showsRemainingVrOfMonthlyEstimate() {
         show(listOf(voucher("a", 7000), voucher("b", 5000)), settings())
         compose.onNodeWithTag("dashboard.vr").assertIsDisplayed()
-        compose.onNodeWithTag("dashboard.vrRemaining").assertTextEquals(currency("738.00"))
+        compose.onNodeWithTag("dashboard.vrRemaining", useUnmergedTree = true).assertTextEquals(currency("738.00"))
         compose.onNodeWithText("de ${currency("858.00")} no mês").assertIsDisplayed()
         compose.onNodeWithTag("dashboard.vt").assertDoesNotExist()
     }
 
     @Test fun overspendIsShownAboveTheEstimate() {
         show(listOf(voucher("a", 90000)), settings())
-        compose.onNodeWithTag("dashboard.vrRemaining").assertTextContains("acima da estimativa", substring = true)
-        compose.onNodeWithTag("dashboard.vrRemaining").assertTextContains(currency("42.00"), substring = true)
+        compose.onNodeWithTag("dashboard.vrRemaining", useUnmergedTree = true).assertTextContains("acima da estimativa", substring = true)
+        compose.onNodeWithTag("dashboard.vrRemaining", useUnmergedTree = true).assertTextContains(currency("42.00"), substring = true)
     }
 
     @Test fun hiddenWhenVrRateIsZero() {
@@ -61,6 +62,6 @@ class BenefitBalanceUiTest {
     @Test fun hideValuesToggleMasksTheBalance() {
         show(listOf(voucher("a", 7000)), settings())
         compose.onNodeWithTag("dashboard.visibility").performClick()
-        compose.onNodeWithTag("dashboard.vrRemaining").assertTextEquals("••••")
+        compose.onNodeWithTag("dashboard.vrRemaining", useUnmergedTree = true).assertTextEquals("••••")
     }
 }
