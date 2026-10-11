@@ -65,7 +65,7 @@ internal fun BenefitBalanceBlock(
             }
             Text(
                 "de ${v(usage.depositCents)} no mês", color = FluxoColors.Mute, style = FluxoType.Caption,
-                textAlign = TextAlign.End, modifier = Modifier.weight(1f, fill = false).padding(bottom = 3.dp)
+                textAlign = TextAlign.End, modifier = Modifier.widthIn(max = 140.dp).padding(bottom = 3.dp)
             )
         }
         Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(FluxoColors.Soft)) {
@@ -75,10 +75,14 @@ internal fun BenefitBalanceBlock(
                     .background(if (over) FluxoColors.Expense else FluxoColors.Petrol)
             )
         }
-        Text(
-            "Estimativa do mês: ${daysText(days)} × ${v(BigInteger.valueOf(dailyCents))} · gasto com VR ${v(usage.spentCents)}",
-            color = FluxoColors.Mute, style = FluxoType.Caption
-        )
+        // Two parts so a narrow screen wraps between them instead of leaving an orphaned amount on the second line.
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                "Estimativa: ${daysText(days)} × ${v(BigInteger.valueOf(dailyCents))}",
+                color = FluxoColors.Mute, style = FluxoType.Caption, modifier = Modifier.weight(1f)
+            )
+            Text("gasto ${v(usage.spentCents)}", color = FluxoColors.Mute, style = FluxoType.Caption, textAlign = TextAlign.End)
+        }
     }
 }
 
