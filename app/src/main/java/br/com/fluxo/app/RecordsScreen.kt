@@ -71,7 +71,8 @@ internal fun RecordsScreen(
     previousMonth: () -> Unit = {},
     nextMonth: () -> Unit = {},
     add: () -> Unit = {},
-    model: LedgerViewModel = viewModel()
+    model: LedgerViewModel = viewModel(),
+    allRows: List<Transaction> = rows
 ) {
     val shortBank: (String) -> String = { bankLabel(it).removeSuffix(" Bank") }
     val saving by model.saving.collectAsStateWithLifecycle()
@@ -98,10 +99,15 @@ internal fun RecordsScreen(
     }
     val dateFormat = remember { DateTimeFormatter.ofPattern("dd/MM/yyyy", ptBr) }
     val timeFormat = remember { DateTimeFormatter.ofPattern("dd/MM HH:mm", ptBr) }
-    val weekCap = remember(rows, zone, today) {
-        val latest = rows.maxOfOrNull { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() }
-        val end = if (latest == null || !latest.isBefore(today.minusDays(6))) today else latest
-        SpendingAnalytics.dailyExpenses(rows, end, 7, zone)
+    val weekCap = remember(rows, allRows, allMonths, month, zone, today) {
+        if (allMonths) {
+            val latest = rows.maxOfOrNull { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() }
+            val end = if (latest == null || !latest.isBefore(today.minusDays(6))) today else latest
+            SpendingAnalytics.dailyExpenses(rows, end, 7, zone)
+        } else {
+            // All transactions, not just the month slice: early in a month the window reaches into the previous one.
+            SpendingAnalytics.recentDaysForMonth(allRows, month, today, 7, zone)
+        }
     }
     Surface(modifier = Modifier.fillMaxSize(), color = FluxoColors.Paper) {
         LazyColumn(
@@ -160,12 +166,12 @@ internal fun RecordsScreen(
             item {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     FluxoChip("Todos", filter == 0 && bank == null, { setFilter(0); bank = null })
-                    FluxoChip("Entradas", filter == 1, { setFilter(if (filter == 1) 0 else 1) })
-                    FluxoChip("Saídas", filter == 2, { setFilter(if (filter == 2) 0 else 2) })
                     FluxoChip("Revisar ($reviewCount)", filter == 3, { setFilter(if (filter == 3) 0 else 3) }, tone = FluxoChipTone.Review)
                     chipBanks.forEach { code ->
                         FluxoChip(shortBank(code), bank == code, { bank = if (bank == code) null else code })
                     }
+                    FluxoChip("Entradas", filter == 1, { setFilter(if (filter == 1) 0 else 1) })
+                    FluxoChip("Saídas", filter == 2, { setFilter(if (filter == 2) 0 else 2) })
                     FluxoChip("Todos os meses", allMonths, { setAllMonths(!allMonths) })
                 }
             }
@@ -287,7 +293,15 @@ private fun ReviewTicket(
     timeFormat: DateTimeFormatter
 ) {
     val amount = row.amountCents
-    val known = amount != null && amount > 0 && row.direction != Direction.UNKNOWN
+    val amountKnown = amount != null && amount > 0
+    val directionKnown = row.direction != Direction.UNKNOWN
+    val known = amountKnown && directionKnown
+    val missing = when {
+        !amountKnown && !directionKnown -> " Informe valor e direção em Editar."
+        !amountKnown -> " Informe o valor em Editar."
+        !directionKnown -> " Informe a direção em Editar."
+        else -> ""
+    }
     val methodOnly = known && row.direction == Direction.EXPENSE && row.method == PaymentMethod.UNKNOWN &&
         row.reason.startsWith(METHOD_ONLY_REASON)
     fun confirmed(method: PaymentMethod = row.method) = row.copy(status = ReviewStatus.CONFIRMED, reason = "", method = method)
@@ -297,7 +311,7 @@ private fun ReviewTicket(
             badge = bankLabel(row.bankPackage)
         )
         Text(
-            row.reason.ifBlank { "Confirme valor e classificação" } + if (!known) " Informe valor e direção em Editar." else "",
+            row.reason.ifBlank { "Confirme valor e classificação" } + missing,
             style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, lineHeight = 15.sp, fontWeight = FontWeight.Bold)
         )
         Text(
@@ -318,6 +332,7 @@ private fun ReviewTicket(
 }
 
 /** Day-list row: category dot, title, "categoria · banco · meio" line with origin badge, signed amount. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RecordRow(
     row: Transaction,
@@ -336,6 +351,7 @@ private fun RecordRow(
     val plain = full.replace("R$", "").trim()
     val signed = when (row.direction) { Direction.INCOME -> "+$plain"; Direction.EXPENSE -> "−$plain"; Direction.UNKNOWN -> plain }
     val spoken = when (row.direction) { Direction.INCOME -> "mais $full"; Direction.EXPENSE -> "menos $full"; Direction.UNKNOWN -> full }
+    val largeFont = LocalDensity.current.fontScale >= 1.3f
     Row(
         Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button) { edit(row) }.padding(start = 2.dp, end = 0.dp, top = 1.dp, bottom = 1.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -344,14 +360,14 @@ private fun RecordRow(
         FluxoDot(fluxoCategoryColor(row.category))
         Column(Modifier.weight(1f)) {
             Text(
-                row.description.ifBlank { shortMethod }, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                row.description.ifBlank { shortMethod }, maxLines = if (largeFont) 2 else 1, overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, lineHeight = 15.sp, fontWeight = FontWeight.Bold)
             )
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            // FlowRow: when the text does not fit, the badge drops to its own line instead of squeezing it.
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp), itemVerticalAlignment = Alignment.CenterVertically) {
                 Text(
                     row.category.label + " · " + bankLabel(row.bankPackage) + " · " + shortMethod,
-                    color = FluxoColors.Mute, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    style = FluxoType.Caption, modifier = Modifier.weight(1f, fill = false)
+                    color = FluxoColors.Mute, style = FluxoType.Caption
                 )
                 if (row.sourceKey != null) FluxoBadge("automático") else FluxoBadge("manual", kind = FluxoBadgeKind.Manual)
             }

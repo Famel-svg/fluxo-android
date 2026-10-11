@@ -79,7 +79,8 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                         if (existing == null) "Novo lançamento" else "Revisar lançamento",
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.titleLarge,
-                        maxLines = 1
+                        maxLines = 2,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                 }
                 Column(
@@ -115,7 +116,7 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                     FluxoPanel(accent = FluxoColors.PetrolMid) {
                         FluxoSectionHeading("Detalhes", icon = Icons.AutoMirrored.Filled.ReceiptLong, accent = FluxoColors.Petrol)
                         OutlinedTextField(value = description, onValueChange = { description = it.take(120) }, label = { Text("Descrição") }, singleLine = true, shape = RoundedCornerShape(16.dp), colors = editorFieldColors(), modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(value = date, onValueChange = { date = it }, label = { Text("Data (dd/mm/aaaa)") }, isError = parsedDate == null, singleLine = true, shape = RoundedCornerShape(16.dp), colors = editorFieldColors(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii), modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = date, onValueChange = { date = formatDateInput(it) }, label = { Text("Data (dd/mm/aaaa)") }, isError = parsedDate == null, singleLine = true, shape = RoundedCornerShape(16.dp), colors = editorFieldColors(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
                     }
                     FluxoPanel(accent = FluxoColors.Petrol) {
                         FluxoSectionHeading("Classificação", icon = Icons.Default.PieChart, accent = FluxoColors.Petrol)
@@ -172,6 +173,22 @@ internal fun <T> Choice(label: String, selected: T, options: List<T>, display: (
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, containerColor = FluxoColors.Paper) {
             options.forEach { option -> DropdownMenuItem(text = { Text(display(option)) }, onClick = { change(option); expanded = false }) }
+        }
+    }
+}
+
+/**
+ * Keeps the date field friendly to the numeric keyboard: only digits and "/" survive, and when the
+ * text is digits only the slashes after day and month are inserted automatically (typing "/" still works).
+ */
+internal fun formatDateInput(raw: String): String {
+    val kept = raw.filter { it.isDigit() || it == '/' }.take(10)
+    if ('/' in kept) return kept
+    val digits = kept
+    return buildString {
+        digits.forEachIndexed { i, c ->
+            if (i == 2 || i == 4) append('/')
+            append(c)
         }
     }
 }

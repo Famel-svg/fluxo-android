@@ -27,6 +27,26 @@ class SpendingAnalyticsTest {
         assertTrue(result.dropLast(1).all { it.totalCents == BigInteger.ZERO })
     }
 
+    @Test fun `seven day series on day two of a month includes the previous month last day`() {
+        val all = listOf(row("2026-09-30T15:00:00Z", 1200, "prev"), row("2026-10-02T15:00:00Z", 300, "cur"))
+        val month = YearMonth.of(2026, 10)
+        val today = LocalDate.of(2026, 10, 2)
+        // The old behaviour fed only the month slice, which loses the September purchase.
+        val monthSlice = all.filter { YearMonth.from(Instant.ofEpochMilli(it.occurredAt).atZone(sp)) == month }
+        assertEquals(BigInteger.valueOf(300), SpendingAnalytics.dailyExpenses(monthSlice, today, 7, sp).fold(BigInteger.ZERO) { a, d -> a + d.totalCents })
+        val series = SpendingAnalytics.recentDaysForMonth(all, month, today, 7, sp)
+        assertEquals(today, series.last().day)
+        assertEquals(BigInteger.valueOf(1200), series.first { it.day == LocalDate.of(2026, 9, 30) }.totalCents)
+        assertEquals(BigInteger.valueOf(1500), series.fold(BigInteger.ZERO) { a, d -> a + d.totalCents })
+    }
+
+    @Test fun `seven day series for a past month ends on its last day`() {
+        val all = listOf(row("2026-08-31T15:00:00Z", 100, "a"), row("2026-09-28T15:00:00Z", 400, "b"), row("2026-10-02T15:00:00Z", 300, "c"))
+        val series = SpendingAnalytics.recentDaysForMonth(all, YearMonth.of(2026, 9), LocalDate.of(2026, 10, 2), 7, sp)
+        assertEquals(LocalDate.of(2026, 9, 30), series.last().day)
+        assertEquals(BigInteger.valueOf(400), series.fold(BigInteger.ZERO) { a, d -> a + d.totalCents })
+    }
+
     @Test fun `daily edges follow the zone not UTC`() {
         val end = LocalDate.of(2026, 10, 7)
         // 02:30Z on Oct 8 is still Oct 7 in Sao Paulo (UTC-3); 02:59Z Oct 1 is Sep 30 (outside).
