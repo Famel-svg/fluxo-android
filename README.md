@@ -13,6 +13,7 @@ Aplicativo Android de controle financeiro pessoal, em português e com dados som
 - Contas locais com saldo inicial datado e transferências próprias, que não inflam renda nem consumo.
 - Configuração inicial no primeiro uso (também em Ajustes › Rever configuração inicial): nome opcional e, para VR e VT, valor por dia e dias da semana em que cai (por exemplo VR de segunda a sexta e VT de segunda a quinta); o app calcula a estimativa do mês e o nome fica só no aparelho.
 - Estimativa de benefícios (VR/VT) pelos dias da semana de cada benefício, com ajuste manual de dias por mês.
+- Saldo de VR (e VT) no Início: gastos marcados com Vale-refeição/Vale-transporte abatem a estimativa do mês e ficam fora das saídas de caixa; é uma estimativa, sem repasse de meses anteriores.
 - Backup restaurável protegido por senha (lançamentos, orçamentos, contas, benefícios e identificadores contra duplicatas).
 - Exportação CSV pelo seletor de arquivos do Android.
 - Diagnóstico da captura em Ajustes: permissão, conexão do serviço e última notificação observada na sessão.
