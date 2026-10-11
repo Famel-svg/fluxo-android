@@ -65,6 +65,10 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/** Readable width of tab content and of the bottom navigation on very wide windows (tablets, unfolded foldables). */
+private val CONTENT_MAX_WIDTH = 640.dp
+private val NAV_MAX_WIDTH = 560.dp
+
 @Composable
 private fun FluxoTheme(content: @Composable () -> Unit) {
     FluxoVisualTheme(content = content)
@@ -143,10 +147,10 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
             val labels = listOf("Início", "Registros", "Planejar", "Ajustes")
             val icons = listOf(Icons.Outlined.Home, Icons.AutoMirrored.Filled.ReceiptLong, Icons.Outlined.BarChart, Icons.Outlined.Tune)
             Surface(color = FluxoColors.Paper, tonalElevation = 0.dp) {
-                Column(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                     HorizontalDivider(color = FluxoColors.Line)
                     if (largeFont) {
-                        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp)) {
+                        Column(Modifier.widthIn(max = NAV_MAX_WIDTH).fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp)) {
                             destinations.chunked(2).forEachIndexed { row, names ->
                                 Row(Modifier.fillMaxWidth()) {
                                     names.forEachIndexed { column, name ->
@@ -159,7 +163,7 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
                         }
                     } else {
                         Row(
-                            Modifier.fillMaxWidth().navigationBarsPadding().height(56.dp).padding(horizontal = 6.dp),
+                            Modifier.widthIn(max = NAV_MAX_WIDTH).fillMaxWidth().navigationBarsPadding().height(56.dp).padding(horizontal = 6.dp),
                             horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically
                         ) {
                             destinations.forEachIndexed { index, name ->
@@ -173,7 +177,7 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
         }
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
-            Column(Modifier.widthIn(max = 800.dp).fillMaxWidth()) {
+            Column(Modifier.widthIn(max = CONTENT_MAX_WIDTH).fillMaxWidth()) {
                 if (captureError != null) Text(captureError.orEmpty(), modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
                 when (tab) {
                     0 -> Dashboard(

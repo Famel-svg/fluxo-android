@@ -169,7 +169,7 @@ internal fun OnboardingScreen(
     BackHandler(enabled = step > 0 && !saving) { step-- }
 
     Box(modifier.fillMaxSize().background(FluxoColors.Paper).systemBarsPadding().imePadding(), contentAlignment = Alignment.TopCenter) {
-        Column(Modifier.widthIn(max = 640.dp).fillMaxSize()) {
+        Column(Modifier.widthIn(max = 560.dp).fillMaxSize()) {
             // Progress and the back arrow stay pinned at the top, the primary action at the bottom.
             Box(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 4.dp)) {
                 ProgressHeader(step, onBack = { if (!saving) step-- })
@@ -187,7 +187,8 @@ internal fun OnboardingScreen(
                 Column(
                     Modifier.fillMaxSize().verticalScroll(rememberScrollState())
                         .padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                    // Centred when the page is shorter than the viewport (tall phones), scrolls when it is taller.
+                    verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically)
                 ) {
                     val (title, subtitle) = when (page) {
                         0 -> "Como podemos te chamar?" to "Seu nome aparece na saudação do início e fica só neste aparelho."
