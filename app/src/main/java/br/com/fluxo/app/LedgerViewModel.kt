@@ -27,6 +27,7 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
     val benefits = repository.benefits
     val profileName = repository.profileName
     val onboardingDone = repository.onboardingDone
+    val salaryMonthlyCents = repository.salaryMonthlyCents
     val captureEnabled = repository.captureEnabled
     val allowOtherApps = repository.allowOtherApps
     val enabledBanks = repository.enabledBanks
@@ -68,11 +69,12 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
         vrWeekdays: Set<DayOfWeek>, vtWeekdays: Set<DayOfWeek>, onSuccess: () -> Unit,
     ) = edit(onSuccess) { repository.saveBenefits(month, vr, vt, days, vrWeekdays, vtWeekdays) }
     fun completeOnboarding(
-        name: String, vr: Long, vt: Long, vrWeekdays: Set<DayOfWeek>, vtWeekdays: Set<DayOfWeek>, onSuccess: () -> Unit = {},
-    ) = edit(onSuccess) { repository.completeOnboarding(name, vr, vt, vrWeekdays, vtWeekdays) }
-    fun skipOnboarding() = edit({}) { repository.setOnboardingDone(true) }
+        name: String, salaryMonthlyCents: Long, vr: Long, vt: Long, vrWeekdays: Set<DayOfWeek>, vtWeekdays: Set<DayOfWeek>,
+        onSuccess: () -> Unit = {},
+    ) = edit(onSuccess) { repository.completeOnboarding(name, vr, vt, vrWeekdays, vtWeekdays, salaryMonthlyCents) }
     fun reopenOnboarding() = edit({}) { repository.setOnboardingDone(false) }
-    fun saveProfileName(name: String, onSuccess: () -> Unit) = edit(onSuccess) { repository.setProfileName(name) }
+    fun saveProfile(name: String, salaryMonthlyCents: Long, onSuccess: () -> Unit) =
+        edit(onSuccess) { repository.saveProfile(name, salaryMonthlyCents) }
     fun resetEditError() { _editError.value = null }
     fun clear() = execute { repository.clear() }
     fun capture(enabled: Boolean) = execute { repository.setCaptureEnabled(enabled) }

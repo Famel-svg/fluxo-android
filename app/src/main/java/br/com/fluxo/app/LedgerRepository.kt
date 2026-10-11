@@ -42,13 +42,17 @@ class LedgerRepository(context: Context) {
     private val benefitPreferences = context.getSharedPreferences("benefits", Context.MODE_PRIVATE)
     private val _benefits = MutableStateFlow(readBenefits())
     val benefits: StateFlow<BenefitSettings> = _benefits
-    // Local profile. The name never leaves the device: no logs, no CSV, no backup payload.
+    // Local profile. The name never leaves the device: no logs, no CSV, no backup payload. The salary is never logged
+    // or exported to CSV; only the encrypted backup (payload v5) carries it.
     // Profile and benefits live in their own preference files, so clear() never touches them.
     private val profilePreferences = context.getSharedPreferences("profile", Context.MODE_PRIVATE)
     private val _profileName = MutableStateFlow(cleanProfileName(profilePreferences.getString("name", null).orEmpty()))
     val profileName: StateFlow<String> = _profileName
     private val _onboardingDone = MutableStateFlow(profilePreferences.getBoolean("onboarding_done", false))
     val onboardingDone: StateFlow<Boolean> = _onboardingDone
+    // Monthly net salary in cents (0 = not set). Local planning aid only: never logged, exported to CSV or counted as income.
+    private val _salaryMonthlyCents = MutableStateFlow(readSalary())
+    val salaryMonthlyCents: StateFlow<Long> = _salaryMonthlyCents
     private val database = LedgerDatabase(context.applicationContext)
     private val mutex = Mutex()
     private val _transactions = MutableStateFlow<List<Transaction>>(emptyList())
@@ -84,6 +88,8 @@ class LedgerRepository(context: Context) {
         return BenefitSettings(rate("vr_daily_cents"), rate("vt_daily_cents"), overrides.toMap(),
             weekdaysFrom(stored["vr_weekdays"]), weekdaysFrom(stored["vt_weekdays"]))
     }
+
+    private fun readSalary(): Long = (profilePreferences.all["salary_monthly_cents"] as? Long)?.takeIf { it >= 0 } ?: 0L
 
     private fun cleanProfileName(raw: String): String = raw.trim().take(MAX_PROFILE_NAME).trim()
 
@@ -140,11 +146,43 @@ class LedgerRepository(context: Context) {
         _benefits.value = settings
     }
 
+    /** Caller holds the mutex. Runs only after the SQLite restore succeeded; v5 backups carry the salary. */
+    private fun replaceSalary(cents: Long) {
+        check(profilePreferences.edit().putLong("salary_monthly_cents", cents).commit()) {
+            "Não foi possível salvar o salário no aparelho."
+        }
+        _salaryMonthlyCents.value = cents
+    }
+
     suspend fun setProfileName(name: String) = withContext(Dispatchers.IO) {
         mutex.withLock {
             val clean = cleanProfileName(name)
             check(profilePreferences.edit().putString("name", clean).commit()) { "Não foi possível salvar o nome no aparelho." }
             _profileName.value = clean
+        }
+    }
+
+    /** Persists the monthly salary (0 clears it) before announcing it, committing on IO. */
+    suspend fun setSalaryMonthlyCents(cents: Long) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            require(cents >= 0) { "O salário não pode ser negativo." }
+            check(profilePreferences.edit().putLong("salary_monthly_cents", cents).commit()) {
+                "Não foi possível salvar o salário no aparelho."
+            }
+            _salaryMonthlyCents.value = cents
+        }
+    }
+
+    /** Name and salary from the Perfil dialog, committed together. */
+    suspend fun saveProfile(name: String, salaryMonthlyCents: Long) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            require(salaryMonthlyCents >= 0) { "O salário não pode ser negativo." }
+            val clean = cleanProfileName(name)
+            check(profilePreferences.edit().putString("name", clean).putLong("salary_monthly_cents", salaryMonthlyCents).commit()) {
+                "Não foi possível salvar o perfil no aparelho."
+            }
+            _profileName.value = clean
+            _salaryMonthlyCents.value = salaryMonthlyCents
         }
     }
 
@@ -158,15 +196,17 @@ class LedgerRepository(context: Context) {
     }
 
     /**
-     * First-run completion. Rates and weekday sets (month overrides untouched) are committed first, then name
-     * and flag together; any failure throws and leaves the flag unset so the screen can be retried.
+     * First-run completion. Rates and weekday sets (month overrides untouched) are committed first, then name,
+     * salary and flag together; any failure throws and leaves the flag unset so the screen can be retried.
      */
     suspend fun completeOnboarding(
         name: String, vrDailyCents: Long, vtDailyCents: Long,
         vrWeekdays: Set<DayOfWeek>, vtWeekdays: Set<DayOfWeek>,
+        salaryMonthlyCents: Long = _salaryMonthlyCents.value,
     ) = withContext(Dispatchers.IO) {
         mutex.withLock {
             require(vrDailyCents >= 0 && vtDailyCents >= 0) { "As tarifas não podem ser negativas." }
+            require(salaryMonthlyCents >= 0) { "O salário não pode ser negativo." }
             val updated = BenefitSettings(vrDailyCents, vtDailyCents, _benefits.value.overrides, vrWeekdays, vtWeekdays)
             check(benefitPreferences.edit()
                 .putLong("vr_daily_cents", vrDailyCents).putLong("vt_daily_cents", vtDailyCents)
@@ -174,10 +214,12 @@ class LedgerRepository(context: Context) {
                 .commit()) { "Não foi possível salvar os benefícios no aparelho." }
             _benefits.value = updated
             val clean = cleanProfileName(name)
-            check(profilePreferences.edit().putString("name", clean).putBoolean("onboarding_done", true).commit()) {
+            check(profilePreferences.edit().putString("name", clean).putLong("salary_monthly_cents", salaryMonthlyCents)
+                .putBoolean("onboarding_done", true).commit()) {
                 "Não foi possível salvar o perfil no aparelho."
             }
             _profileName.value = clean
+            _salaryMonthlyCents.value = salaryMonthlyCents
             _onboardingDone.value = true
         }
     }
@@ -217,7 +259,7 @@ class LedgerRepository(context: Context) {
     suspend fun refresh() = withContext(Dispatchers.IO) { mutex.withLock { readAll() } }
 
     suspend fun exportBackupPayload(): ByteArray = withContext(Dispatchers.IO) {
-        mutex.withLock { LedgerBackup.export(database.readableDatabase, readBenefits()) }
+        mutex.withLock { LedgerBackup.export(database.readableDatabase, readBenefits(), _salaryMonthlyCents.value) }
     }
 
     fun inspectBackupPayload(payload: ByteArray): BackupSummary = LedgerBackup.validate(payload).summary
@@ -229,6 +271,7 @@ class LedgerRepository(context: Context) {
             setCaptureEnabled(false)
             LedgerBackup.restore(database.writableDatabase, validated)
             validated.benefits?.let { replaceBenefits(it) }
+            validated.salaryMonthlyCents?.let { replaceSalary(it) }
             _captureError.value = null
             readAll()
         }

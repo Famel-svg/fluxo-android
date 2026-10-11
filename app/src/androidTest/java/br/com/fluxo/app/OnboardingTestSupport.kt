@@ -10,11 +10,12 @@ import kotlinx.coroutines.runBlocking
  * a normal first-run screen, so they mark it done through the public repository API before they need the tabs
  * and put the stored values back afterwards. Production code has no test flag.
  */
-internal class ProfileSnapshot(val done: Boolean, val name: String, val benefits: BenefitSettings)
+internal class ProfileSnapshot(val done: Boolean, val name: String, val benefits: BenefitSettings, val salaryCents: Long = 0)
 
 internal object OnboardingTestSupport {
     fun snapshot(repository: LedgerRepository) =
-        ProfileSnapshot(repository.onboardingDone.value, repository.profileName.value, repository.benefits.value)
+        ProfileSnapshot(repository.onboardingDone.value, repository.profileName.value, repository.benefits.value,
+            repository.salaryMonthlyCents.value)
 
     /** Marks onboarding as done and returns what was stored before so it can be restored. */
     fun skip(repository: LedgerRepository): ProfileSnapshot = snapshot(repository).also {
@@ -27,6 +28,7 @@ internal object OnboardingTestSupport {
         repository.saveBenefits(month, stored.vrDailyCents, stored.vtDailyCents,
             stored.overrides[month] ?: BenefitDays(), stored.vrWeekdays, stored.vtWeekdays)
         repository.setProfileName(snapshot.name)
+        repository.setSalaryMonthlyCents(snapshot.salaryCents)
         repository.setOnboardingDone(snapshot.done)
     }
 }

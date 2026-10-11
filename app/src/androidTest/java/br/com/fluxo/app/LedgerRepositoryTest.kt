@@ -92,7 +92,7 @@ class LedgerRepositoryTest {
         repository.save(manualTransaction())
         val original = repository.transactions.value
         val old = org.json.JSONObject(repository.exportBackupPayload().toString(Charsets.UTF_8))
-        old.remove("accounts"); old.remove("benefits"); old.put("version", 1); old.put("schema", 3)
+        old.remove("accounts"); old.remove("benefits"); old.remove("profile"); old.put("version", 1); old.put("schema", 3)
         old.getJSONArray("transactions").getJSONObject(0).apply { remove("account_id"); remove("transfer_id") }
         repository.restoreBackupPayload(old.toString().toByteArray())
         assertEquals(original, repository.transactions.value)
@@ -650,7 +650,7 @@ class LedgerRepositoryTest {
         val expected = repo.benefits.value
         val payload = repo.exportBackupPayload()
         val json = org.json.JSONObject(payload.toString(Charsets.UTF_8))
-        assertEquals(4, json.getInt("version"))
+        assertEquals(5, json.getInt("version"))
         assertEquals(4, json.getInt("schema"))
         assertEquals(listOf("2026-09", "2026-10"), (0 until 2).map { json.getJSONObject("benefits").getJSONArray("days").getJSONObject(it).getString("month") })
         assertEquals(BackupSummary(1, 0, 0, 0, true), repo.inspectBackupPayload(payload))
@@ -668,7 +668,7 @@ class LedgerRepositoryTest {
     @Test fun backupV2LeavesDeviceBenefitsUntouched() = withBenefitRepository { repo, prefs ->
         repo.save(manualTransaction())
         repo.saveBenefits(YearMonth.of(2026, 9), 2550, 1050, BenefitDays(7, 8))
-        val v2 = mutated(repo.exportBackupPayload()) { it.remove("benefits"); it.put("version", 2) }
+        val v2 = mutated(repo.exportBackupPayload()) { it.remove("benefits"); it.remove("profile"); it.put("version", 2) }
         assertEquals(BackupSummary(1, 0, 0, 0, false), repo.inspectBackupPayload(v2))
         repo.saveBenefits(YearMonth.of(2026, 10), 100, 200, BenefitDays(1, null))
         val before = repo.benefits.value
@@ -741,6 +741,7 @@ class LedgerRepositoryTest {
         repo.saveBenefits(YearMonth.of(2026, 9), 2550, 1050, BenefitDays(7, 8), setOf(DayOfWeek.SUNDAY), emptySet())
         val v3 = mutated(repo.exportBackupPayload()) {
             it.put("version", 3)
+            it.remove("profile")
             it.getJSONObject("benefits").remove("vr_weekdays")
             it.getJSONObject("benefits").remove("vt_weekdays")
         }
@@ -864,6 +865,129 @@ class LedgerRepositoryTest {
         assertEquals("Ana", repo.profileName.value)
         assertTrue(repo.onboardingDone.value)
         assertEquals(benefits, repo.benefits.value)
+    }
+
+    @Test fun salaryPersistsAcrossRecreationRejectsNegativeAndSurvivesClearButNeverTheBenefitsFile() {
+        val context = IsolatedContext(InstrumentationRegistry.getInstrumentation().targetContext,
+            "salary_${java.util.UUID.randomUUID()}_")
+        try {
+            val repo = LedgerRepository(context)
+            assertEquals(0L, repo.salaryMonthlyCents.value)
+            runBlocking { repo.setSalaryMonthlyCents(350000) }
+            assertEquals(350000L, repo.salaryMonthlyCents.value)
+            assertEquals(350000L, LedgerRepository(context).salaryMonthlyCents.value)
+            try { runBlocking { repo.setSalaryMonthlyCents(-1) }; fail("negative salary accepted") } catch (_: IllegalArgumentException) { }
+            assertEquals(350000L, LedgerRepository(context).salaryMonthlyCents.value)
+            runBlocking { repo.setSalaryMonthlyCents(Long.MAX_VALUE) }
+            assertEquals(Long.MAX_VALUE, LedgerRepository(context).salaryMonthlyCents.value)
+            // Name and salary commit together from the Perfil dialog; zero clears the salary.
+            runBlocking { repo.saveProfile(" Ana ", 420000) }
+            assertEquals("Ana", repo.profileName.value)
+            assertEquals(420000L, LedgerRepository(context).salaryMonthlyCents.value)
+            runBlocking { repo.saveProfile("Ana", 0) }
+            assertEquals(0L, LedgerRepository(context).salaryMonthlyCents.value)
+            // Completing onboarding persists it with the rest of the profile; omitting it keeps the stored value.
+            runBlocking { repo.completeOnboarding("Bia", 3900, 1080, BenefitCalculator.WORKDAYS, monThu, 510000) }
+            assertEquals(510000L, LedgerRepository(context).salaryMonthlyCents.value)
+            runBlocking { repo.completeOnboarding("Bia", 3900, 1080, BenefitCalculator.WORKDAYS, monThu) }
+            assertEquals(510000L, LedgerRepository(context).salaryMonthlyCents.value)
+            assertFalse(context.getSharedPreferences("benefits", Context.MODE_PRIVATE).all.keys.any { it.contains("salary") })
+            // A malformed stored value falls back to "not set".
+            assertTrue(context.getSharedPreferences("profile", Context.MODE_PRIVATE).edit().putLong("salary_monthly_cents", -5).commit())
+            assertEquals(0L, LedgerRepository(context).salaryMonthlyCents.value)
+            assertTrue(context.getSharedPreferences("profile", Context.MODE_PRIVATE).edit().putString("salary_monthly_cents", "10").commit())
+            assertEquals(0L, LedgerRepository(context).salaryMonthlyCents.value)
+        } finally {
+            context.getSharedPreferences("profile", Context.MODE_PRIVATE).edit().clear().commit()
+            context.getSharedPreferences("benefits", Context.MODE_PRIVATE).edit().clear().commit()
+            runBlocking { LedgerRepository(context).clear() }
+        }
+    }
+
+    @Test fun clearKeepsTheSalaryLikeTheRestOfTheProfile() = withBenefitRepository { repo, _ ->
+        repo.save(manualTransaction())
+        repo.completeOnboarding("Ana", 3900, 1080, BenefitCalculator.WORKDAYS, monThu, 350000)
+        repo.clear()
+        assertTrue(repo.transactions.value.isEmpty())
+        assertEquals(350000L, repo.salaryMonthlyCents.value)
+        assertEquals("Ana", repo.profileName.value)
+    }
+
+    @Test fun backupV5RoundTripCarriesTheSalaryButNeverTheName() = withBenefitRepository { repo, _ ->
+        repo.save(manualTransaction())
+        repo.setProfileName("Rafael")
+        repo.setSalaryMonthlyCents(350000)
+        val payload = repo.exportBackupPayload()
+        val text = payload.toString(Charsets.UTF_8)
+        assertFalse("name must not be exported", text.contains("Rafael"))
+        val json = org.json.JSONObject(text)
+        assertEquals(5, json.getInt("version"))
+        assertEquals(4, json.getInt("schema"))
+        assertEquals("{\"salary_monthly_cents\":350000}", json.getJSONObject("profile").toString())
+        assertEquals(BackupSummary(1, 0, 0, 0, true), repo.inspectBackupPayload(payload))
+        repo.setSalaryMonthlyCents(1)
+        repo.restoreBackupPayload(payload)
+        assertEquals(350000L, repo.salaryMonthlyCents.value)
+        assertEquals("Rafael", repo.profileName.value)
+        // A backup made without a salary restores "not set" over a stored one.
+        repo.setSalaryMonthlyCents(0)
+        val without = repo.exportBackupPayload()
+        repo.setSalaryMonthlyCents(777)
+        repo.restoreBackupPayload(without)
+        assertEquals(0L, repo.salaryMonthlyCents.value)
+    }
+
+    @Test fun backupV4StillRestoresAndLeavesTheStoredSalaryUntouched() = withBenefitRepository { repo, _ ->
+        repo.save(manualTransaction())
+        repo.saveBenefits(YearMonth.of(2026, 9), 2550, 1050, BenefitDays(7, 8), monThu, BenefitCalculator.WORKDAYS)
+        repo.setSalaryMonthlyCents(350000)
+        val v4 = mutated(repo.exportBackupPayload()) { it.put("version", 4); it.remove("profile") }
+        assertEquals(BackupSummary(1, 0, 0, 0, true), repo.inspectBackupPayload(v4))
+        repo.setSalaryMonthlyCents(420000)
+        repo.saveBenefits(YearMonth.of(2026, 9), 1, 2, BenefitDays())
+        repo.restoreBackupPayload(v4)
+        assertEquals(420000L, repo.salaryMonthlyCents.value)
+        assertEquals(2550L, repo.benefits.value.vrDailyCents)
+        assertEquals(monThu, repo.benefits.value.vrWeekdays)
+        // A v4 file must not carry the v5 profile object, and a v5 file must carry it.
+        try { repo.inspectBackupPayload(mutated(v4) { it.put("profile", org.json.JSONObject().put("salary_monthly_cents", 1)) }); fail("v4 with profile accepted") }
+        catch (_: IllegalArgumentException) { }
+        try { repo.inspectBackupPayload(mutated(v4) { it.put("version", 5) }); fail("v5 without profile accepted") }
+        catch (_: IllegalArgumentException) { }
+    }
+
+    @Test fun malformedProfileObjectsAreRejectedWithoutChangingDataOrSalary() = withBenefitRepository { repo, prefs ->
+        repo.save(manualTransaction())
+        repo.saveBenefits(YearMonth.of(2026, 9), 2550, 1050, BenefitDays(7, 8))
+        repo.setSalaryMonthlyCents(350000)
+        val good = repo.exportBackupPayload()
+        val ledger = repo.transactions.value
+        val benefits = repo.benefits.value
+        val stored = prefs.all.toMap()
+        fun profile(o: org.json.JSONObject) = o.getJSONObject("profile")
+        val bad = listOf<(org.json.JSONObject) -> Unit>(
+            { profile(it).put("salary_monthly_cents", -1) },
+            { profile(it).put("salary_monthly_cents", 1.5) },
+            { profile(it).put("salary_monthly_cents", "350000") },
+            { profile(it).put("salary_monthly_cents", org.json.JSONObject.NULL) },
+            { profile(it).put("salary_monthly_cents", true) },
+            { profile(it).remove("salary_monthly_cents") },
+            { profile(it).put("name", "Rafael") },
+            { profile(it).put("extra", 1) },
+            { it.remove("profile") },
+            { it.put("profile", "x") },
+            { it.put("profile", org.json.JSONArray().put(1)) },
+            { it.put("profile", org.json.JSONObject.NULL) },
+        )
+        bad.forEachIndexed { index, change ->
+            val payload = mutated(good, change)
+            try { repo.inspectBackupPayload(payload); fail("case $index accepted") } catch (_: IllegalArgumentException) { }
+            try { repo.restoreBackupPayload(payload); fail("case $index restored") } catch (_: IllegalArgumentException) { }
+            assertEquals(ledger, repo.transactions.value)
+            assertEquals(benefits, repo.benefits.value)
+            assertEquals(stored, prefs.all)
+            assertEquals(350000L, repo.salaryMonthlyCents.value)
+        }
     }
 
     private fun enableCapture() {

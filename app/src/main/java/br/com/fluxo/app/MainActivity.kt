@@ -95,6 +95,7 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
     val benefits by model.benefits.collectAsStateWithLifecycle()
     val profileName by model.profileName.collectAsStateWithLifecycle()
     val onboardingDone by model.onboardingDone.collectAsStateWithLifecycle()
+    val salary by model.salaryMonthlyCents.collectAsStateWithLifecycle()
     val capture by model.captureEnabled.collectAsStateWithLifecycle()
     val allowOtherApps by model.allowOtherApps.collectAsStateWithLifecycle()
     val banks by model.enabledBanks.collectAsStateWithLifecycle()
@@ -129,9 +130,8 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
     FluxoVisualTheme {
     if (!onboardingDone) {
         OnboardingScreen(
-            initialName = profileName, initialSettings = benefits, saving = saving, error = editError,
-            onStart = { name, vr, vt, vrDays, vtDays -> model.completeOnboarding(name, vr, vt, vrDays, vtDays) },
-            onSkip = { model.skipOnboarding() }
+            initialName = profileName, initialSalaryCents = salary, initialSettings = benefits, saving = saving, error = editError,
+            onStart = { name, salaryCents, vr, vt, vrDays, vtDays -> model.completeOnboarding(name, salaryCents, vr, vt, vrDays, vtDays) }
         )
     } else
     Scaffold(
@@ -208,7 +208,8 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
                         methodLabel = { it.label() }
                     )
                     2 -> PlanningScreen(transactions, budgets, month, saving, editError, model::resetEditError, model::saveBudget, model::deleteBudget, benefits, model::saveBenefits,
-                        previousMonth = { monthText = month.minusMonths(1).toString() }, nextMonth = { monthText = month.plusMonths(1).toString() })
+                        previousMonth = { monthText = month.minusMonths(1).toString() }, nextMonth = { monthText = month.plusMonths(1).toString() },
+                        salaryMonthlyCents = salary)
                     else -> SettingsScreen(capture, allowOtherApps, banks, access, model, transactions)
                 }
             }

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -84,6 +85,8 @@ internal object FluxoColors {
     val Amber = Color(0xFFD9962B)
     /** Sparkline stroke and text on petrol (#CFE6EC). */
     val OnPetrolSoft = Color(0xFFCFE6EC)
+    /** Text and icons drawn on a solid petrol block. */
+    val OnPetrol = Color.White
     /** "Capture live" indicator dot (#5FD39A). */
     val Live = Color(0xFF5FD39A)
     /** Neutral grey for "sem categoria" (#A3A8B0). */
@@ -529,7 +532,8 @@ internal fun FluxoPillButton(
         FluxoButtonStyle.Quiet -> { fill = FluxoColors.Paper; fg = FluxoColors.Mute; borderColor = FluxoColors.Line; borderWidth = 1.5.dp }
         FluxoButtonStyle.Review -> { fill = FluxoColors.Amber; fg = FluxoColors.Ink; borderColor = FluxoColors.Amber; borderWidth = 2.dp }
     }
-    val alpha = if (enabled) 1f else .38f
+    val alpha by androidx.compose.animation.core.animateFloatAsState(
+        if (enabled) 1f else .38f, androidx.compose.animation.core.tween(180), label = "pillEnabled")
     Row(
         modifier
             .heightIn(min = 44.dp)
