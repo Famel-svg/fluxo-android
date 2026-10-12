@@ -55,6 +55,17 @@ Usuário autorizou commits e pushes incrementais no repositório privado Famel-s
 Manter commits por incremento, conferir diff e evidências antes de publicar APK.
 Não publicar em loja ou repositório público sem autorização específica.
 
+## Release automática
+`.github/workflows/release.yml` publica a release quando uma tag `vX.Y.Z` chega ao GitHub: roda testes JVM, build e lint,
+confere que a tag bate com `versionName`, exige o certificado fixado e anexa `fluxo-X.Y.Z-debug.apk` com SHA-256.
+Para lançar: subir `versionCode`/`versionName` em `app/build.gradle.kts`, escrever `docs/RELEASE_X.Y.Z.md` (primeira linha
+vira o título), rodar `./tools/check.ps1 all`, commitar, enviar o `main`, esperar o workflow Android ficar verde e só então
+criar e enviar a tag. Não criar release à mão com `gh release create`.
+Assinatura: segredo `DEBUG_KEYSTORE_BASE64` (keystore debug do dono, mesmo certificado das versões 0.2–0.4.1), para que a
+atualização instale por cima sem apagar dados. A senha dessa chave é pública: serve para uso pessoal em repositório privado.
+Antes de distribuir a terceiros, migrar para chave de release própria; isso exige desinstalar uma vez, portanto só depois
+de o dono ter feito e restaurado um backup protegido no aparelho real. Nunca versionar keystore nem colar chave em log.
+
 ## Privacidade e limites
 Não guardar notificações brutas, CPF, credenciais ou informações bancárias reais em memória Ruflo.
 Guardar somente decisões técnicas e resumos sem dados pessoais.
