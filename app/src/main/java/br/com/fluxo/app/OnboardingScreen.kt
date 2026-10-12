@@ -254,7 +254,7 @@ internal fun OnboardingScreen(
                                 imeAction = ImeAction.Done, onDone = { primary() }, focusRequester = vtFocus
                             )
                             Column(
-                                Modifier.fillMaxWidth().clip(FluxoShapes.Hero).background(FluxoColors.Petrol)
+                                Modifier.fillMaxWidth().clip(FluxoShapes.Hero).background(FluxoColors.Hero)
                                     .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 14.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
@@ -266,7 +266,7 @@ internal fun OnboardingScreen(
                                 }
                                 Box(Modifier.testTag("onboarding.preview").semantics(mergeDescendants = true) {}) {
                                     Crossfade(summary, animationSpec = tween(LINE_MILLIS), label = "monthTotal") { text ->
-                                        Text(text, color = FluxoColors.OnPetrol,
+                                        Text(text, color = FluxoColors.OnHero,
                                             style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold))
                                     }
                                 }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -70,7 +71,7 @@ internal fun FluxoWrapButton(
 ) {
     val alpha = if (enabled) 1f else .38f
     val fg = (if (quiet) FluxoColors.Mute else FluxoColors.Ink).copy(alpha = alpha)
-    val border = (if (quiet) FluxoColors.Line else FluxoColors.Ink).copy(alpha = alpha)
+    val border = (if (quiet) FluxoColors.Line else FluxoColors.ChipBorder).copy(alpha = alpha)
     Box(
         modifier.fillMaxWidth().heightIn(min = 48.dp)
             .clip(RoundedCornerShape(24.dp))
@@ -130,8 +131,8 @@ internal fun FluxoDataRow(
 
 @Composable
 private fun fluxoSwitchColors() = SwitchDefaults.colors(
-    checkedThumbColor = Color.White, checkedTrackColor = FluxoColors.Income, checkedBorderColor = FluxoColors.Income,
-    uncheckedThumbColor = FluxoColors.Ink, uncheckedTrackColor = FluxoColors.Paper, uncheckedBorderColor = FluxoColors.Ink,
+    checkedThumbColor = FluxoColors.Thumb, checkedTrackColor = FluxoColors.Income, checkedBorderColor = FluxoColors.Income,
+    uncheckedThumbColor = FluxoColors.Ink, uncheckedTrackColor = FluxoColors.Paper, uncheckedBorderColor = FluxoColors.ChipBorder,
 )
 
 private val timeFormat = DateTimeFormatter.ofPattern("HH:mm")
@@ -149,10 +150,10 @@ private fun lastSeenLabel(epochMillis: Long): String {
     }
 }
 
-private val bankBadgeColors = listOf(
-    FluxoColors.PetrolDark to Color.White,
-    FluxoColors.Ink to Color.White,
-    FluxoColors.PetrolLight to FluxoColors.Ink,
+private fun bankBadgeColors() = listOf(
+    FluxoColors.PetrolDark to FluxoColors.OnPetrolDark,
+    FluxoColors.Badge to FluxoColors.OnBadge,
+    FluxoColors.PetrolLight to FluxoColors.OnPetrolLight,
 )
 
 @Composable
@@ -196,7 +197,7 @@ private fun BankToggleRow(
 /** One line of the Estado block: check (ok) or warning (not ok) mark plus the state text. */
 @Composable
 private fun StateLine(ok: Boolean, solid: Boolean, text: String) {
-    val fg = if (solid) Color.White else FluxoColors.Ink
+    val fg = if (solid) FluxoColors.OnIncome else FluxoColors.Ink
     Row(
         Modifier.fillMaxWidth().heightIn(min = 25.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -219,6 +220,7 @@ internal fun SettingsScreen(capture: Boolean, allowOtherApps: Boolean, banks: Se
     val snapshot by CaptureHealth.state.collectAsStateWithLifecycle()
     val profileName by model.profileName.collectAsStateWithLifecycle()
     val salary by model.salaryMonthlyCents.collectAsStateWithLifecycle()
+    val themeMode by model.themeMode.collectAsStateWithLifecycle()
     var clear by rememberSaveable { mutableStateOf(false) }
     var editingProfile by rememberSaveable { mutableStateOf(false) }
     var profileDraft by rememberSaveable { mutableStateOf("") }
@@ -244,7 +246,7 @@ internal fun SettingsScreen(capture: Boolean, allowOtherApps: Boolean, banks: Se
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Text(
-                        "Estado", color = if (allOk) Color.White else FluxoColors.Ink,
+                        "Estado", color = if (allOk) FluxoColors.OnIncome else FluxoColors.Ink,
                         style = FluxoType.number(20.sp, FontWeight.ExtraBold),
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
@@ -303,6 +305,21 @@ internal fun SettingsScreen(capture: Boolean, allowOtherApps: Boolean, banks: Se
                     )
                 }
             }
+            item { SectionTitle("Aparência") }
+            item {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 2.dp).selectableGroup().semantics { contentDescription = "Aparência do aplicativo" },
+                    horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically
+                ) {
+                    listOf(
+                        Triple(ThemeMode.SYSTEM, "Sistema", "settings.theme.system"),
+                        Triple(ThemeMode.LIGHT, "Claro", "settings.theme.light"),
+                        Triple(ThemeMode.DARK, "Escuro", "settings.theme.dark"),
+                    ).forEach { (mode, label, tag) ->
+                        FluxoChip(label, selected = themeMode == mode, onClick = { model.setThemeMode(mode) }, modifier = Modifier.testTag(tag))
+                    }
+                }
+            }
             item { SectionTitle("Perfil") }
             item {
                 Column(Modifier.fillMaxWidth()) {
@@ -331,7 +348,7 @@ internal fun SettingsScreen(capture: Boolean, allowOtherApps: Boolean, banks: Se
                             val seen = snapshot.lastObserved[bank.packageName]
                             BankToggleRow(
                                 badge = bank.name.take(1).uppercase(),
-                                badgeColors = bankBadgeColors[index % bankBadgeColors.size],
+                                badgeColors = bankBadgeColors().let { it[index % it.size] },
                                 name = bank.name,
                                 detail = when {
                                     !enabled -> "Desligado"

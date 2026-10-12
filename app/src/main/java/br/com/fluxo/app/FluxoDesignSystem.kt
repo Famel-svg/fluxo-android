@@ -12,7 +12,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.*
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,52 +56,79 @@ import androidx.compose.ui.unit.sp
 import br.com.fluxo.core.Category
 
 // ---------------------------------------------------------------------------------------------
-// Colour tokens (light petrol palette from the approved prototype p1.html)
+// Colour tokens (light petrol palette from p1.html, dark "Petróleo escuro" from p5.html)
 // ---------------------------------------------------------------------------------------------
 
-/** Light petrol palette; every value mirrors a CSS variable of the approved prototype. */
+/**
+ * Theme-aware colour API. Each property reads the current [FluxoPalette] from [FluxoPaletteHolder] (snapshot state), so
+ * composables and draw blocks that use a token follow theme changes; call sites keep the plain `FluxoColors.Ink` form.
+ */
 internal object FluxoColors {
-    /** Outer "stage" behind the app surface (#E9EFF1). */
-    val Stage = Color(0xFFE9EFF1)
-    /** Main app surface (#FBFCFC). */
-    val Paper = Color(0xFFFBFCFC)
-    /** Primary text and dark controls (#14232B). */
-    val Ink = Color(0xFF14232B)
-    /** Secondary text (#56676F). */
-    val Mute = Color(0xFF56676F)
-    /** Hairlines and quiet borders (#DCE5E8). */
-    val Line = Color(0xFFDCE5E8)
-    /** Soft tinted fill for tiles (#E3EFF3). */
-    val Soft = Color(0xFFE3EFF3)
-    /** Slightly stronger tint for tickets and split tiles (#D2E6EC). */
-    val Pale = Color(0xFFD2E6EC)
-    /** Main brand petrol (#0B5C73). */
-    val Petrol = Color(0xFF0B5C73)
-    /** Darkest petrol step (#084457). */
-    val PetrolDark = Color(0xFF084457)
-    /** Mid petrol step used for bars (#1F6F84). */
-    val PetrolMid = Color(0xFF1F6F84)
-    /** Light petrol step (#7FB5C2). */
-    val PetrolLight = Color(0xFF7FB5C2)
-    /** Palest petrol step used for the 5th chart category (#B5D3DA). */
-    val PetrolSoft = Color(0xFFB5D3DA)
-    /** Income / positive (#17794A). */
-    val Income = Color(0xFF17794A)
-    /** Expense / budget overflow (#BF3F17). */
-    val Expense = Color(0xFFBF3F17)
-    /** The single warm accent: review, highlight (#D9962B). */
-    val Amber = Color(0xFFD9962B)
-    /** Sparkline stroke and text on petrol (#CFE6EC). */
-    val OnPetrolSoft = Color(0xFFCFE6EC)
-    /** Text and icons drawn on a solid petrol block. */
-    val OnPetrol = Color.White
-    /** "Capture live" indicator dot (#5FD39A). */
-    val Live = Color(0xFF5FD39A)
-    /** Neutral grey for "sem categoria" (#A3A8B0). */
-    val Gray = Color(0xFFA3A8B0)
+    private val p: FluxoPalette get() = FluxoPaletteHolder.current
+
+    /** True while the dark palette is (mostly) in effect. */
+    val IsDark: Boolean get() = p.isDark
+    /** Outer "stage" behind the app surface. */
+    val Stage: Color get() = p.stage
+    /** Main app surface. */
+    val Paper: Color get() = p.paper
+    /** Primary text and high-emphasis controls; draw text on an Ink fill with [OnInk]. */
+    val Ink: Color get() = p.ink
+    val OnInk: Color get() = p.onInk
+    /** Secondary text. */
+    val Mute: Color get() = p.mute
+    /** Hairlines and quiet borders. */
+    val Line: Color get() = p.line
+    /** Soft tinted fill for tiles. */
+    val Soft: Color get() = p.soft
+    /** Slightly stronger tint for tickets and split tiles. */
+    val Pale: Color get() = p.pale
+    /** Main accent petrol: nav pill, bars, links, badges (readable as text on Paper and Soft in both themes). */
+    val Petrol: Color get() = p.petrol
+    /** Text and icons drawn on a solid [Petrol] fill. */
+    val OnPetrol: Color get() = p.onPetrol
+    /** Darkest petrol step. */
+    val PetrolDark: Color get() = p.petrolDark
+    val OnPetrolDark: Color get() = p.onPetrolDark
+    /** Mid petrol step used for bars. */
+    val PetrolMid: Color get() = p.petrolMid
+    /** Light petrol step. */
+    val PetrolLight: Color get() = p.petrolLight
+    val OnPetrolLight: Color get() = p.onPetrolLight
+    /** Palest petrol step used for the 5th chart category. */
+    val PetrolSoft: Color get() = p.petrolSoft
+    /** Fill of the hero block and of other solid petrol surfaces carrying [OnHero] text. */
+    val Hero: Color get() = p.hero
+    val OnHero: Color get() = p.onHero
+    /** Sparkline stroke and secondary text on the hero. */
+    val OnPetrolSoft: Color get() = p.onPetrolSoft
+    /** Income / positive. */
+    val Income: Color get() = p.income
+    val OnIncome: Color get() = p.onIncome
+    /** Expense / budget overflow. */
+    val Expense: Color get() = p.expense
+    val OnExpense: Color get() = p.onExpense
+    /** The single warm accent: review, highlight. */
+    val Amber: Color get() = p.amber
+    val OnAmber: Color get() = p.onAmber
+    /** "Capture live" indicator dot. */
+    val Live: Color get() = p.live
+    /** Neutral grey for "sem categoria". */
+    val Gray: Color get() = p.gray
+    /** Capture strip fill and text. */
+    val Strip: Color get() = p.strip
+    val OnStrip: Color get() = p.onStrip
+    /** Automatic / bank badge fill and text. */
+    val Badge: Color get() = p.badge
+    val OnBadge: Color get() = p.onBadge
+    /** Outline of unselected chips and secondary buttons. */
+    val ChipBorder: Color get() = p.chipBorder
+    /** Thumb of a checked switch. */
+    val Thumb: Color get() = p.thumb
+    val Scrim: Color get() = p.scrim
 
     /** Ordered chart palette: petrol steps first, amber for the highlighted slice. */
-    val ChartSeries: List<Color> = listOf(PetrolLight, Petrol, Amber, PetrolMid, PetrolDark, PetrolSoft)
+    val ChartSeries: List<Color> get() = p.chartSeries
 }
 
 /** Category dot / chart colour following the prototype: petrol steps plus amber for food. */
@@ -106,9 +141,9 @@ internal fun fluxoCategoryColor(category: Category): Color = when (category) {
     Category.SALARY -> FluxoColors.Income
     Category.UNCATEGORIZED -> FluxoColors.Gray
     Category.OTHER -> FluxoColors.PetrolLight
-    Category.EDUCATION -> Color(0xFF3F8EA3)
-    Category.SHOPPING -> Color(0xFF9CC4CE)
-    Category.SERVICES -> Color(0xFF4B7380)
+    Category.EDUCATION -> FluxoPaletteHolder.current.education
+    Category.SHOPPING -> FluxoPaletteHolder.current.shopping
+    Category.SERVICES -> FluxoPaletteHolder.current.services
 }
 
 /**
@@ -116,10 +151,10 @@ internal fun fluxoCategoryColor(category: Category): Color = when (category) {
  * Mint -> petrol, Blue -> mid petrol, Lime -> light petrol, Amber -> amber.
  */
 internal object FluxoDesignTokens {
-    val Mint = FluxoColors.Petrol
-    val Blue = FluxoColors.PetrolMid
-    val Lime = FluxoColors.PetrolLight
-    val Amber = FluxoColors.Amber
+    val Mint: Color get() = FluxoColors.Petrol
+    val Blue: Color get() = FluxoColors.PetrolMid
+    val Lime: Color get() = FluxoColors.PetrolLight
+    val Amber: Color get() = FluxoColors.Amber
     val ScreenPadding = 16.dp
     val ContentSpacing = 12.dp
     val PanelRadius = 20.dp
@@ -207,28 +242,51 @@ private fun fluxoTypography(): Typography {
 // Theme
 // ---------------------------------------------------------------------------------------------
 
-private val FluxoLightColorScheme = lightColorScheme(
-    primary = FluxoColors.Petrol, onPrimary = Color.White,
-    primaryContainer = FluxoColors.Pale, onPrimaryContainer = FluxoColors.PetrolDark,
-    inversePrimary = FluxoColors.PetrolLight,
-    secondary = FluxoColors.PetrolMid, onSecondary = Color.White,
-    secondaryContainer = FluxoColors.Soft, onSecondaryContainer = FluxoColors.Ink,
-    tertiary = FluxoColors.Amber, onTertiary = FluxoColors.Ink,
-    tertiaryContainer = Color(0xFFF6E3BD), onTertiaryContainer = FluxoColors.Ink,
-    background = FluxoColors.Paper, onBackground = FluxoColors.Ink,
-    surface = FluxoColors.Paper, onSurface = FluxoColors.Ink,
-    surfaceVariant = FluxoColors.Soft, onSurfaceVariant = FluxoColors.Mute,
-    surfaceTint = FluxoColors.Petrol,
-    inverseSurface = FluxoColors.Ink, inverseOnSurface = Color.White,
-    error = FluxoColors.Expense, onError = Color.White,
-    errorContainer = Color(0xFFF6DCD2), onErrorContainer = Color(0xFF5E1A05),
-    outline = FluxoColors.Mute, outlineVariant = FluxoColors.Line,
-    scrim = Color.Black,
-    surfaceBright = FluxoColors.Paper, surfaceDim = FluxoColors.Stage,
-    surfaceContainerLowest = FluxoColors.Paper, surfaceContainerLow = FluxoColors.Soft,
-    surfaceContainer = FluxoColors.Soft, surfaceContainerHigh = FluxoColors.Pale,
-    surfaceContainerHighest = FluxoColors.Pale,
-)
+private fun fluxoColorScheme(p: FluxoPalette): ColorScheme {
+    return if (p.isDark) darkColorScheme(
+        primary = p.petrol, onPrimary = p.onPetrol,
+        primaryContainer = p.pale, onPrimaryContainer = p.ink,
+        inversePrimary = p.hero,
+        secondary = p.petrolMid, onSecondary = p.onPetrol,
+        secondaryContainer = p.soft, onSecondaryContainer = p.ink,
+        tertiary = p.amber, onTertiary = p.onAmber,
+        tertiaryContainer = p.amberContainer, onTertiaryContainer = p.ink,
+        background = p.paper, onBackground = p.ink,
+        surface = p.paper, onSurface = p.ink,
+        surfaceVariant = p.soft, onSurfaceVariant = p.mute,
+        surfaceTint = p.petrol,
+        inverseSurface = p.ink, inverseOnSurface = p.onInk,
+        error = p.expense, onError = p.onExpense,
+        errorContainer = p.errorContainer, onErrorContainer = p.onErrorContainer,
+        outline = p.mute, outlineVariant = p.line,
+        scrim = p.scrim,
+        surfaceBright = p.pale, surfaceDim = p.stage,
+        surfaceContainerLowest = p.stage, surfaceContainerLow = p.soft,
+        surfaceContainer = p.soft, surfaceContainerHigh = p.pale,
+        surfaceContainerHighest = p.pale,
+    ) else lightColorScheme(
+        primary = p.petrol, onPrimary = p.onPetrol,
+        primaryContainer = p.pale, onPrimaryContainer = p.petrolDark,
+        inversePrimary = p.petrolLight,
+        secondary = p.petrolMid, onSecondary = p.onPetrol,
+        secondaryContainer = p.soft, onSecondaryContainer = p.ink,
+        tertiary = p.amber, onTertiary = p.onAmber,
+        tertiaryContainer = p.amberContainer, onTertiaryContainer = p.ink,
+        background = p.paper, onBackground = p.ink,
+        surface = p.paper, onSurface = p.ink,
+        surfaceVariant = p.soft, onSurfaceVariant = p.mute,
+        surfaceTint = p.petrol,
+        inverseSurface = p.ink, inverseOnSurface = p.onInk,
+        error = p.expense, onError = p.onExpense,
+        errorContainer = p.errorContainer, onErrorContainer = p.onErrorContainer,
+        outline = p.mute, outlineVariant = p.line,
+        scrim = p.scrim,
+        surfaceBright = p.paper, surfaceDim = p.stage,
+        surfaceContainerLowest = p.paper, surfaceContainerLow = p.soft,
+        surfaceContainer = p.soft, surfaceContainerHigh = p.pale,
+        surfaceContainerHighest = p.pale,
+    )
+}
 
 private val FluxoMaterialShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp), small = RoundedCornerShape(12.dp),
@@ -236,18 +294,44 @@ private val FluxoMaterialShapes = Shapes(
     extraLarge = RoundedCornerShape(28.dp),
 )
 
+/** Resolves a [ThemeMode] to light or dark; [ThemeMode.SYSTEM] follows the device night mode. */
+@Composable
+internal fun ThemeMode.resolveDark(): Boolean = when (this) {
+    ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    ThemeMode.LIGHT -> false
+    ThemeMode.DARK -> true
+}
+
 /**
- * Shared light petrol theme wrapping all Fluxo destinations: Material colour scheme, bundled
- * typography and rounded shapes so stock components (dialogs, fields, switches) match.
+ * Shared petrol theme wrapping all Fluxo destinations: Material colour scheme, bundled typography and rounded
+ * shapes so stock components (dialogs, fields, switches) match. The resolved palette is published to
+ * [FluxoPaletteHolder] (read by [FluxoColors]) and eased over 250 ms when the mode changes. The first composition
+ * starts at the target and the system "remove animations" setting makes the switch instant.
  */
 @Composable
-internal fun FluxoVisualTheme(content: @Composable () -> Unit) {
+internal fun FluxoVisualTheme(mode: ThemeMode = ThemeMode.SYSTEM, content: @Composable () -> Unit) {
+    val dark = mode.resolveDark()
+    val progress by animateFloatAsState(
+        targetValue = if (dark) 1f else 0f,
+        animationSpec = tween(250, easing = FastOutSlowInEasing),
+        label = "themeProgress"
+    )
+    val palette = lerpPalette(FluxoPalette.Light, FluxoPalette.Dark, progress)
+    // Published during composition, before any token is read below, so every reader (dialog windows and Canvas
+    // draw blocks included) recomposes or redraws on the same frame.
+    FluxoPaletteHolder.current = palette
+    // Leaving the root theme (activity gone, test finished) puts the neutral light palette back for bare previews/tests.
+    DisposableEffect(Unit) { onDispose { FluxoPaletteHolder.current = FluxoPalette.Light } }
+    val colorScheme = remember(palette) { fluxoColorScheme(palette) }
     MaterialTheme(
-        colorScheme = FluxoLightColorScheme,
+        colorScheme = colorScheme,
         typography = FluxoTypography,
         shapes = FluxoMaterialShapes
     ) {
-        ProvideTextStyle(MaterialTheme.typography.bodyMedium, content)
+        // Plain Text outside a Surface (onboarding, previews) must follow the theme too, not the default black.
+        CompositionLocalProvider(LocalContentColor provides palette.ink) {
+            ProvideTextStyle(MaterialTheme.typography.bodyMedium, content)
+        }
     }
 }
 
@@ -330,22 +414,26 @@ internal fun FluxoHero(
         modifier
             .fillMaxWidth()
             .clip(FluxoShapes.Hero)
-            .background(FluxoColors.Petrol)
+            .background(FluxoColors.Hero)
     ) {
         Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 11.dp, bottom = 12.dp)) {
-            Text(label, color = Color.White, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold))
-            Text(
-                buildAnnotatedString {
-                    if (currency != null) {
-                        withStyle(SpanStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.sp)) { append("$currency ") }
-                    }
-                    append(value)
-                },
-                color = Color.White, style = FluxoType.HeroNumber, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip,
+            Text(label, color = FluxoColors.OnHero, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold))
+            Crossfade(
+                targetState = currency to value, animationSpec = tween(200), label = "heroValue",
                 modifier = Modifier.padding(top = 1.dp, bottom = 3.dp)
-            )
+            ) { (unit, amount) ->
+                Text(
+                    buildAnnotatedString {
+                        if (unit != null) {
+                            withStyle(SpanStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.sp)) { append("$unit ") }
+                        }
+                        append(amount)
+                    },
+                    color = FluxoColors.OnHero, style = FluxoType.HeroNumber, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip
+                )
+            }
             if (equation != null) Text(
-                equation, color = Color.White,
+                equation, color = FluxoColors.OnHero,
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, fontFeatureSettings = "tnum")
             )
             if (note != null) {
@@ -476,8 +564,8 @@ internal fun FluxoChip(
 ) {
     val review = tone == FluxoChipTone.Review
     val fill = when { review -> FluxoColors.Amber; selected -> FluxoColors.Ink; else -> FluxoColors.Paper }
-    val border = when { review && !selected -> FluxoColors.Amber; else -> FluxoColors.Ink }
-    val text = when { review -> FluxoColors.Ink; selected -> Color.White; else -> FluxoColors.Ink }
+    val border = when { review && !selected -> FluxoColors.Amber; selected -> FluxoColors.Ink; else -> FluxoColors.ChipBorder }
+    val text = when { review -> FluxoColors.OnAmber; selected -> FluxoColors.OnInk; else -> FluxoColors.Ink }
     Box(
         modifier.heightIn(min = 44.dp).selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick),
         contentAlignment = Alignment.Center
@@ -498,7 +586,7 @@ internal enum class FluxoBadgeKind { Automatic, Manual, Bank }
 /** Small badge such as "automático", "manual" or a bank name (10sp bold, 8dp radius). */
 @Composable
 internal fun FluxoBadge(text: String, modifier: Modifier = Modifier, kind: FluxoBadgeKind = FluxoBadgeKind.Automatic) {
-    val (bg, fg) = if (kind == FluxoBadgeKind.Manual) FluxoColors.Soft to FluxoColors.Ink else FluxoColors.Ink to Color.White
+    val (bg, fg) = if (kind == FluxoBadgeKind.Manual) FluxoColors.Soft to FluxoColors.Ink else FluxoColors.Badge to FluxoColors.OnBadge
     Text(
         text, color = fg, maxLines = 1, softWrap = false,
         style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.sp),
@@ -527,10 +615,10 @@ internal fun FluxoPillButton(
 ) {
     val fill: Color; val fg: Color; val borderColor: Color; val borderWidth: Dp
     when (style) {
-        FluxoButtonStyle.Primary -> { fill = FluxoColors.Ink; fg = Color.White; borderColor = FluxoColors.Ink; borderWidth = 2.dp }
-        FluxoButtonStyle.Secondary -> { fill = FluxoColors.Paper; fg = FluxoColors.Ink; borderColor = FluxoColors.Ink; borderWidth = 2.dp }
+        FluxoButtonStyle.Primary -> { fill = FluxoColors.Ink; fg = FluxoColors.OnInk; borderColor = FluxoColors.Ink; borderWidth = 2.dp }
+        FluxoButtonStyle.Secondary -> { fill = FluxoColors.Paper; fg = FluxoColors.Ink; borderColor = FluxoColors.ChipBorder; borderWidth = 2.dp }
         FluxoButtonStyle.Quiet -> { fill = FluxoColors.Paper; fg = FluxoColors.Mute; borderColor = FluxoColors.Line; borderWidth = 1.5.dp }
-        FluxoButtonStyle.Review -> { fill = FluxoColors.Amber; fg = FluxoColors.Ink; borderColor = FluxoColors.Amber; borderWidth = 2.dp }
+        FluxoButtonStyle.Review -> { fill = FluxoColors.Amber; fg = FluxoColors.OnAmber; borderColor = FluxoColors.Amber; borderWidth = 2.dp }
     }
     val alpha by androidx.compose.animation.core.animateFloatAsState(
         if (enabled) 1f else .38f, androidx.compose.animation.core.tween(180), label = "pillEnabled")
@@ -631,16 +719,16 @@ internal fun FluxoCaptureStrip(
         modifier
             .fillMaxWidth()
             .clip(FluxoShapes.Strip)
-            .background(FluxoColors.Ink)
+            .background(FluxoColors.Strip)
     ) {
         // Large font or narrow width: the action goes under the text instead of squeezing it.
         val stacked = action != null && (fontScale >= 1.3f || maxWidth < 340.dp)
         val text: @Composable ColumnScope.() -> Unit = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 FluxoDot(if (live) FluxoColors.Live else FluxoColors.Gray, size = 10.dp)
-                Text(title, color = Color.White, modifier = Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.5.sp, fontWeight = FontWeight.Bold))
+                Text(title, color = FluxoColors.OnStrip, modifier = Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.5.sp, fontWeight = FontWeight.Bold))
             }
-            Text(detail, color = Color.White, style = MaterialTheme.typography.bodySmall)
+            Text(detail, color = FluxoColors.OnStrip, style = MaterialTheme.typography.bodySmall)
         }
         if (stacked) {
             Column(Modifier.padding(start = 14.dp, end = 3.dp, top = 3.dp, bottom = 3.dp)) {

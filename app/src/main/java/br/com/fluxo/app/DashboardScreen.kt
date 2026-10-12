@@ -299,8 +299,8 @@ private fun donutShortLabel(category: br.com.fluxo.core.Category): String = when
     else -> category.label.let { if (it.length > 8) it.take(7) + "." else it }
 }
 
-private val TileTitle: TextStyle = TextStyle(fontFamily = FluxoType.Body, fontSize = 12.sp, lineHeight = 15.sp, fontWeight = FontWeight.Bold, color = FluxoColors.Ink)
-private val LegendStyle: TextStyle = TextStyle(fontFamily = FluxoType.Body, fontSize = 11.sp, lineHeight = 13.5.sp, fontWeight = FontWeight.Normal, color = FluxoColors.Ink)
+private val TileTitle: TextStyle get() = TextStyle(fontFamily = FluxoType.Body, fontSize = 12.sp, lineHeight = 15.sp, fontWeight = FontWeight.Bold, color = FluxoColors.Ink)
+private val LegendStyle: TextStyle get() = TextStyle(fontFamily = FluxoType.Body, fontSize = 11.sp, lineHeight = 13.5.sp, fontWeight = FontWeight.Normal, color = FluxoColors.Ink)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <!-- Brand mark without background, for dark surfaces (stem lifted from #0B5C73 to the dark accent petrol). -->
+    <path
+        android:fillColor="#7FB5C2"
+        android:pathData="M17,21.5 H24 A3,3 0 0 1 27,24.5 V24.5 A3,3 0 0 1 24,27.5 H17 A3,3 0 0 1 14,24.5 V24.5 A3,3 0 0 1 17,21.5 Z" />
+    <path
+        android:fillColor="#3FA7BF"
+        android:pathData="M17,12 H17 A3,3 0 0 1 20,15 V33 A3,3 0 0 1 17,36 H17 A3,3 0 0 1 14,33 V15 A3,3 0 0 1 17,12 Z M17,12 H32 A3,3 0 0 1 35,15 V15 A3,3 0 0 1 32,18 H17 A3,3 0 0 1 14,15 V15 A3,3 0 0 1 17,12 Z" />
+    <path
+        android:fillColor="#D9962B"
+        android:pathData="M29.3,24.5 A3.2,3.2 0 1 1 35.7,24.5 A3.2,3.2 0 1 1 29.3,24.5 Z" />
+</vector>
