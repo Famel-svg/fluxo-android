@@ -39,13 +39,15 @@ reinicia o emulador descartável, restaura tamanho/densidade/fonte/modo noturno 
   (`disposableEmulator=true`; sem esse argumento eles são ignorados em silêncio). `-Class <nome>` roda uma classe.
 - `./tools/check.ps1 e2e` — entrega real de notificações com emissores sintéticos.
 - `./tools/check.ps1 seed` — instala o debug e carrega dados de demonstração pelo repositório (`SeedDemoDataTest`).
-- `./tools/check.ps1 shots -Sizes 320x640@160,1080x1920@420 -Themes light,dark` — seed + capturas das quatro abas
-  em `.artifacts/shots/`. Olhar as imagens; captura salva não é verificação.
+- `./tools/check.ps1 shots -Themes light,dark` — seed + capturas das quatro abas em `.artifacts/shots/`, no tamanho
+  nativo do AVD (320x640dp). Tela grande: `-Avd ApkPreview_Phone_API37 -Serial emulator-5558` (1080x2424, ≈411x923dp).
+  Evitar `-Sizes LxA@dpi`: trocar o tamanho com `wm size` já derrubou o system_server três vezes nessas imagens.
+  Olhar as imagens; captura salva não é verificação.
 - `./tools/check.ps1 all` — ui + e2e. Exigido antes de release.
 Ler só o bloco `== check summary ==`; em falha o script imprime as linhas relevantes e o caminho do log completo.
 Proporção: mudança só em core → quick; mudança de tela → ui da classe afetada + shots; antes de publicar → all.
 Subagentes em worktree: o emulador é único; apenas um agente por vez usa modos com aparelho.
-O emulador limita a altura em 1920 px: telas mais altas são cobertas por `LargeScreenUiTest`, não por captura.
+`LargeScreenUiTest` cobre 444x986dp por configuração forçada, sem depender do tamanho do emulador.
 Executar verificações proporcionais à mudança; não alegar captura bancária real por fixtures sintéticas.
 Migrar banco sem apagar histórico; valores financeiros em centavos, agregações sem overflow.
 Preservar crédito separado de caixa; revisão não entra nos totais confirmados.

@@ -17,14 +17,15 @@
   ./tools/check.ps1 quick
   ./tools/check.ps1 ui
   ./tools/check.ps1 ui -Class br.com.fluxo.app.PlanningUiTest
-  ./tools/check.ps1 shots -Sizes 320x640@160,1080x1920@420 -Themes light,dark
+  ./tools/check.ps1 shots -Themes light,dark
+  ./tools/check.ps1 shots -Avd ApkPreview_Phone_API37 -Serial emulator-5558 -Themes light,dark   # 1080x2424 phone
 #>
 param(
     [Parameter(Position = 0)][ValidateSet('quick', 'ui', 'e2e', 'seed', 'shots', 'all')][string]$Mode = 'quick',
     [string]$Serial = 'emulator-5556',
     [string]$Avd = 'ApkPreview_FluxoNotify_20261004',
     [string]$Class = '',
-    [string[]]$Sizes = @('320x640@160'),
+    [string[]]$Sizes = @('native'),
     [string[]]$Themes = @('light'),
     [string]$OutDir = ''
 )
@@ -92,15 +93,23 @@ function Start-DisposableEmulator {
         if ((& $adb devices) -match [regex]::Escape($Serial)) {
             Write-Host "Emulator $Serial is unhealthy; restarting it."
             & $adb -s $Serial emu kill 2>$null | Out-Null
-            Start-Sleep -Seconds 8
+            # The old process keeps the AVD locked while it shuts down; starting too early exits silently.
+            $gone = (Get-Date).AddSeconds(60)
+            while (((& $adb devices) -match [regex]::Escape($Serial)) -and (Get-Date) -lt $gone) { Start-Sleep -Seconds 2 }
+            Start-Sleep -Seconds 10
         }
-        Start-Process -FilePath (Join-Path $sdk 'emulator/emulator.exe') -WindowStyle Hidden -ArgumentList @(
-            '-avd', $Avd, '-port', $port, '-no-snapshot-save', '-no-boot-anim', '-memory', '4096')
-        $deadline = (Get-Date).AddSeconds(240)
-        while (-not (Test-DeviceHealthy)) {
-            if ((Get-Date) -gt $deadline) { throw "Emulator $Avd did not boot within 240 seconds." }
-            Start-Sleep -Seconds 5
+        $booted = $false
+        foreach ($attempt in 1..3) {
+            Start-Process -FilePath (Join-Path $sdk 'emulator/emulator.exe') -WindowStyle Hidden -ArgumentList @(
+                '-avd', $Avd, '-port', $port, '-no-snapshot-save', '-no-boot-anim', '-memory', '4096')
+            $appear = (Get-Date).AddSeconds(60)
+            while (-not ((& $adb devices) -match [regex]::Escape($Serial)) -and (Get-Date) -lt $appear) { Start-Sleep -Seconds 3 }
+            if (-not ((& $adb devices) -match [regex]::Escape($Serial))) { continue }
+            $deadline = (Get-Date).AddSeconds(240)
+            while (-not (Test-DeviceHealthy) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 5 }
+            if (Test-DeviceHealthy) { $booted = $true; break }
         }
+        if (-not $booted) { throw "Emulator $Avd did not boot after 3 attempts." }
     }
     if ((Invoke-Adb shell getprop ro.kernel.qemu).Trim() -ne '1') { throw 'QEMU required.' }
     $name = ((Invoke-Adb emu avd name) -split "`n")[0].Trim()
@@ -127,6 +136,16 @@ function Install-Seeded([string]$Theme) {
     Invoke-Adb install -r (Join-Path $project 'app/build/outputs/apk/debug/app-debug.apk') | Out-Null
     Invoke-Adb install -r (Join-Path $project 'app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk') | Out-Null
     Invoke-Instrument @('-e', 'seedDemo', 'true', '-e', 'seedTheme', $Theme, '-e', 'class', "$package.SeedDemoDataTest")
+}
+
+function Wait-AppDrawn {
+    # "am start -W" returns before the first Compose frame on a slow emulator; wait for focus, then settle.
+    $deadline = (Get-Date).AddSeconds(40)
+    while ((Get-Date) -lt $deadline) {
+        if ((Invoke-Adb shell dumpsys window) -match "mCurrentFocus=.*$([regex]::Escape($package))/") { break }
+        Start-Sleep -Milliseconds 500
+    }
+    Start-Sleep -Seconds 5
 }
 
 function Save-Screenshot([string]$Path) {
@@ -189,21 +208,35 @@ try {
         New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
         $count = 0
         foreach ($size in $Sizes) {
-            if ($size -notmatch '^(\d+)x(\d+)@(\d+)$') { throw "Size must look like 1080x1920@420, got '$size'." }
-            $w = [int]$Matches[1]; $h = [int]$Matches[2]; $dpi = [int]$Matches[3]
-            Invoke-Adb shell wm size "${w}x${h}" | Out-Null
-            Invoke-Adb shell wm density $dpi | Out-Null
+            if ($size -eq 'native') {
+                # Preferred: overriding the size has crashed system_server on these images. Use a second AVD for big screens.
+                if ((Invoke-Adb shell wm size) -notmatch 'Physical size: (\d+)x(\d+)') { throw 'Could not read the display size.' }
+                $w = [int]$Matches[1]; $h = [int]$Matches[2]
+                if ((Invoke-Adb shell wm density) -notmatch 'Physical density: (\d+)') { throw 'Could not read the display density.' }
+                $dpi = [int]$Matches[1]
+                $size = "${w}x${h}"
+            } else {
+                if ($size -notmatch '^(\d+)x(\d+)@(\d+)$') { throw "Size must be 'native' or look like 1080x1920@420, got '$size'." }
+                $w = [int]$Matches[1]; $h = [int]$Matches[2]; $dpi = [int]$Matches[3]
+                Invoke-Adb shell wm size "${w}x${h}" | Out-Null
+                Invoke-Adb shell wm density $dpi | Out-Null
+            }
             foreach ($theme in $Themes) {
-                Install-Seeded $theme
+                try { Install-Seeded $theme } catch {
+                    if (Test-DeviceHealthy) { throw }
+                    Write-Host 'Device died while seeding; restarting and retrying once.'
+                    Start-DisposableEmulator
+                    Install-Seeded $theme
+                }
                 Invoke-Adb shell am force-stop $package | Out-Null
-                Invoke-Adb shell am start -n "$package/.MainActivity" | Out-Null
-                Start-Sleep -Seconds 4
+                Invoke-Adb -Arguments @('shell', 'am', 'start', '-W', '-n', "$package/.MainActivity") | Out-Null
+                Wait-AppDrawn
                 $navY = $h - [int](34 * $dpi / 160)
                 $tabs = 'inicio', 'registros', 'planejar', 'ajustes'
                 for ($i = 0; $i -lt 4; $i++) {
                     $x = [int]($w * (2 * $i + 1) / 8)
                     Invoke-Adb shell input tap $x $navY | Out-Null
-                    Start-Sleep -Milliseconds 1200
+                    Start-Sleep -Milliseconds 2500
                     Save-Screenshot (Join-Path $OutDir "$($tabs[$i])-$size-$theme.png"); $count++
                     Invoke-Adb shell input swipe ([int]($w / 2)) ([int]($h * 0.75)) ([int]($w / 2)) ([int]($h * 0.25)) 300 | Out-Null
                     Start-Sleep -Milliseconds 900

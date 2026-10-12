@@ -85,6 +85,13 @@ class SeedDemoDataTest {
         repository.saveBudget(Budget(month, Category.LEISURE, 40_000))
         repository.saveBudget(Budget(month, Category.HOUSING, 120_000))
 
+        // Optional appearance for screenshots: seedTheme=light|dark|system.
+        when (arguments.getString("seedTheme")) {
+            "dark" -> repository.setThemeMode(ThemeMode.DARK)
+            "light" -> repository.setThemeMode(ThemeMode.LIGHT)
+            "system" -> repository.setThemeMode(ThemeMode.SYSTEM)
+        }
+
         repository.refresh()
         assertEquals(index, repository.transactions.value.size)
     }
