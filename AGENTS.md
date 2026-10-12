@@ -61,6 +61,9 @@ confere que a tag bate com `versionName`, exige o certificado fixado e anexa `fl
 Para lançar: subir `versionCode`/`versionName` em `app/build.gradle.kts`, escrever `docs/RELEASE_X.Y.Z.md` (primeira linha
 vira o título), rodar `./tools/check.ps1 all`, commitar, enviar o `main`, esperar o workflow Android ficar verde e só então
 criar e enviar a tag. Não criar release à mão com `gh release create`.
+Se a publicação falhar depois de a tag existir, corrigir o workflow no `main` e repetir com
+`gh workflow run Release -f tag=vX.Y.Z` (usa o workflow do `main` e o código da tag); não apagar nem mover a tag.
+O keystore é gravado em `ANDROID_USER_HOME`: em `~/.android` o AGP do runner não o usava e assinava com outra chave.
 Assinatura: segredo `DEBUG_KEYSTORE_BASE64` (keystore debug do dono, mesmo certificado das versões 0.2–0.4.1), para que a
 atualização instale por cima sem apagar dados. A senha dessa chave é pública: serve para uso pessoal em repositório privado.
 Antes de distribuir a terceiros, migrar para chave de release própria; isso exige desinstalar uma vez, portanto só depois
