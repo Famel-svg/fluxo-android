@@ -50,6 +50,9 @@ class LedgerRepository(context: Context) {
     val profileName: StateFlow<String> = _profileName
     private val _onboardingDone = MutableStateFlow(profilePreferences.getBoolean("onboarding_done", false))
     val onboardingDone: StateFlow<Boolean> = _onboardingDone
+    // Appearance (Sistema / Claro / Escuro). Device-local preference: never in the backup payload or the CSV, kept by clear().
+    private val _themeMode = MutableStateFlow(ThemeMode.fromKey(profilePreferences.getString("theme_mode", null)))
+    val themeMode: StateFlow<ThemeMode> = _themeMode
     // Monthly net salary in cents (0 = not set). Local planning aid only: never logged, exported to CSV or counted as income.
     private val _salaryMonthlyCents = MutableStateFlow(readSalary())
     val salaryMonthlyCents: StateFlow<Long> = _salaryMonthlyCents
@@ -183,6 +186,15 @@ class LedgerRepository(context: Context) {
             }
             _profileName.value = clean
             _salaryMonthlyCents.value = salaryMonthlyCents
+        }
+    }
+
+    suspend fun setThemeMode(mode: ThemeMode) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            check(profilePreferences.edit().putString("theme_mode", mode.key).commit()) {
+                "Não foi possível salvar a aparência no aparelho."
+            }
+            _themeMode.value = mode
         }
     }
 
