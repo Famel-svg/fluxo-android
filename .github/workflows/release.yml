@@ -58,11 +58,10 @@ jobs:
             exit 1
           fi
           mkdir -p "$ANDROID_USER_HOME"
-          printf '%s' "$DEBUG_KEYSTORE_BASE64" | tr -d ' 
-' | base64 --decode > "$ANDROID_USER_HOME/debug.keystore"
+          printf '%s' "$DEBUG_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 --decode > "$ANDROID_USER_HOME/debug.keystore"
           chmod 600 "$ANDROID_USER_HOME/debug.keystore"
           # Fail here, with a clear message, when the secret holds some other key.
-          ACTUAL="$(keytool -list -v -keystore "$ANDROID_USER_HOME/debug.keystore" -storepass android 2>/dev/null             | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr 'A-F' 'a-f')"
+          ACTUAL="$(keytool -list -v -keystore "$ANDROID_USER_HOME/debug.keystore" -storepass android 2>/dev/null | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr 'A-F' 'a-f')"
           if [ "$ACTUAL" != "$EXPECTED_CERT_SHA256" ]; then
             echo "::error::Secret DEBUG_KEYSTORE_BASE64 holds certificate '${ACTUAL:-unreadable}', expected $EXPECTED_CERT_SHA256"
             exit 1
