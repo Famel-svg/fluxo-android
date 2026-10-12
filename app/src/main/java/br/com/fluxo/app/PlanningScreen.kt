@@ -206,7 +206,7 @@ private fun PlanningHero(total: BigInteger, previousTotal: BigInteger, month: Ye
     val variation = planningVariation(total, previousTotal)
     FluxoHero(label = "Gastos do mês", value = planningNumber(total)) {
         Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("${planningMonthName(previousMonth)} ${planningMoney(previousTotal)}", color = Color.White,
+            Text("${planningMonthName(previousMonth)} ${planningMoney(previousTotal)}", color = FluxoColors.OnHero,
                 style = FluxoType.Caption.copy(fontSize = 12.5.sp, fontFeatureSettings = "tnum"), modifier = Modifier.weight(1f, fill = false))
             if (variation != null) {
                 Text(variation, color = FluxoColors.Ink, maxLines = 1,
@@ -284,7 +284,7 @@ private fun BudgetRow(budget: Budget, spent: BigInteger, edit: () -> Unit) {
     val percent = if (limit.signum() > 0) spent.multiply(BigInteger.valueOf(100)).divide(limit) else BigInteger.ZERO
     val stacked = LocalDensity.current.fontScale >= 1.3f
     val pill: @Composable () -> Unit = {
-        Text("estourou ${planningNumber(over)}", color = Color.White, maxLines = 1,
+        Text("estourou ${planningNumber(over)}", color = FluxoColors.OnExpense, maxLines = 1,
             style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp, fontWeight = FontWeight.ExtraBold),
             modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(FluxoColors.Expense).padding(horizontal = 9.dp, vertical = 1.dp))
     }
@@ -372,7 +372,7 @@ private fun BenefitRow(code: String, title: String, days: Int, dailyCents: Long,
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(badge), contentAlignment = Alignment.Center) {
-            Text(code, color = Color.White, style = FluxoType.number(14.sp, FontWeight.ExtraBold))
+            Text(code, color = FluxoColors.OnPetrol, style = FluxoType.number(14.sp, FontWeight.ExtraBold))
         }
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleSmall.copy(fontSize = 13.5.sp, fontWeight = FontWeight.Bold))

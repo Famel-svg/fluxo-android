@@ -27,6 +27,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import br.com.fluxo.core.Direction
@@ -64,7 +68,16 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
     val cents = remember(amount) { runCatching { require(amount.matches(Regex("[0-9]+([,.][0-9]{1,2})?"))); BigDecimal(amount.replace(',', '.')).movePointRight(2).longValueExact().also { require(it > 0) } }.getOrNull() }
     val parsedDate = remember(date) { runCatching { LocalDate.parse(date, DateTimeFormatter.ofPattern("dd/MM/uuuu").withResolverStyle(java.time.format.ResolverStyle.STRICT)) }.getOrNull() }
     Dialog(onDismissRequest = { if (!saving) onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize(), color = FluxoColors.Paper) {
+        // Slides up a little while fading in; the dialog window itself is removed at once on close.
+        val enter = remember { Animatable(0f) }
+        LaunchedEffect(Unit) { enter.animateTo(1f, tween(240, easing = FastOutSlowInEasing)) }
+        Surface(
+            Modifier.fillMaxSize().graphicsLayer {
+                alpha = enter.value
+                translationY = (1f - enter.value) * size.height * .06f
+            },
+            color = FluxoColors.Paper
+        ) {
             // Centred column so wide layouts do not stretch the form and the save button edge to edge.
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 560.dp).fillMaxSize().imePadding()) {
@@ -76,7 +89,7 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                     IconButton(onClick = { if (!saving) onDismiss() }, enabled = !saving) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
                     }
-                    Image(painterResource(R.drawable.ic_fluxo_mark), contentDescription = null, modifier = Modifier.size(36.dp))
+                    Image(painterResource(if (FluxoColors.IsDark) R.drawable.ic_fluxo_mark_dark else R.drawable.ic_fluxo_mark), contentDescription = null, modifier = Modifier.size(36.dp))
                     Text(
                         if (existing == null) "Novo lançamento" else "Revisar lançamento",
                         modifier = Modifier.weight(1f),
@@ -166,7 +179,7 @@ internal fun <T> Choice(label: String, selected: T, options: List<T>, display: (
     Box {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(FluxoShapes.Pill).background(FluxoColors.Paper)
-                .border(2.dp, FluxoColors.Ink, FluxoShapes.Pill)
+                .border(2.dp, FluxoColors.ChipBorder, FluxoShapes.Pill)
                 .clickable(role = Role.Button) { expanded = true }
                 .padding(horizontal = 16.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically

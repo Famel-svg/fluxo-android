@@ -88,7 +88,7 @@ internal fun WeekdayChips(
         DayOfWeek.values().forEach { day ->
             val on = day in selected
             val fill = if (on) FluxoColors.Ink else FluxoColors.Paper
-            val text = if (on) Color.White else FluxoColors.Ink
+            val text = if (on) FluxoColors.OnInk else FluxoColors.Ink
             Box(
                 Modifier.heightIn(min = 44.dp).widthIn(min = 44.dp).testTag("$tagPrefix.${day.value}")
                     .semantics { contentDescription = longNames.getValue(day) }
@@ -98,7 +98,7 @@ internal fun WeekdayChips(
             ) {
                 Box(
                     Modifier.height(32.dp).clip(RoundedCornerShape(16.dp)).background(fill)
-                        .border(2.dp, FluxoColors.Ink, RoundedCornerShape(16.dp)).padding(horizontal = 10.dp),
+                        .border(2.dp, if (on) FluxoColors.Ink else FluxoColors.ChipBorder, RoundedCornerShape(16.dp)).padding(horizontal = 10.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(shortNames.getValue(day), color = text, maxLines = 1,
