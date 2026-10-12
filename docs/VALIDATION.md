@@ -1,5 +1,18 @@
 # Validação das entregas
 
+## Versão 0.5.0 — 2026-10-12
+
+Modo escuro, transições, saldo do VR no Início, meios de pagamento vale-refeição e vale-transporte, configuração inicial em três etapas com salário, ajustes para telas maiores, rotina `tools/check.ps1` e release automática por tag.
+
+- `./tools/check.ps1 all` na árvore da versão: 84 testes JVM, 0 falhas; lint 0 erros e 25 avisos; 117 testes Android, 0 falhas, 16 ignorados (15 ponta a ponta de notificações, executados na etapa seguinte, e o carregador opcional de dados de demonstração); entrega de notificações 8 de 8 mais fases de reinício do processo. AVD descartável API 37, 320x640dp.
+- Contraste das duas paletas conferido por `ContrastTest` (texto ≥ 4,5:1; marcas de gráfico do tema escuro ≥ 3:1). No tema claro, algumas marcas de gráfico já ficavam abaixo de 3:1 e não são verificadas.
+- Telas grandes: capturas em 444dp e 411dp de largura com altura limitada pelo emulador a cerca de 700dp; `LargeScreenUiTest` força 444x986dp e 320x640dp. Trocar o tamanho com `wm size` derrubou o system_server três vezes nessas imagens; a rotina passou a usar o tamanho nativo e a reiniciar o emulador quando ele deixa de responder.
+- A suíte instrumentada passou de cerca de 3 para 11 minutos no mesmo dia. A mesma classe mediu igual no commit anterior ao modo escuro, portanto a lentidão é do emulador ou da máquina, não das animações.
+- CI: duas execuções falharam em `OnboardingUiTest` por `Espresso.pressBack()` sem foco de janela; o teste passou a acionar o voltar pelo dispatcher da atividade e o workflow voltou a passar.
+- Release: publicada por `.github/workflows/release.yml` a partir da tag, com o certificado fixado `0fc1435e…8e933` (keystore debug do dono, senha pública). Quatro revisores automáticos divergiram entre manter essa chave e trocar por chave própria, e convergiram em manter até que o backup tenha sido restaurado no aparelho real.
+- Não verificado: notificação bancária real e aparelho físico; restauração de backup no aparelho real; tema escuro com fonte ampliada e em telas largas; sistema com animações desligadas; AVD de 1080x2424; abertura a frio com tema Escuro e sistema em claro mostra a janela inicial clara por um instante; fechamento do editor não é animado.
+- Coordenação: Ruflo executou status e route; implementação por subagentes em worktrees, integração e verificação pelo coordenador.
+
 ## Versão 0.4.0, redesign e parser — 2026-10-11
 
 Redesign completo a partir do protótipo aprovado, ampliação do parser e correção do CI.
