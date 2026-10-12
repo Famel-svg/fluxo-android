@@ -14,7 +14,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
-import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import br.com.fluxo.core.BenefitCalculator
@@ -159,6 +158,14 @@ class OnboardingUiTest {
         assertEquals(350000L, repository.salaryMonthlyCents.value)
     }
 
+    /**
+     * Sends the system Back through the activity's dispatcher. Espresso.pressBack() waits for window
+     * focus, which the wizard's keyboard can hold on slow emulators (it timed out on CI).
+     */
+    private fun systemBack() {
+        compose.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+    }
+
     @Test fun backKeepsEverythingTypedAndSystemBackGoesToThePreviousStep() {
         field("onboarding.name", "Ana")
         next()
@@ -173,11 +180,11 @@ class OnboardingUiTest {
         step(3)
         compose.onNodeWithTag("onboarding.vrRate").performScrollTo().assertTextContains("25,50")
         compose.onNodeWithTag("onboarding.vtDay.1").performScrollTo().assertIsOff()
-        Espresso.pressBack()
+        systemBack()
         compose.waitForIdle()
         step(2)
         compose.onNodeWithTag("onboarding.salary").assertTextContains("1.234,56")
-        Espresso.pressBack()
+        systemBack()
         compose.waitForIdle()
         step(1)
         compose.onNodeWithTag("onboarding.name").assertTextContains("Ana")
