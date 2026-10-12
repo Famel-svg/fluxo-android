@@ -1,0 +1,86 @@
+name: Release
+# Publishes a GitHub release when a version tag is pushed. Never runs for pull requests,
+# so the signing secret is not exposed to code that has not been merged.
+on:
+  push:
+    tags: ['v*.*.*']
+permissions:
+  contents: write
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  SDK_PACKAGES: "platforms;android-36 build-tools;36.0.0 platform-tools"
+  # Certificate every published APK must carry. A different key could not update installed copies.
+  EXPECTED_CERT_SHA256: 0fc1435e14e34a078ed4db17d777888aa87d04c2a02cd7e29904f322dcd8e933
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Prepare Android SDK
+        run: |
+          SDKMANAGER="$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -n 1)"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" --install $SDK_PACKAGES
+      - name: Check that the tag matches the app version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          GRADLE_VERSION="$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
+          if [ "$TAG_VERSION" != "$GRADLE_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match versionName $GRADLE_VERSION in app/build.gradle.kts"
+            exit 1
+          fi
+          echo "VERSION=$TAG_VERSION" >> "$GITHUB_ENV"
+      - name: Install the signing keystore
+        env:
+          DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$DEBUG_KEYSTORE_BASE64" ]; then
+            echo "::error::Secret DEBUG_KEYSTORE_BASE64 is not set; refusing to publish an APK signed with a throwaway key."
+            exit 1
+          fi
+          mkdir -p "$HOME/.android"
+          printf '%s' "$DEBUG_KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
+          chmod 600 "$HOME/.android/debug.keystore"
+      - uses: gradle/actions/setup-gradle@v6
+      - run: bash ./gradlew :core:test :app:assembleDebug :app:lintDebug
+      - name: Verify the signing certificate
+        run: |
+          APKSIGNER="$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)"
+          ACTUAL="$("$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | sed -n 's/.*certificate SHA-256 digest: //p' | head -n 1)"
+          if [ "$ACTUAL" != "$EXPECTED_CERT_SHA256" ]; then
+            echo "::error::APK is signed by $ACTUAL, expected $EXPECTED_CERT_SHA256"
+            exit 1
+          fi
+      - name: Remove the keystore
+        if: always()
+        run: rm -f "$HOME/.android/debug.keystore"
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK="fluxo-$VERSION-debug.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$APK"
+          SHA="$(sha256sum "$APK" | cut -d ' ' -f 1)"
+          NOTES="docs/RELEASE_$VERSION.md"
+          if [ -f "$NOTES" ]; then
+            # The first line is the title; relative links would break outside the repository tree.
+            TITLE="$(head -n 1 "$NOTES" | sed 's/^# *//')"
+            tail -n +2 "$NOTES" | sed 's|\](VALIDATION.md)|](https://github.com/${{ github.repository }}/blob/'"$GITHUB_REF_NAME"'/docs/VALIDATION.md)|g' > notes.md
+          else
+            TITLE="Fluxo $VERSION"
+            echo "Notas desta versão não foram escritas em $NOTES." > notes.md
+          fi
+          {
+            echo
+            echo "SHA-256 do APK: \`$SHA\`"
+            echo
+            echo "Certificado de assinatura (SHA-256): \`$EXPECTED_CERT_SHA256\`"
+          } >> notes.md
+          gh release create "$GITHUB_REF_NAME" "$APK" --title "$TITLE" --notes-file notes.md --verify-tag
