@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -117,7 +119,7 @@ internal fun RecordsScreen(
             item {
                 val addButton: @Composable RowScope.() -> Unit = {
                     Box(
-                        Modifier.size(44.dp).clip(FluxoShapes.Pill).border(2.dp, FluxoColors.Ink, FluxoShapes.Pill)
+                        Modifier.size(44.dp).clip(FluxoShapes.Pill).border(2.dp, FluxoColors.ChipBorder, FluxoShapes.Pill)
                             .clickable(role = Role.Button, onClick = add),
                         contentAlignment = Alignment.Center
                     ) { Icon(Icons.Default.Add, "Adicionar lançamento", tint = FluxoColors.Ink, modifier = Modifier.size(20.dp)) }
@@ -131,7 +133,7 @@ internal fun RecordsScreen(
             item {
                 val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
                 val fieldColors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = FluxoColors.Ink, unfocusedBorderColor = FluxoColors.Ink,
+                    focusedBorderColor = FluxoColors.Ink, unfocusedBorderColor = FluxoColors.ChipBorder,
                     focusedContainerColor = FluxoColors.Paper, unfocusedContainerColor = FluxoColors.Paper,
                     focusedPlaceholderColor = FluxoColors.Mute, unfocusedPlaceholderColor = FluxoColors.Mute,
                     focusedLeadingIconColor = FluxoColors.Ink, unfocusedLeadingIconColor = FluxoColors.Ink,
@@ -211,7 +213,7 @@ internal fun RecordsScreen(
                         modifier = Modifier.padding(horizontal = 2.dp))
                 }
                 items(reviewing, key = { "review-" + it.id }) { row ->
-                    Box(Modifier.padding(bottom = 5.dp)) {
+                    Box(Modifier.animateItem(fadeInSpec = ROW_FADE_IN, placementSpec = ROW_PLACE, fadeOutSpec = ROW_FADE_OUT).padding(bottom = 5.dp)) {
                         ReviewTicket(row, saving, edit, { model.save(it) {} }, shortBank, directionLabel, methodLabel, zone, timeFormat)
                     }
                 }
@@ -230,12 +232,19 @@ internal fun RecordsScreen(
                     )
                 }
                 items(transactions, key = { it.id }) { transaction ->
-                    RecordRow(transaction, edit, shortBank, moneyLabel)
+                    Box(Modifier.animateItem(fadeInSpec = ROW_FADE_IN, placementSpec = ROW_PLACE, fadeOutSpec = ROW_FADE_OUT)) {
+                        RecordRow(transaction, edit, shortBank, moneyLabel)
+                    }
                 }
             }
         }
     }
 }
+
+// Row insert / remove / reorder motion: short tweens (never springs) so the list settles quickly and predictably.
+private val ROW_FADE_IN = tween<Float>(180, easing = FastOutSlowInEasing)
+private val ROW_FADE_OUT = tween<Float>(120, easing = FastOutSlowInEasing)
+private val ROW_PLACE = tween<androidx.compose.ui.unit.IntOffset>(220, easing = FastOutSlowInEasing)
 
 /** Small text action (>= 44dp touch target) for the compact filter line. */
 @Composable

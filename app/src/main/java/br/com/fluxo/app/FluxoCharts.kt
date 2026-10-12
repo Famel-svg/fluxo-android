@@ -4,7 +4,11 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -206,7 +210,7 @@ internal fun Sparkline(
     lineColor: Color = FluxoColors.OnPetrolSoft,
     fillColor: Color? = FluxoColors.PetrolMid,
     pointColor: Color = FluxoColors.Amber,
-    pointBorderColor: Color = FluxoColors.Petrol,
+    pointBorderColor: Color = FluxoColors.Hero,
     strokeWidth: Dp = 2.dp,
     pointRadius: Dp = 3.dp,
 ) {
@@ -307,6 +311,8 @@ internal fun BudgetBar(
     markerColor: Color = FluxoColors.Ink,
     thickness: Dp = 8.dp,
 ) {
+    // The bar eases to a new ratio when the data changes; the first composition draws the target directly.
+    val ratio by animateFloatAsState(budgetRatio(spent, limit), tween(300, easing = FastOutSlowInEasing), label = "budgetRatio")
     Canvas(modifier.semantics { this.contentDescription = contentDescription; role = Role.Image }) {
         if (size.width <= 0f || size.height <= 0f) return@Canvas
         val t = min(thickness.toPx(), size.height)
@@ -314,7 +320,6 @@ internal fun BudgetBar(
         val r = CornerRadius(t / 2f)
         val x100 = size.width / 1.2f
         drawRoundRect(trackColor, Offset(0f, top), Size(size.width, t), r)
-        val ratio = budgetRatio(spent, limit)
         if (ratio > 0f) {
             val within = x100 * min(ratio, 1f)
             if (ratio > 1f) {

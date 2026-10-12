@@ -5,7 +5,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,13 +60,13 @@ internal fun BenefitBalanceBlock(
             Column(Modifier.weight(1f)) {
                 Text(if (over) "VR" else "VR disponível", style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp))
                 val big = FluxoType.number(22.sp)
-                Text(
-                    if (hidden) AnnotatedString(HIDDEN_VALUE) else if (over) buildAnnotatedString {
-                        withStyle(SpanStyle(color = FluxoColors.Expense)) { append(brl(overAmount)) }
-                        withStyle(SpanStyle(fontSize = 12.sp, fontWeight = FontWeight.Normal, color = FluxoColors.Expense)) { append(" acima da estimativa") }
-                    } else AnnotatedString(brl(usage.remainingCents)),
-                    style = big, modifier = Modifier.testTag("dashboard.vrRemaining")
-                )
+                val shown = if (hidden) AnnotatedString(HIDDEN_VALUE) else if (over) buildAnnotatedString {
+                    withStyle(SpanStyle(color = FluxoColors.Expense)) { append(brl(overAmount)) }
+                    withStyle(SpanStyle(fontSize = 12.sp, fontWeight = FontWeight.Normal, color = FluxoColors.Expense)) { append(" acima da estimativa") }
+                } else AnnotatedString(brl(usage.remainingCents))
+                Crossfade(shown, animationSpec = tween(200), label = "vrRemaining") { text ->
+                    Text(text, style = big, modifier = Modifier.testTag("dashboard.vrRemaining"))
+                }
             }
             Text(
                 "de ${v(usage.depositCents)} no mês", color = FluxoColors.Mute, style = FluxoType.Caption,
@@ -69,7 +74,8 @@ internal fun BenefitBalanceBlock(
             )
         }
         Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(FluxoColors.Soft)) {
-            val fraction = if (over) 1f else chartFraction(usage.spentCents, usage.depositCents)
+            val target = if (over) 1f else chartFraction(usage.spentCents, usage.depositCents)
+            val fraction by animateFloatAsState(target, tween(300, easing = FastOutSlowInEasing), label = "vrFraction")
             if (fraction > 0f) Box(
                 Modifier.fillMaxWidth(fraction).fillMaxHeight().clip(RoundedCornerShape(3.dp))
                     .background(if (over) FluxoColors.Expense else FluxoColors.Petrol)
