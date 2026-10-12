@@ -27,6 +27,7 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
     val benefits = repository.benefits
     val profileName = repository.profileName
     val onboardingDone = repository.onboardingDone
+    val themeMode = repository.themeMode
     val salaryMonthlyCents = repository.salaryMonthlyCents
     val captureEnabled = repository.captureEnabled
     val allowOtherApps = repository.allowOtherApps
@@ -75,6 +76,7 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
     fun reopenOnboarding() = edit({}) { repository.setOnboardingDone(false) }
     fun saveProfile(name: String, salaryMonthlyCents: Long, onSuccess: () -> Unit) =
         edit(onSuccess) { repository.saveProfile(name, salaryMonthlyCents) }
+    fun setThemeMode(mode: ThemeMode) = execute { repository.setThemeMode(mode) }
     fun resetEditError() { _editError.value = null }
     fun clear() = execute { repository.clear() }
     fun capture(enabled: Boolean) = execute { repository.setCaptureEnabled(enabled) }
