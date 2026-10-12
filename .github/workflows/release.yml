@@ -4,21 +4,32 @@ name: Release
 on:
   push:
     tags: ['v*.*.*']
+  # Manual retry for an existing tag (uses this branch's workflow, builds the tag's code).
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to publish, e.g. v0.5.0
+        required: true
 permissions:
   contents: write
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 env:
   SDK_PACKAGES: "platforms;android-36 build-tools;36.0.0 platform-tools"
   # Certificate every published APK must carry. A different key could not update installed copies.
   EXPECTED_CERT_SHA256: 0fc1435e14e34a078ed4db17d777888aa87d04c2a02cd7e29904f322dcd8e933
+  TAG: ${{ inputs.tag || github.ref_name }}
+  # AGP reads the debug keystore from here first; the runner's own Android home is left untouched.
+  ANDROID_USER_HOME: ${{ github.workspace }}/.android-user-home
 jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -30,10 +41,11 @@ jobs:
           "$SDKMANAGER" --install $SDK_PACKAGES
       - name: Check that the tag matches the app version
         run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          case "$TAG" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "::error::'$TAG' is not a version tag"; exit 1 ;; esac
+          TAG_VERSION="${TAG#v}"
           GRADLE_VERSION="$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
           if [ "$TAG_VERSION" != "$GRADLE_VERSION" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match versionName $GRADLE_VERSION in app/build.gradle.kts"
+            echo "::error::Tag $TAG does not match versionName $GRADLE_VERSION in app/build.gradle.kts"
             exit 1
           fi
           echo "VERSION=$TAG_VERSION" >> "$GITHUB_ENV"
@@ -45,9 +57,16 @@ jobs:
             echo "::error::Secret DEBUG_KEYSTORE_BASE64 is not set; refusing to publish an APK signed with a throwaway key."
             exit 1
           fi
-          mkdir -p "$HOME/.android"
-          printf '%s' "$DEBUG_KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
-          chmod 600 "$HOME/.android/debug.keystore"
+          mkdir -p "$ANDROID_USER_HOME"
+          printf '%s' "$DEBUG_KEYSTORE_BASE64" | tr -d ' 
+' | base64 --decode > "$ANDROID_USER_HOME/debug.keystore"
+          chmod 600 "$ANDROID_USER_HOME/debug.keystore"
+          # Fail here, with a clear message, when the secret holds some other key.
+          ACTUAL="$(keytool -list -v -keystore "$ANDROID_USER_HOME/debug.keystore" -storepass android 2>/dev/null             | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d ':' | tr 'A-F' 'a-f')"
+          if [ "$ACTUAL" != "$EXPECTED_CERT_SHA256" ]; then
+            echo "::error::Secret DEBUG_KEYSTORE_BASE64 holds certificate '${ACTUAL:-unreadable}', expected $EXPECTED_CERT_SHA256"
+            exit 1
+          fi
       - uses: gradle/actions/setup-gradle@v6
       - run: bash ./gradlew :core:test :app:assembleDebug :app:lintDebug
       - name: Verify the signing certificate
@@ -60,7 +79,7 @@ jobs:
           fi
       - name: Remove the keystore
         if: always()
-        run: rm -f "$HOME/.android/debug.keystore"
+        run: rm -rf "$ANDROID_USER_HOME"
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -72,7 +91,7 @@ jobs:
           if [ -f "$NOTES" ]; then
             # The first line is the title; relative links would break outside the repository tree.
             TITLE="$(head -n 1 "$NOTES" | sed 's/^# *//')"
-            tail -n +2 "$NOTES" | sed 's|\](VALIDATION.md)|](https://github.com/${{ github.repository }}/blob/'"$GITHUB_REF_NAME"'/docs/VALIDATION.md)|g' > notes.md
+            tail -n +2 "$NOTES" | sed 's|\](VALIDATION.md)|](https://github.com/${{ github.repository }}/blob/'"$TAG"'/docs/VALIDATION.md)|g' > notes.md
           else
             TITLE="Fluxo $VERSION"
             echo "Notas desta versão não foram escritas em $NOTES." > notes.md
@@ -83,4 +102,4 @@ jobs:
             echo
             echo "Certificado de assinatura (SHA-256): \`$EXPECTED_CERT_SHA256\`"
           } >> notes.md
-          gh release create "$GITHUB_REF_NAME" "$APK" --title "$TITLE" --notes-file notes.md --verify-tag
+          gh release create "$TAG" "$APK" --title "$TITLE" --notes-file notes.md --verify-tag
