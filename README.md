@@ -16,6 +16,7 @@ Aplicativo Android de controle financeiro pessoal, em português e com dados som
 - Saldo de VR (e VT) no Início: gastos marcados com Vale-refeição/Vale-transporte abatem a estimativa do mês e ficam fora das saídas de caixa; é uma estimativa, sem repasse de meses anteriores.
 - Backup restaurável protegido por senha (lançamentos, orçamentos, contas, benefícios e identificadores contra duplicatas).
 - Exportação CSV pelo seletor de arquivos do Android.
+- Aparência em Ajustes: Sistema, Claro ou Escuro (paleta "Petróleo escuro"), guardada só no aparelho, e transições curtas entre abas, listas, valores e barras que respeitam a opção "remover animações" do Android.
 - Diagnóstico da captura em Ajustes: permissão, conexão do serviço e última notificação observada na sessão.
 
 ## Limites e privacidade
