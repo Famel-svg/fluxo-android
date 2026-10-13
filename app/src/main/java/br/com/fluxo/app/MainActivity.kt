@@ -62,6 +62,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -96,9 +97,7 @@ private val NAV_MAX_WIDTH = 560.dp
 private fun notificationAccess(): Boolean {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
-    fun check() = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
-        ?.split(':')?.mapNotNull { ComponentName.unflattenFromString(it) }
-        ?.any { it.packageName == context.packageName } == true
+    fun check() = CaptureConnection.hasAccess(context)
     var granted by remember { mutableStateOf(check()) }
     DisposableEffect(owner, context) {
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) granted = check() }
@@ -126,6 +125,15 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
     val saving by model.saving.collectAsStateWithLifecycle()
     val editError by model.editError.collectAsStateWithLifecycle()
     val access = notificationAccess()
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    // Foreground only, no polling: if the system has not connected the listener shortly after the app
+    // opens, ask for one recovery (rate limited inside CaptureConnection).
+    LaunchedEffect(access, capture, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            CaptureConnection.autoReconnectIfNeeded(context, capture)
+        }
+    }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var filter by rememberSaveable { mutableIntStateOf(0) }
     var allMonths by rememberSaveable { mutableStateOf(false) }

@@ -13,6 +13,7 @@ import br.com.fluxo.core.Account
 import br.com.fluxo.core.AccountType
 import br.com.fluxo.core.Category
 import br.com.fluxo.core.Direction
+import br.com.fluxo.core.IgnoreReason
 import br.com.fluxo.core.NotificationCapturePolicy
 import br.com.fluxo.core.NotificationParser
 import br.com.fluxo.core.PaymentMethod
@@ -35,6 +36,13 @@ val supportedBanks = listOf(
     Bank("com.nu.production", "Nubank"),
     Bank("com.itau", "Itaú"),
 )
+
+/** Result of one ingestion; carries only a fixed category, never notification content. */
+sealed interface IngestOutcome {
+    data object Stored : IngestOutcome
+    data object NotAllowed : IngestOutcome
+    data class Ignored(val reason: IgnoreReason) : IngestOutcome
+}
 
 class LedgerRepository(context: Context) {
     private val appPackageName = context.applicationContext.packageName
@@ -289,17 +297,25 @@ class LedgerRepository(context: Context) {
         }
     }
 
-    /** fallback identity belongs one active notification lifecycle. */
     suspend fun ingest(
         sourceKey: String, bankPackage: String, occurredAt: Long, text: String,
         fallbackIdentity: String? = null, observedAt: Long = occurredAt,
-    ) = withContext(Dispatchers.IO) {
+    ) {
+        ingestClassified(sourceKey, bankPackage, occurredAt, text, fallbackIdentity, observedAt)
+    }
+
+    /** fallback identity belongs one active notification lifecycle. */
+    suspend fun ingestClassified(
+        sourceKey: String, bankPackage: String, occurredAt: Long, text: String,
+        fallbackIdentity: String? = null, observedAt: Long = occurredAt,
+    ): IngestOutcome = withContext(Dispatchers.IO) {
         mutex.withLock {
-            if (!allowsNotification(bankPackage)) return@withLock
-            val parsed = NotificationParser.parse(text) ?: return@withLock
+            if (!allowsNotification(bankPackage)) return@withLock IngestOutcome.NotAllowed
             // Only financial events with directional and monetary evidence may reach storage.
-            if (!parsed.hasAmountCandidate ||
-                (parsed.direction == Direction.UNKNOWN && !parsed.hasEventStateSignal)) return@withLock
+            val parsed = when (val screening = NotificationParser.screen(text)) {
+                is NotificationParser.Screening.Ignored -> return@withLock IngestOutcome.Ignored(screening.reason)
+                is NotificationParser.Screening.Accepted -> screening.parsed
+            }
             // A candidate without a reliable amount remains reviewable, never inferred as money.
             val initialStatus = if (parsed.amountCents?.let { it > 0 } == true &&
                 parsed.direction != Direction.UNKNOWN) parsed.status else ReviewStatus.REVIEW
@@ -369,6 +385,7 @@ class LedgerRepository(context: Context) {
             }
             _captureError.value = null
             readAll()
+            IngestOutcome.Stored
         }
     }
 
