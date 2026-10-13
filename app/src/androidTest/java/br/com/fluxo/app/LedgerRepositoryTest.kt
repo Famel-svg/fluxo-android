@@ -995,6 +995,33 @@ class LedgerRepositoryTest {
         repository.setCaptureEnabled(true)
     }
 
+    @Test fun discardedNotificationReportsItsCategoryAndStoresNothing() = runBlocking {
+        repository.setBankEnabled(bank, true)
+        repository.setCaptureEnabled(true)
+        val before = repository.transactions.value.size
+        val promo = repository.ingestClassified("k1", bank, 1L, "Aproveite a oferta de pagamento parcelado")
+        assertEquals(IngestOutcome.Ignored(br.com.fluxo.core.IgnoreReason.PROMOTION), promo)
+        val noWord = repository.ingestClassified("k2", bank, 1L, "Seu extrato está pronto")
+        assertEquals(IngestOutcome.Ignored(br.com.fluxo.core.IgnoreReason.NO_FINANCIAL_WORD), noWord)
+        val noAmount = repository.ingestClassified("k3", bank, 1L, "Pix recebido com sucesso")
+        assertEquals(IngestOutcome.Ignored(br.com.fluxo.core.IgnoreReason.NO_AMOUNT), noAmount)
+        assertEquals(before, repository.transactions.value.size)
+        assertEquals(IngestOutcome.Stored, repository.ingestClassified("k4", bank, 1L, "Pix recebido R$ 12,34"))
+        assertEquals(before + 1, repository.transactions.value.size)
+    }
+
+    @Test fun sessionCountersKeepOnlyCountsAndAFixedCategory() {
+        CaptureHealth.resetForTest()
+        CaptureHealth.observed("com.c6bank.app", 5L)
+        CaptureHealth.observed("com.c6bank.app", 6L)
+        CaptureHealth.stored("com.c6bank.app")
+        CaptureHealth.ignored("com.c6bank.app", br.com.fluxo.core.IgnoreReason.GROUP_SUMMARY)
+        val counters = CaptureHealth.state.value.counters.getValue("com.c6bank.app")
+        assertEquals(br.com.fluxo.core.SourceCounters(2, 1, 1, br.com.fluxo.core.IgnoreReason.GROUP_SUMMARY), counters)
+        assertEquals("2 observadas · 1 lançada · 1 ignorada (resumo de grupo)", counters.summary())
+        CaptureHealth.resetForTest()
+    }
+
     private fun manualTransaction() = Transaction(
         id = "manual", sourceKey = null, bankPackage = "manual", amountCents = 1000L,
         direction = Direction.EXPENSE, method = PaymentMethod.DEBIT_CARD,

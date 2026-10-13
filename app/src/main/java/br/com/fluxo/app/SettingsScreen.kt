@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import br.com.fluxo.core.ListenerState
 import br.com.fluxo.core.SalaryPlanner
 import br.com.fluxo.core.Transaction
 import java.time.Instant
@@ -226,11 +227,11 @@ internal fun SettingsScreen(capture: Boolean, allowOtherApps: Boolean, banks: Se
     var profileDraft by rememberSaveable { mutableStateOf("") }
     var salaryDraft by rememberSaveable { mutableStateOf("") }
     var settingsError by remember { mutableStateOf(false) }
-    var reconnectMessage by remember { mutableStateOf<String?>(null) }
     // Keep document pickers registered even when their cards scroll off screen.
     val backupActions = rememberBackupActions()
-    val allOk = access && capture && snapshot.connected == true
-    val canReconnect = access && capture && snapshot.connected != true
+    val listenerState = snapshot.listenerState(access)
+    val allOk = access && capture && listenerState == ListenerState.CONNECTED
+    val canReconnect = access && capture && listenerState != ListenerState.CONNECTED
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         LazyColumn(
@@ -252,30 +253,28 @@ internal fun SettingsScreen(capture: Boolean, allowOtherApps: Boolean, banks: Se
                     )
                     StateLine(access, allOk, if (access) "Permissão concedida" else "Permissão não concedida")
                     StateLine(capture, allOk, if (capture) "Captura ativa" else "Captura pausada")
-                    StateLine(
-                        snapshot.connected == true, allOk, when (snapshot.connected) {
-                            true -> "Serviço conectado"
-                            false -> "Serviço desconectado"
-                            null -> "Serviço ainda não confirmado nesta sessão"
-                        }
-                    )
+                    StateLine(listenerState == ListenerState.CONNECTED, allOk, serviceStateText(listenerState))
                     if (!allOk) {
                         Spacer(Modifier.height(6.dp))
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (!access) FluxoWrapButton("Abrir configurações do Android", onClick = {
-                                try { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                                catch (_: Exception) { settingsError = true }
+                                settingsError = !CaptureConnection.open(context, SettingsTarget.NOTIFICATION_ACCESS)
                             })
                             if (!capture) FluxoWrapButton("Ativar captura", onClick = { model.capture(true) })
-                            if (canReconnect) FluxoWrapButton("Reconectar serviço", onClick = {
-                                reconnectMessage = requestListenerRebind(context)
-                            })
+                            if (canReconnect) {
+                                val busy = listenerState == ListenerState.CONNECTING
+                                FluxoWrapButton(if (busy) "Conectando…" else "Reconectar serviço", enabled = !busy,
+                                    onClick = { CaptureConnection.launchReconnect(context) })
+                            }
                         }
                         if (settingsError) Text(
                             "Abra Configurações do Android → Acesso especial → Acesso às notificações.",
                             color = FluxoColors.Expense, style = MaterialTheme.typography.bodySmall
                         )
-                        reconnectMessage?.let { Text(it, color = FluxoColors.Ink, style = MaterialTheme.typography.bodySmall) }
+                        if (!snapshot.reconnecting) snapshot.lastResult?.let {
+                            Text(it.message, color = FluxoColors.Ink, style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (access && capture && listenerState == ListenerState.STUCK) ListenerRecoveryGuide()
                     }
                 }
             }

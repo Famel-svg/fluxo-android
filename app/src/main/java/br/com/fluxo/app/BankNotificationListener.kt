@@ -3,6 +3,7 @@ package br.com.fluxo.app
 import android.app.Notification
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import br.com.fluxo.core.IgnoreReason
 import br.com.fluxo.core.NotificationCapturePolicy
 import java.security.MessageDigest
 import kotlinx.coroutines.CoroutineScope
@@ -16,7 +17,7 @@ class BankNotificationListener : NotificationListenerService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private sealed interface Event {
-        data class Posted(val notification: StatusBarNotification) : Event
+        data class Posted(val notification: StatusBarNotification, val replay: Boolean = false) : Event
         data class Removed(val packageName: String, val identity: String) : Event
     }
     // Callback order matters: a removal must finish before an Android key is reused.
@@ -30,9 +31,20 @@ class BankNotificationListener : NotificationListenerService() {
                 try {
                     when (event) {
                         is Event.Posted -> {
-                            val candidate = extractNotification(event.notification) ?: continue
-                            repository.ingest(candidate.sourceKey, candidate.packageName, candidate.timestamp,
-                                candidate.text, candidate.fallbackIdentity, event.notification.postTime)
+                            val pkg = event.notification.packageName
+                            val candidate = extractNotification(event.notification)
+                            if (candidate == null) {
+                                if (!event.replay) CaptureHealth.ignored(pkg, extractionIgnoreReason(event.notification))
+                                continue
+                            }
+                            val outcome = repository.ingestClassified(candidate.sourceKey, candidate.packageName,
+                                candidate.timestamp, candidate.text, candidate.fallbackIdentity, event.notification.postTime)
+                            // Replayed active notifications were not counted as observed; keep counters consistent.
+                            if (!event.replay) when (outcome) {
+                                is IngestOutcome.Stored -> CaptureHealth.stored(pkg)
+                                is IngestOutcome.Ignored -> CaptureHealth.ignored(pkg, outcome.reason)
+                                is IngestOutcome.NotAllowed -> {}
+                            }
                         }
                         is Event.Removed -> {
                             if (repository.allowsNotification(event.packageName)) {
@@ -58,7 +70,7 @@ class BankNotificationListener : NotificationListenerService() {
         val repository = (application as FluxoApplication).repository
         val active = try { activeNotifications.orEmpty() } catch (_: RuntimeException) { return }
         active.filter { repository.allowsNotification(it.packageName) }.forEach { sbn ->
-            if (!events.trySend(Event.Posted(sbn)).isSuccess) repository.reportCaptureError()
+            if (!events.trySend(Event.Posted(sbn, replay = true)).isSuccess) repository.reportCaptureError()
         }
     }
 
@@ -98,6 +110,11 @@ internal class NotificationCandidate(
     val text: String,
     val fallbackIdentity: String? = null,
 )
+
+/** Category for a notification that [extractNotification] rejects. Never includes content. */
+internal fun extractionIgnoreReason(sbn: StatusBarNotification): IgnoreReason =
+    if (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) IgnoreReason.GROUP_SUMMARY
+    else IgnoreReason.EMPTY_TEXT
 
 internal fun extractNotification(sbn: StatusBarNotification): NotificationCandidate? {
     if (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return null
