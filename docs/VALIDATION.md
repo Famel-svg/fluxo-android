@@ -1,5 +1,15 @@
 # Validação das entregas
 
+## Versão 0.5.1 — 2026-10-12
+
+Relato do dono em aparelho real: permissão concedida, estado "serviço ainda não confirmado", botão de reconexão sem efeito e uma compra no cartão do C6 não capturada. É a primeira evidência de uso real, e é negativa.
+
+- Correção: reconexão por alternância do componente do listener seguida de `requestRebind`, tentativa automática única ao abrir, estados explícitos, cartão de orientação e contadores por banco de notificações observadas, lançadas e ignoradas.
+- `./tools/check.ps1 all` nos commits da correção: 97 testes JVM, 0 falhas; lint 0 erros; 131 testes Android, 0 falhas, 20 ignorados (classes ponta a ponta); entrega 8 de 8 e nova classe de conexão 4 de 4 pelo script.
+- Não reproduzido: no emulador API 37 o sistema religa o listener sozinho após `install -r` e após `force-stop`. O estado "concedido e nunca conectado" foi apenas simulado desabilitando o componente. Não há prova de que a correção resolve o aparelho do dono.
+- Não verificado: comportamento em MIUI/HyperOS e demais fabricantes; se os atalhos de configuração abrem no aparelho; nomes de menu de Samsung, Huawei/Honor, OPPO/realme/OnePlus e vivo; a fonte do AOSP sobre `requestRebind` não foi lida; tempos de espera de 3 s e 4 s não ajustados para aparelhos lentos.
+- Causa da compra não capturada continua em aberto: sem serviço conectado nenhuma notificação chega; depois de conectar, os contadores dirão se o texto real do C6 é reconhecido.
+
 ## Versão 0.5.0 — 2026-10-12
 
 Modo escuro, transições, saldo do VR no Início, meios de pagamento vale-refeição e vale-transporte, configuração inicial em três etapas com salário, ajustes para telas maiores, rotina `tools/check.ps1` e release automática por tag.

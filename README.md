@@ -72,7 +72,7 @@ Algumas versões do Android restringem esse acesso para apps instalados fora da 
 - `core/`: modelos e regras em Kotlin/JVM puro (parser, cifra do backup, CSV, relatórios), com testes JVM.
 - `app/`: serviço de notificações, persistência SQLite e interface Compose, com testes instrumentados.
 - `notification-fixture/`: emissor sintético de notificações, incluído só com `-PnotificationE2e=true`.
-- `docs/`: [especificação](docs/SPEC.md), [arquitetura](docs/ARCHITECTURE.md), [plano de testes](docs/TEST_PLAN.md), [evidências de validação](docs/VALIDATION.md), [roadmap](docs/ROADMAP.md), [notas da versão 0.5.0](docs/RELEASE_0.5.0.md) e [specs dos incrementos](docs/specs/README.md), cujo índice distingue proposto de implementado.
+- `docs/`: [especificação](docs/SPEC.md), [arquitetura](docs/ARCHITECTURE.md), [plano de testes](docs/TEST_PLAN.md), [evidências de validação](docs/VALIDATION.md), [roadmap](docs/ROADMAP.md), [notas da versão 0.5.1](docs/RELEASE_0.5.1.md) e [specs dos incrementos](docs/specs/README.md), cujo índice distingue proposto de implementado.
 
 ## Coordenação das edições
 
