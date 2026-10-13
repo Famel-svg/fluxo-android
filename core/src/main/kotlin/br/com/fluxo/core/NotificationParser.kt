@@ -32,6 +32,29 @@ object NotificationParser {
         """\b(?:nao|nunca|jamais|nem|sem)\s+(?:[a-z]+\s+){0,4}(?:confirmad[oa]|confirmacao|aprovad[oa]|aprovacao|autorizad[oa]|autorizacao|concluid[oa]|conclusao|efetivad[oa]|efetuad[oa]|realizad[oa]|enviad[oa]|recebid[oa]|creditad[oa]|debitad[oa]|recebeu|enviou|pagou|comprou)\b""",
     )
 
+    /** Same gate ingestion applies, with the reason when a notification is discarded. Stores nothing. */
+    sealed interface Screening {
+        data class Accepted(val parsed: ParsedNotification) : Screening
+        data class Ignored(val reason: IgnoreReason) : Screening
+    }
+
+    fun screen(text: String): Screening {
+        if (text.isBlank()) return Screening.Ignored(IgnoreReason.EMPTY_TEXT)
+        val parsed = parse(text)
+        if (parsed == null) {
+            val normalized = Normalizer.normalize(text, Normalizer.Form.NFD)
+                .replace(Regex("\\p{M}+"), "").lowercase(Locale.ROOT)
+            // parse() returns null for oversize text, no financial word, or a purely promotional message.
+            return Screening.Ignored(
+                if (text.length <= 16_384 && financial.containsMatchIn(normalized)) IgnoreReason.PROMOTION
+                else IgnoreReason.NO_FINANCIAL_WORD)
+        }
+        if (!parsed.hasAmountCandidate) return Screening.Ignored(IgnoreReason.NO_AMOUNT)
+        if (parsed.direction == Direction.UNKNOWN && !parsed.hasEventStateSignal)
+            return Screening.Ignored(IgnoreReason.UNCLEAR_DIRECTION)
+        return Screening.Accepted(parsed)
+    }
+
     fun parse(text: String): ParsedNotification? {
         // Notification text is untrusted. Large messages need no expensive pattern work.
         if (text.isBlank() || text.length > 16_384) return null
