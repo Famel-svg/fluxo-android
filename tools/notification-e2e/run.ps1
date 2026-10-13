@@ -72,6 +72,13 @@ try {
     if ($result -notmatch 'OK \(8 tests\)' -or $result -match 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed') {
         throw 'Notification delivery tests did not all pass.'
     }
+    $connection = Invoke-Adb -Arguments @('shell', 'am', 'instrument', '-w', '-r', '-e', 'notificationE2e', 'true', '-e', 'class', 'br.com.fluxo.app.NotificationConnectionE2eTest', 'br.com.fluxo.app.test/androidx.test.runner.AndroidJUnitRunner')
+    $connection | Out-File -LiteralPath (Join-Path $evidence ((Get-Date -Format 'yyyyMMdd-HHmmss') + '-connection.txt')) -Encoding utf8
+    # Printed after the delivery result so the first "OK (N tests)" in the log stays the delivery count.
+    $connection
+    if ($connection -notmatch 'OK \(4 tests\)' -or $connection -match 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed') {
+        throw 'Notification connection tests did not all pass.'
+    }
     $restartStarted = $true
     Invoke-RestartPhase 'seed'
     $beforePid = (& $adb -s $Serial shell pidof br.com.fluxo.app 2>$null)
