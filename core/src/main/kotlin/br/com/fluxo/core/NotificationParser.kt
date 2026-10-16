@@ -9,6 +9,9 @@ object NotificationParser {
     private val currency = Regex("r\\$\\s*([+-]?\\s*[^\\s]+)")
     private val validAmount = Regex("(?:[0-9]+|[1-9][0-9]{0,2}(?:\\.[0-9]{3})+),[0-9]{2}")
     private val financial = Regex("\\b(pix|compra|pagamento|transferencia|deposito|credito em conta|credito de salario|debito automatico|creditad[oa]|debitad[oa]|estorno|devolucao|fatura)\\b")
+    // Weaker words: evidence only when a monetary value accompanies them ("uso" alone is too common).
+    private val spendTerm = Regex("\\b(transacao|gasto|gastou|uso d[oe] (?:beneficio|vr|vale|cartao|saldo))\\b")
+    private val voucher = Regex("\\b(vr|vale[ -](?:refeicao|alimentacao)|refeicao|alimentacao)\\b")
     private val marketing = Regex("\\b(oferta|promocao|aproveite|contrate|ganhe|cashback|pre-aprovad[oa]|simule|receba|limite disponivel|limite aprovado)\\b")
     private val unconfirmed = Regex("\\b(recusad[oa]|negad[oa]|cancelad[oa]|agendad[oa]|agendamento|pendente|processando|em processamento|nao autorizad[oa]|nao realizad[oa]|nao conclu[ií]d[oa]|nao aprovad[oa]|falhou|falha|tentativa|solicitacao|solicitad[oa]|aguardando|vencimento|vencera)\\b")
     private val settlement = Regex("\\b(fatura|estorno|devolucao|reembolso|contestacao)\\b")
@@ -21,15 +24,18 @@ object NotificationParser {
         "\\b(enviou|enviado|enviada|debitado|debitada|pagou|pagamento realizado|pagamento efetuado|transferencia realizada|transferencia efetuada" +
             "|(?:pix|pagamento) ${gap}(?:realizad[oa]|efetuad[oa])|debito (?:automatico|de) ${gap}(?:realizad[oa]|efetuad[oa]))\\b",
     )
-    private val completedPurchase = Regex("\\b(compra ${gap}(?:aprovada|realizada|efetuada)|comprou|pagamento aprovado)\\b")
+    private val completedPurchase = Regex(
+        "\\b((?:compra|transacao) ${gap}(?:aprovada|realizada|efetuada|autorizada)|comprou|pagamento aprovado|gastou" +
+            "|uso d[oe] (?:beneficio|vr|vale|cartao|saldo))\\b",
+    )
     private val foreignCurrency = Regex("(?:\\bus\\$|\\b(?:usd|eur|gbp)\\b|[€£])")
     private val underReview = Regex("\\b(em analise|sob analise|em verificacao|aguardando confirmacao)\\b")
     private val futureOrConditional = Regex(
-        """\b(?:sera|serao|seria|seriam|vai ser|podera ser|pode ser)\s+(?:[a-z]+\s+){0,4}(?:confirmad[oa]|aprovad[oa]|autorizad[oa]|concluid[oa]|efetivad[oa]|efetuad[oa]|realizad[oa]|enviad[oa]|recebid[oa]|creditad[oa]|debitad[oa])\b|\b(?:se|caso)\s+(?:[a-z]+\s+){0,4}(?:recebeu|enviou|pagou|comprou|recebid[oa]|enviad[oa]|confirmad[oa]|aprovad[oa]|realizad[oa])\b""",
+        """\b(?:sera|serao|seria|seriam|vai ser|podera ser|pode ser)\s+(?:[a-z]+\s+){0,4}(?:confirmad[oa]|aprovad[oa]|autorizad[oa]|concluid[oa]|efetivad[oa]|efetuad[oa]|realizad[oa]|enviad[oa]|recebid[oa]|creditad[oa]|debitad[oa])\b|\b(?:se|caso)\s+(?:[a-z]+\s+){0,4}(?:recebeu|enviou|pagou|comprou|gastou|recebid[oa]|enviad[oa]|confirmad[oa]|aprovad[oa]|realizad[oa])\b""",
     )
     // Limit the context to one clause; negation may precede auxiliaries and adverbs.
     private val negatedMovement = Regex(
-        """\b(?:nao|nunca|jamais|nem|sem)\s+(?:[a-z]+\s+){0,4}(?:confirmad[oa]|confirmacao|aprovad[oa]|aprovacao|autorizad[oa]|autorizacao|concluid[oa]|conclusao|efetivad[oa]|efetuad[oa]|realizad[oa]|enviad[oa]|recebid[oa]|creditad[oa]|debitad[oa]|recebeu|enviou|pagou|comprou)\b""",
+        """\b(?:nao|nunca|jamais|nem|sem)\s+(?:[a-z]+\s+){0,4}(?:confirmad[oa]|confirmacao|aprovad[oa]|aprovacao|autorizad[oa]|autorizacao|concluid[oa]|conclusao|efetivad[oa]|efetuad[oa]|realizad[oa]|enviad[oa]|recebid[oa]|creditad[oa]|debitad[oa]|recebeu|enviou|pagou|comprou|gastou)\b""",
     )
 
     /** Same gate ingestion applies, with the reason when a notification is discarded. Stores nothing. */
@@ -62,7 +68,8 @@ object NotificationParser {
             .replace(Regex("\\p{M}+"), "")
             .lowercase(Locale.ROOT).replace('\u00a0', ' ')
             .replace(Regex("\\s+"), " ").trim()
-        if (!financial.containsMatchIn(normalized)) return null
+        if (!financial.containsMatchIn(normalized) &&
+            !(spendTerm.containsMatchIn(normalized) && "r$" in normalized)) return null
 
         val amounts = currency.findAll(normalized).map {
             // Permit sentence punctuation, but not repeated decimal separators or suffixes.
@@ -85,6 +92,7 @@ object NotificationParser {
             PaymentMethod.PIX.takeIf { pix },
             PaymentMethod.CREDIT_CARD.takeIf { credit },
             PaymentMethod.DEBIT_CARD.takeIf { debit },
+            PaymentMethod.MEAL_VOUCHER.takeIf { voucher.containsMatchIn(normalized) },
         )
         val method = methods.singleOrNull() ?: PaymentMethod.UNKNOWN
         val income = incoming.containsMatchIn(normalized)
