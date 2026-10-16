@@ -284,6 +284,50 @@ class NotificationParserTest {
         assertNull(NotificationParser.parse("Aproveite: limite de crédito pré-aprovado de R$ 5.000,00"))
     }
 
+    @Test fun `card and voucher purchases without payment verbs are confirmed expenses`() {
+        mapOf(
+            "Compra aprovada no crédito: R$ 35,00 em PADARIA X" to PaymentMethod.CREDIT_CARD,
+            "Compra no débito de R$ 12,50 aprovada" to PaymentMethod.DEBIT_CARD,
+            "Você gastou R$ 48,90 no cartão de crédito" to PaymentMethod.CREDIT_CARD,
+            "Transação aprovada de R$ 20,00 em LOJA X no crédito" to PaymentMethod.CREDIT_CARD,
+            "Transação realizada no débito R$ 20,00" to PaymentMethod.DEBIT_CARD,
+            "Compra autorizada no débito R$ 20,00" to PaymentMethod.DEBIT_CARD,
+            "Pagamento aprovado R$ 25,00 com VR" to PaymentMethod.MEAL_VOUCHER,
+            "Compra aprovada com VR/Alimentação R$ 30,00" to PaymentMethod.MEAL_VOUCHER,
+            "Uso do benefício de R$ 22,00 no vale refeição" to PaymentMethod.MEAL_VOUCHER,
+        ).forEach { (text, method) ->
+            val result = requireNotNull(NotificationParser.parse(text)) { text }
+            assertEquals(text, Direction.EXPENSE, result.direction)
+            assertEquals(text, method, result.method)
+            assertEquals(text, ReviewStatus.CONFIRMED, result.status)
+            assertTrue(text, NotificationParser.screen(text) is NotificationParser.Screening.Accepted)
+        }
+        // Without a method the purchase is still captured, but for review.
+        listOf("Transação aprovada de R$ 20,00 em LOJA X", "Uso do benefício de R$ 22,00").forEach { text ->
+            val result = requireNotNull(NotificationParser.parse(text)) { text }
+            assertEquals(text, Direction.EXPENSE, result.direction)
+            assertEquals(text, ReviewStatus.REVIEW, result.status)
+        }
+    }
+
+    @Test fun `weak spending words need an amount and never confirm unfinished events`() {
+        listOf(
+            "Transação recusada no crédito R$ 20,00",
+            "Transação não autorizada no débito R$ 20,00",
+            "Transação agendada R$ 20,00",
+            "Transação pendente com VR R$ 20,00",
+            "Você gastou R$ 48,90 no crédito? Confirme",
+            "Você não gastou R$ 48,90 no crédito",
+            "Transação no crédito será aprovada R$ 20,00",
+            "Fatura: você gastou R$ 900,00 no crédito",
+        ).forEach { text ->
+            assertEquals(text, ReviewStatus.REVIEW, NotificationParser.parse(text)?.status)
+        }
+        listOf("Transação aprovada no crédito", "Você gastou muito, veja dicas", "Uso do benefício liberado")
+            .forEach { assertNull(it, NotificationParser.parse(it)) }
+        assertNull(NotificationParser.parse("Ganhe cashback no uso do app R$ 10,00"))
+    }
+
     @Test fun `sanitized synthetic multi category fixtures verify financial and non financial outcomes`() {
      // Financial positive/valid cases
      val positiveFixtures = mapOf(
