@@ -133,21 +133,16 @@ class NotificationDeliveryE2eTest {
         await("reused key after removal") { repository.transactions.value.size == 2 }
     }
 
-    @Test fun pauseBankSelectionUnsupportedPackageAndGroupSummaryAreIgnored() {
+    @Test fun pauseGroupSummaryAndEmptyTextAreIgnored() {
         repository.setCaptureEnabled(false)
         post(bank, 1, "Pix recebido R$ 10,00")
         stableCount(0)
         emit(bank, "cancelAll")
         repository.setCaptureEnabled(true)
-        repository.setBankEnabled(bank, false)
-        post(bank, 2, "Pix recebido R$ 20,00")
-        stableCount(0)
-        repository.setBankEnabled(bank, true)
-        post("br.com.fluxo.fixture.unsupported", 3, "Pix recebido R$ 30,00")
         post(bank, 4, "Pix recebido R$ 40,00", summary = true)
         post(bank, 5, "")
         stableCount(0)
-        post(bank, 6, "Pix recebido R$ 60,00")
+        post("br.com.fluxo.fixture.unsupported", 6, "Pix recebido R$ 60,00")
         await("positive control after ignored events") { repository.transactions.value.size == 1 }
         assertEquals(6000L, repository.transactions.value.single().amountCents)
     }
@@ -186,15 +181,15 @@ class NotificationDeliveryE2eTest {
        }
 
     @Test
-    fun optedInThirdPartyNotificationDeliversOnlyWhileConsentRemainsEnabled() {
+    fun thirdPartyNotificationDeliversOnlyWhileCaptureIsEnabled() {
         val thirdParty = "br.com.fluxo.fixture.unsupported"
-        repository.setAllowOtherApps(true)
+        repository.setCaptureEnabled(true)
         post(thirdParty, 40, "Pix recebido R$ 42,75")
-        await("opted-in third-party delivery") { repository.transactions.value.size == 1 }
+        await("third-party delivery") { repository.transactions.value.size == 1 }
         assertEquals(thirdParty, repository.transactions.value.single().bankPackage)
         assertEquals(4275L, repository.transactions.value.single().amountCents)
 
-        repository.setAllowOtherApps(false)
+        repository.setCaptureEnabled(false)
         post(thirdParty, 41, "Pix recebido R$ 88,10")
         stableCount(1)
     }
