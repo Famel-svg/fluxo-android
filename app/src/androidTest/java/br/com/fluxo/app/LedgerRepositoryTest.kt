@@ -157,15 +157,12 @@ class LedgerRepositoryTest {
         password.fill('\u0000')
     }
 
-    @Test fun captureRequiresBothGlobalEnableAndSelectedBank() = runBlocking {
+    @Test fun captureRequiresGlobalEnableOnly() = runBlocking {
         repository.ingest("paused", bank, 1L, "Pix recebido R$ 10,00")
         repository.setCaptureEnabled(true)
         repository.ingest("unselected", bank, 2L, "Pix recebido R$ 10,00")
-        assertTrue(repository.transactions.value.isEmpty())
-        repository.setBankEnabled(bank, true)
-        repository.ingest("selected", bank, 3L, "Pix recebido R$ 10,00")
-        repository.ingest("other-bank", "com.itau", 4L, "Pix recebido R$ 10,00")
-        assertEquals(listOf("selected"), repository.transactions.value.map { it.sourceKey })
+        repository.ingest("other-app", "com.example.wallet", 3L, "Pix recebido R$ 10,00")
+        assertEquals(setOf("unselected", "other-app"), repository.transactions.value.map { it.sourceKey }.toSet())
     }
 
     @Test fun multiappConsentPersistsOnlyRecognizedFinancialEvents() = runBlocking {
@@ -184,9 +181,9 @@ class LedgerRepositoryTest {
         repository.ingest("missing-amount", appPackage, 31L, "Pix recebido valor oculto")
         repository.ingest("missing-direction", appPackage, 32L, "Pix R$ 10,00")
         repository.ingest("own", ownPackage, 4L, "Pix recebido R$ 10,00")
-        repository.setAllowOtherApps(false)
-        repository.ingest("after-opt-out", appPackage, 5L, "Pix recebido R$ 10,00")
-        repository.setAllowOtherApps(true)
+        repository.setCaptureEnabled(false)
+        repository.ingest("paused-again", appPackage, 5L, "Pix recebido R$ 10,00")
+        repository.setCaptureEnabled(true)
         repository.ingest("recognized", appPackage, 6L, "Pix recebido R$ 10,00")
 
         assertEquals(setOf("ambiguous", "recognized"), repository.transactions.value.map { it.sourceKey }.toSet())
