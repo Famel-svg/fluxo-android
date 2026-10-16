@@ -81,7 +81,7 @@ class BankNotificationListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val repository = (application as FluxoApplication).repository
-        if (!repository.allowsNotification(sbn.packageName)) return
+        if (!repository.allowsNotification(sbn.packageName)) { CaptureHealth.blocked(); return }
         CaptureHealth.observed(sbn.packageName, System.currentTimeMillis())
         if (!events.trySend(Event.Posted(sbn)).isSuccess) repository.reportCaptureError()
     }
@@ -122,8 +122,11 @@ internal fun extractNotification(sbn: StatusBarNotification): NotificationCandid
     val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().trim()
     val body = (extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.takeUnless { it.isBlank() }
         ?: extras.getCharSequence(Notification.EXTRA_TEXT))?.toString().orEmpty().trim()
+    // Inbox style keeps its lines apart from EXTRA_TEXT; the summary is an extra line some apps use for amounts.
+    val lines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES).orEmpty().map { it.toString().trim() }
+    val summary = extras.getCharSequence(Notification.EXTRA_SUMMARY_TEXT)?.toString().orEmpty().trim()
     // Some banks repeat the title as body; avoid introducing duplicate monetary values.
-    val text = listOf(title, body).filter { it.isNotBlank() }.distinct().joinToString("\n")
+    val text = (listOf(title, body) + lines + summary).filter { it.isNotBlank() }.distinct().joinToString("\n")
     if (text.isBlank()) return null
     // Original timestamps identify normal updates. When absent, a persisted lifecycle alias
     // resolves changing postTime. A missed removal/reused key remains ambiguous and needs review.

@@ -17,7 +17,7 @@ class CaptureHealthUiTest {
     @Test fun permissionAndToggleDoNotClaimServiceIsConnected() {
         var requested = 0
         compose.setContent { MaterialTheme {
-            CaptureHealthContent(CaptureSnapshot(), true, true, setOf("com.c6bank.app")) { requested++ }
+            CaptureHealthContent(CaptureSnapshot(), true, true) { requested++ }
         } }
         compose.onNodeWithText("Permissão: concedida").assertIsDisplayed()
         compose.onNodeWithText("Serviço: conexão ainda não confirmada nesta sessão").assertIsDisplayed()
@@ -27,57 +27,38 @@ class CaptureHealthUiTest {
 
     @Test fun pausedCaptureDoesNotOfferReconnectEvenIfPermissionIsGranted() {
         compose.setContent { MaterialTheme {
-            CaptureHealthContent(CaptureSnapshot(connected = false), true, false, setOf("com.itau"))
+            CaptureHealthContent(CaptureSnapshot(connected = false), true, false)
         } }
         compose.onNodeWithText("Captura: pausada").assertIsDisplayed()
         compose.onNodeWithText("Solicitar reconexão").assertDoesNotExist()
     }
 
-    @Test fun diagnosticsDoNotExposeUnselectedBankAndExplainMissingEvents() {
+    @Test fun diagnosticsGroupBanksAndOtherApps() {
         compose.setContent { MaterialTheme {
-            CaptureHealthContent(CaptureSnapshot(true, mapOf("com.itau" to 1700000000000)), true, true, setOf("com.c6bank.app"))
+            CaptureHealthContent(
+                CaptureSnapshot(connected = true,
+                    lastObserved = mapOf("com.itau" to 1700000000000, "com.example.vr" to 1700000000000),
+                    counters = mapOf(
+                        "com.itau" to br.com.fluxo.core.SourceCounters(3, 1, 2, br.com.fluxo.core.IgnoreReason.NO_FINANCIAL_WORD),
+                        "com.example.vr" to br.com.fluxo.core.SourceCounters(2, 0, 2))),
+                access = true, capture = true)
         } }
-        compose.onNodeWithText("C6 Bank: nenhuma notificação observada nesta sessão").assertIsDisplayed()
-        compose.onAllNodes(hasText("Itaú", substring = true)).assertCountEquals(0)
+        compose.onNodeWithText("Bancos").assertIsDisplayed()
+        compose.onNodeWithText("Outros apps").assertIsDisplayed()
+        compose.onNodeWithText("Itaú: 3 observadas · 1 lançada · 2 ignoradas (sem palavra financeira) · última às", substring = true).assertExists()
+        compose.onNodeWithText("com.example.vr: 2 observadas", substring = true).assertExists()
         compose.onNodeWithText("Ausência de notificações não comprova falha.", substring = true).assertExists()
     }
 
-    @Test fun multiappDiagnosticsShowGenericSourceWithoutPackageName() {
-        compose.setContent { MaterialTheme {
-            CaptureHealthContent(
-                CaptureSnapshot(connected = true, lastObserved = mapOf("com.example.wallet" to 1700000000000)),
-                access = true,
-                capture = true,
-                banks = emptySet(),
-                allowOtherApps = true,
-            )
-        } }
-        compose.onNodeWithText("Outros apps: notificações observadas nesta sessão").assertIsDisplayed()
-        compose.onNodeWithText("eventos financeiros reconhecidos", substring = true).assertDoesNotExist()
-        compose.onNodeWithText("Outro app: notificação observada às", substring = true).assertIsDisplayed()
-        compose.onNodeWithText("com.example.wallet", substring = true).assertDoesNotExist()
-    }
-
-    @Test fun disablingOtherAppsHidesPreviouslyObservedEvents() {
-        val allowOtherApps = androidx.compose.runtime.mutableStateOf(true)
-        compose.setContent { MaterialTheme {
-            CaptureHealthContent(
-                CaptureSnapshot(connected = true, lastObserved = mapOf("com.example.wallet" to 1700000000000)),
-                access = true,
-                capture = true,
-                banks = emptySet(),
-                allowOtherApps = allowOtherApps.value,
-            )
-        } }
-        compose.onNodeWithText("Outro app: notificação observada às", substring = true).assertExists()
-        compose.runOnIdle { allowOtherApps.value = false }
-        compose.onNodeWithText("Outro app: notificação observada às", substring = true).assertDoesNotExist()
-        compose.onNodeWithText("Outros apps:", substring = true).assertDoesNotExist()
+    @Test fun emptySessionSaysNothingWasObserved() {
+        compose.setContent { MaterialTheme { CaptureHealthContent(CaptureSnapshot(connected = true), true, true) } }
+        compose.onNodeWithText("Nenhuma notificação observada nesta sessão.").assertIsDisplayed()
+        compose.onNodeWithText("Outros apps").assertDoesNotExist()
     }
 
     @Test fun connectingShowsProgressAndDisablesTheButton() {
         compose.setContent { MaterialTheme {
-            CaptureHealthContent(CaptureSnapshot(reconnecting = true), true, true, setOf("com.c6bank.app"))
+            CaptureHealthContent(CaptureSnapshot(reconnecting = true), true, true)
         } }
         compose.onNodeWithText("Serviço: tentando conectar…").assertIsDisplayed()
         compose.onNodeWithText("Conectando…").assertIsNotEnabled()
@@ -88,7 +69,7 @@ class CaptureHealthUiTest {
         compose.setContent { MaterialTheme {
             CaptureHealthContent(
                 CaptureSnapshot(reconnectAttempted = true, lastResult = br.com.fluxo.core.ReconnectResult.NotConnected),
-                true, true, setOf("com.c6bank.app"))
+                true, true)
         } }
         compose.onNodeWithText("Serviço: o Android não iniciou o serviço após a tentativa de reconexão").assertIsDisplayed()
         compose.onNodeWithText("O Android não iniciou o serviço. Veja as opções abaixo.").assertIsDisplayed()
@@ -99,7 +80,7 @@ class CaptureHealthUiTest {
         compose.setContent { MaterialTheme {
             CaptureHealthContent(
                 CaptureSnapshot(connected = true, lastResult = br.com.fluxo.core.ReconnectResult.Connected),
-                true, true, setOf("com.c6bank.app"))
+                true, true)
         } }
         compose.onNodeWithText("Serviço: conectado ao Android").assertIsDisplayed()
         compose.onNodeWithText("Serviço conectado").assertIsDisplayed()
@@ -108,22 +89,10 @@ class CaptureHealthUiTest {
 
     @Test fun missingAccessIsReportedAsPermissionNotConnection() {
         compose.setContent { MaterialTheme {
-            CaptureHealthContent(CaptureSnapshot(), false, true, setOf("com.c6bank.app"))
+            CaptureHealthContent(CaptureSnapshot(), false, true)
         } }
         compose.onNodeWithText("Serviço: aguardando a permissão de acesso").assertIsDisplayed()
         compose.onNodeWithText("Solicitar reconexão").assertDoesNotExist()
-    }
-
-    @Test fun countersAreShownPerSelectedBankOnly() {
-        compose.setContent { MaterialTheme {
-            CaptureHealthContent(
-                CaptureSnapshot(connected = true, counters = mapOf(
-                    "com.c6bank.app" to br.com.fluxo.core.SourceCounters(3, 1, 2, br.com.fluxo.core.IgnoreReason.NO_FINANCIAL_WORD),
-                    "com.itau" to br.com.fluxo.core.SourceCounters(5, 5, 0))),
-                true, true, setOf("com.c6bank.app"))
-        } }
-        compose.onNodeWithText("C6 Bank: 3 observadas · 1 lançada · 2 ignoradas (sem palavra financeira)").assertIsDisplayed()
-        compose.onAllNodes(hasText("Itaú", substring = true)).assertCountEquals(0)
     }
 
     @Test fun recoveryGuideOffersThreeScreensAndTheXiaomiLine() {

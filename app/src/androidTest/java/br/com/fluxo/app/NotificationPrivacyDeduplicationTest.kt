@@ -88,30 +88,19 @@ class NotificationPrivacyDeduplicationTest {
         assertEquals(1, repository.transactions.value.size) // Should not increase
     }
 
-    @Test fun testBloqueioFontesNaoAutorizadas() = runBlocking {
+    @Test fun anyAppIsCapturedWithoutSelectionButCapturePauseStillBlocks() = runBlocking {
         repository.setAllowOtherApps(false)
         repository.setBankEnabled(bankApp, false)
-        val payload = "Pix recebido R$ 500,00"
-        assertFalse(repository.allowsNotification(bankApp))
-        repository.ingest("tx_unauth", bankApp, 1000L, payload)
-        assertEquals(0, repository.transactions.value.size)
-        repository.setBankEnabled(bankApp, true)
-        repository.ingest("tx_authorized", bankApp, 1001L, payload)
-        assertEquals(50000L, repository.transactions.value.single().amountCents)
-    }
-
-    @Test fun multiappConsentAllowsUnselectedBankButCapturePauseStillBlocks() = runBlocking {
-        repository.setBankEnabled(bankApp, false)
-        assertTrue(repository.allowOtherApps.value)
         assertTrue(repository.allowsNotification(bankApp))
-        repository.ingest("tx_multiapp", bankApp, 1000L, "Pix recebido R$ 500,00")
-        assertEquals(1, repository.transactions.value.size)
+        assertTrue(repository.allowsNotification(walletApp))
+        repository.ingest("tx_any", bankApp, 1000L, "Pix recebido R$ 500,00")
+        assertEquals(50000L, repository.transactions.value.single().amountCents)
         repository.setCaptureEnabled(false)
         assertFalse(repository.allowsNotification(bankApp))
         repository.ingest("tx_paused", bankApp, 1001L, "Pix recebido R$ 600,00")
         assertEquals(1, repository.transactions.value.size)
     }
-    
+
     @Test fun testDescarteConteudoSensivelENaoFinanceiro() = runBlocking {
         // Promotion message - should be completely discarded
         repository.ingest("tx_nontx", socialApp, 1000L, "Promoção imperdível Compre 2 leve 3")

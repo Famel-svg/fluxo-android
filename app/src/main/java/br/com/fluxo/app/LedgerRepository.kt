@@ -260,8 +260,6 @@ class LedgerRepository(context: Context) {
         packageName = packageName,
         ownPackageName = appPackageName,
         captureEnabled = _captureEnabled.value,
-        allowOtherApps = _allowOtherApps.value,
-        enabledLegacyPackages = _enabledBanks.value,
     )
 
     @Synchronized
