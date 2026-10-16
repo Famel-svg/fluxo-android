@@ -139,60 +139,9 @@ private fun fluxoSwitchColors() = SwitchDefaults.colors(
 private val timeFormat = DateTimeFormatter.ofPattern("HH:mm")
 private val dayFormat = DateTimeFormatter.ofPattern("dd/MM HH:mm")
 
-/** "hoje 08:12", "ontem 19:03" or "dd/MM HH:mm". */
-private fun lastSeenLabel(epochMillis: Long): String {
-    val zone = ZoneId.systemDefault()
-    val at = Instant.ofEpochMilli(epochMillis).atZone(zone)
-    val today = LocalDate.now(zone)
-    return when (at.toLocalDate()) {
-        today -> "hoje ${timeFormat.format(at)}"
-        today.minusDays(1) -> "ontem ${timeFormat.format(at)}"
-        else -> dayFormat.format(at)
-    }
-}
-
-private fun bankBadgeColors() = listOf(
-    FluxoColors.PetrolDark to FluxoColors.OnPetrolDark,
-    FluxoColors.Badge to FluxoColors.OnBadge,
-    FluxoColors.PetrolLight to FluxoColors.OnPetrolLight,
-)
-
 @Composable
 private fun SectionTitle(title: String, hint: String? = null) {
     FluxoSectionHeading(title, trailing = hint, modifier = Modifier.fillMaxWidth().padding(top = 8.dp, start = 2.dp, end = 2.dp, bottom = 2.dp))
-}
-
-@Composable
-private fun BankToggleRow(
-    badge: String, badgeColors: Pair<Color, Color>, name: String, detail: String, checked: Boolean,
-    switchDescription: String, onChange: (Boolean) -> Unit,
-) {
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 50.dp).padding(2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(11.dp)
-        ) {
-            Box(
-                Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(badgeColors.first),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(badge, color = badgeColors.second, maxLines = 1, style = FluxoType.number(15.sp, FontWeight.ExtraBold))
-            }
-            Column(Modifier.weight(1f)) {
-                Text(
-                    name, color = if (checked) FluxoColors.Ink else FluxoColors.Mute,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.5.sp, lineHeight = 17.sp, fontWeight = FontWeight.Bold)
-                )
-                Text(detail, color = FluxoColors.Mute, style = FluxoType.Caption.copy(fontSize = 11.5.sp, lineHeight = 14.sp))
-            }
-            Switch(
-                checked = checked, onCheckedChange = onChange, colors = fluxoSwitchColors(),
-                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).semantics { contentDescription = switchDescription }
-            )
-        }
-        HorizontalDivider(color = FluxoColors.Line)
-    }
 }
 
 /** One line of the Estado block: check (ok) or warning (not ok) mark plus the state text. */
@@ -213,7 +162,7 @@ private fun StateLine(ok: Boolean, solid: Boolean, text: String) {
 }
 
 @Composable
-internal fun SettingsScreen(capture: Boolean, allowOtherApps: Boolean, banks: Set<String>, access: Boolean, model: LedgerViewModel, transactions: List<Transaction>) {
+internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerViewModel, transactions: List<Transaction>) {
     val context = LocalContext.current
     val accounts by model.accounts.collectAsStateWithLifecycle()
     val saving by model.saving.collectAsStateWithLifecycle()
@@ -291,8 +240,7 @@ internal fun SettingsScreen(capture: Boolean, allowOtherApps: Boolean, banks: Se
                             when {
                                 !capture -> "Pausada por você"
                                 !access -> "Aguardando permissão Android"
-                                banks.isNotEmpty() || allowOtherApps -> "Ativa conforme autorizações abaixo"
-                                else -> "Pausada sem origem permitida"
+                                else -> "Ativa para todos os apps"
                             },
                             color = FluxoColors.Mute, style = FluxoType.Caption.copy(fontSize = 11.5.sp, lineHeight = 14.sp)
                         )
@@ -338,40 +286,6 @@ internal fun SettingsScreen(capture: Boolean, allowOtherApps: Boolean, banks: Se
                     )
                 }
             }
-            item { SectionTitle("Bancos", "lidos pelas notificações") }
-            item {
-                Column(Modifier.fillMaxWidth()) {
-                    supportedBanks.forEachIndexed { index, bank ->
-                        key(bank.packageName) {
-                            val enabled = bank.packageName in banks
-                            val seen = snapshot.lastObserved[bank.packageName]
-                            BankToggleRow(
-                                badge = bank.name.take(1).uppercase(),
-                                badgeColors = bankBadgeColors().let { it[index % it.size] },
-                                name = bank.name,
-                                detail = when {
-                                    !enabled -> "Desligado"
-                                    seen != null -> "Última notificação ${lastSeenLabel(seen)}"
-                                    else -> "Nenhuma notificação nesta sessão"
-                                },
-                                checked = enabled,
-                                switchDescription = "Permitir notificações de ${bank.name}",
-                                onChange = { model.bank(bank.packageName, it) }
-                            )
-                        }
-                    }
-                    BankToggleRow(
-                        badge = "+", badgeColors = FluxoColors.Soft to FluxoColors.Mute,
-                        name = "Outros apps",
-                        detail = if (allowOtherApps)
-                            "Processa localmente eventos financeiros reconhecidos de qualquer outro app, inclusive bancos desmarcados acima. Não guarda texto bruto."
-                        else "Desligado. Processa localmente eventos financeiros reconhecidos de qualquer outro app, inclusive bancos desmarcados acima. Não guarda texto bruto.",
-                        checked = allowOtherApps,
-                        switchDescription = "Permitir captura financeira de notificações de outros apps",
-                        onChange = model::allowOtherApps
-                    )
-                }
-            }
             item {
                 Row(
                     Modifier.fillMaxWidth().padding(top = 1.dp)
@@ -394,12 +308,12 @@ internal fun SettingsScreen(capture: Boolean, allowOtherApps: Boolean, banks: Se
                 FluxoDataRow("Apagar histórico", onClick = { clear = true }, destructive = true)
             }
             item { Spacer(Modifier.height(8.dp)) }
-            item { CaptureHealthCard(access, capture, banks, allowOtherApps) }
+            item { CaptureHealthCard(access, capture) }
             item { AccountsPanel(accounts, transactions, model, saving, editError) }
             item {
                 FluxoSettingsCard {
                     FluxoSectionHeading("Privacidade e cobertura")
-                    Text("O Android permite acesso às notificações. O Fluxo só processa bancos selecionados ou, com autorização separada, outros apps. Captura também precisa estar ativa. Texto completo não é guardado nem enviado à internet.",
+                    Text("O Android permite acesso às notificações. Com a captura ativa, o Fluxo lê notificações de todos os apps e só guarda eventos financeiros reconhecidos. Texto completo não é guardado nem enviado à internet.",
                         color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
                     Text("Dados no armazenamento privado do aplicativo. Sem login, servidor ou backup automático. A proteção depende também do bloqueio e da segurança do aparelho.\n\nBancos podem omitir valores, mudar mensagens ou não notificar. Revise registros ambíguos. Pagamentos de fatura não devem virar novas compras. Totais não substituem o extrato bancário.",
                         color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
