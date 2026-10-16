@@ -16,6 +16,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import br.com.fluxo.core.IgnoreReason
 import br.com.fluxo.core.ListenerState
 import br.com.fluxo.core.ListenerStatus
+import br.com.fluxo.core.NotificationSource
+import br.com.fluxo.core.NotificationSourceClassifier
 import br.com.fluxo.core.OemHints
 import br.com.fluxo.core.ReconnectResult
 import br.com.fluxo.core.SourceCounters
@@ -33,6 +35,8 @@ data class CaptureSnapshot(
     val reconnectAttempted: Boolean = false,
     val lastResult: ReconnectResult? = null,
     val counters: Map<String, SourceCounters> = emptyMap(),
+    /** Notifications dropped by the capture policy (capture paused or Fluxo's own); count only, no package kept. */
+    val blockedByPolicy: Int = 0,
 ) {
     fun listenerState(access: Boolean): ListenerState =
         ListenerStatus.resolve(access, connected, reconnecting, reconnectAttempted)
@@ -57,6 +61,10 @@ object CaptureHealth {
             counters = counters + (packageName to (counters[packageName] ?: SourceCounters())
                 .let { it.copy(observed = it.observed + 1) }),
         )
+    }
+
+    @Synchronized fun blocked() {
+        mutable.value = mutable.value.copy(blockedByPolicy = mutable.value.blockedByPolicy + 1)
     }
 
     /** A notification of [packageName] became (or updated) a ledger entry. */
@@ -101,10 +109,10 @@ internal fun serviceStateText(state: ListenerState): String = when (state) {
 }
 
 @Composable
-fun CaptureHealthCard(access: Boolean, capture: Boolean, banks: Set<String>, allowOtherApps: Boolean = false) {
+fun CaptureHealthCard(access: Boolean, capture: Boolean) {
     val snapshot by CaptureHealth.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    CaptureHealthContent(snapshot, access, capture, banks, allowOtherApps) {
+    CaptureHealthContent(snapshot, access, capture) {
         CaptureConnection.launchReconnect(context)
     }
 }
@@ -131,9 +139,9 @@ internal fun ListenerRecoveryGuide(manufacturer: String = Build.MANUFACTURER) {
 
 @Composable
 internal fun CaptureHealthContent(
-    snapshot: CaptureSnapshot, access: Boolean, capture: Boolean, banks: Set<String>,
-    allowOtherApps: Boolean = false, reconnect: () -> Unit = {},
+    snapshot: CaptureSnapshot, access: Boolean, capture: Boolean, reconnect: () -> Unit = {},
 ) {
+    val context = LocalContext.current
     val note = MaterialTheme.typography.bodySmall.copy(color = FluxoColors.Mute)
     val state = snapshot.listenerState(access)
     FluxoSettingsCard {
@@ -149,29 +157,26 @@ internal fun CaptureHealthContent(
                 ListenerState.ACCESS_MISSING -> "Serviço: aguardando a permissão de acesso"
                 ListenerState.WAITING -> "Serviço: conexão ainda não confirmada nesta sessão"
             })
-            if (banks.isEmpty() && !allowOtherApps) Text("Selecione um banco ou permita outros apps para capturar.")
-            if (allowOtherApps) {
-                Text("Outros apps: notificações observadas nesta sessão")
-                snapshot.lastObserved.filterKeys { key -> supportedBanks.none { it.packageName == key } }
-                    .forEach { (_, time) ->
-                        val formatted = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")
-                            .withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(time))
-                        Text("Outro app: notificação observada às $formatted")
-                    }
+            val apps = snapshot.lastObserved.keys + snapshot.counters.keys
+            val (banks, others) = apps.sortedBy { appLabel(context, it).lowercase() }.partition {
+                NotificationSourceClassifier.classify(it, supportedBanks.map { bank -> bank.packageName }) == NotificationSource.BANK
             }
-            supportedBanks.filter { it.packageName in banks }.forEach { bank ->
-                val time = snapshot.lastObserved[bank.packageName]?.let {
-                    DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")
-                        .withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(it))
+            if (snapshot.blockedByPolicy > 0) Text("Descartadas pela política (captura pausada ou do próprio Fluxo): ${snapshot.blockedByPolicy}")
+            if (!access) Text("Se o Android bloquear a permissão: em Informações do app, abra o menu e escolha Permitir configurações restritas.", style = note)
+            if (apps.isEmpty()) Text("Nenhuma notificação observada nesta sessão.")
+            listOf("Bancos" to banks, "Outros apps" to others).filter { it.second.isNotEmpty() }.forEach { (title, group) ->
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                group.forEach { pkg ->
+                    val time = snapshot.lastObserved[pkg]?.let {
+                        DateTimeFormatter.ofPattern("dd/MM HH:mm:ss").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(it))
+                    }
+                    val counts = snapshot.counters[pkg]?.takeIf { it.observed > 0 || it.ignored > 0 || it.stored > 0 }?.summary()
+                    Text("${appLabel(context, pkg)}: ${listOfNotNull(counts, time?.let { "última às $it" }).joinToString(" · ")}")
                 }
-                Text("${bank.name}: ${time?.let { "última notificação observada em $it" }
-                    ?: "nenhuma notificação observada nesta sessão"}")
-                snapshot.counters[bank.packageName]?.takeIf { it.observed > 0 || it.ignored > 0 || it.stored > 0 }
-                    ?.let { Text("${bank.name}: ${it.summary()}") }
             }
             Text("Observada não significa lançamento confirmado. Mensagens sem valor ou promocionais podem ser descartadas. Ausência de notificações não comprova falha.",
                 style = note)
-            if (access && capture && (banks.isNotEmpty() || allowOtherApps) && state != ListenerState.CONNECTED) {
+            if (access && capture && state != ListenerState.CONNECTED) {
                 val busy = state == ListenerState.CONNECTING
                 FluxoWrapButton(if (busy) "Conectando…" else "Solicitar reconexão", onClick = reconnect, enabled = !busy)
             }
@@ -181,3 +186,9 @@ internal fun CaptureHealthContent(
         }
     }
 }
+
+/** Known bank name, else the installed app label, else the package name (labels of other apps may be hidden by Android). */
+private fun appLabel(context: android.content.Context, packageName: String): String =
+    supportedBanks.firstOrNull { it.packageName == packageName }?.name ?: try {
+        context.packageManager.getApplicationInfo(packageName, 0).loadLabel(context.packageManager).toString()
+    } catch (_: Exception) { packageName }

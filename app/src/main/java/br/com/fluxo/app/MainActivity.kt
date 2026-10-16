@@ -119,8 +119,6 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
     val themeMode by model.themeMode.collectAsStateWithLifecycle()
     val salary by model.salaryMonthlyCents.collectAsStateWithLifecycle()
     val capture by model.captureEnabled.collectAsStateWithLifecycle()
-    val allowOtherApps by model.allowOtherApps.collectAsStateWithLifecycle()
-    val banks by model.enabledBanks.collectAsStateWithLifecycle()
     val captureError by model.captureError.collectAsStateWithLifecycle()
     val saving by model.saving.collectAsStateWithLifecycle()
     val editError by model.editError.collectAsStateWithLifecycle()
@@ -237,7 +235,7 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
                         when (page) {
                             0 -> Dashboard(
                                 rows = monthly, month = month, allRows = transactions,
-                                active = capture && access && (banks.isNotEmpty() || allowOtherApps),
+                                active = capture && access,
                                 previous = { monthText = month.minusMonths(1).toString() },
                                 next = { monthText = month.plusMonths(1).toString() },
                                 settings = { tab = 3 },
@@ -269,7 +267,7 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
                             2 -> PlanningScreen(transactions, budgets, month, saving, editError, model::resetEditError, model::saveBudget, model::deleteBudget, benefits, model::saveBenefits,
                                 previousMonth = { monthText = month.minusMonths(1).toString() }, nextMonth = { monthText = month.plusMonths(1).toString() },
                                 salaryMonthlyCents = salary)
-                            else -> SettingsScreen(capture, allowOtherApps, banks, access, model, transactions)
+                            else -> SettingsScreen(capture, access, model, transactions)
                         }
                     }
                 }
