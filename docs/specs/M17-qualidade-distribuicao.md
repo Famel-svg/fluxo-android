@@ -36,3 +36,16 @@ Não publicar Play nem substituir assinatura sem plano de recuperação. Dados f
 ## Evidência
 
 Estado de execução mantido no [índice](README.md). Base e justificativa: [auditoria competitiva](../research/2026-09-05-mercado-e-auditoria.md).
+
+## Publicação no Google Play (M20)
+
+- Flavors na dimensão `distribuicao`: `github` (`br.com.fluxo.app`, APK atual) e `play` (`io.github.famelsvg.fluxo`).
+- O AAB da loja sai de `.github/workflows/play.yml` (manual) com `bundlePlayRelease`, assinado pela upload key; o workflow não envia nada ao Play.
+- Assinatura final pela Play App Signing: a chave de upload só autentica o envio.
+- Política de privacidade publicada em GitHub Pages: https://famel-svg.github.io/fluxo-privacidade/ (repositório público a ser criado pelo dono, com apenas `PRIVACY.md`; fonte em `docs/PRIVACY.md`).
+- Migração de quem usa o APK do GitHub: a assinatura e o applicationId da loja são diferentes; por isso o app da Play não atualiza o APK por cima.
+  1. No APK atual, gerar backup criptografado e guardar a senha fora do aparelho.
+  2. Instalar o app da Play.
+  3. Restaurar o backup no app da Play.
+  4. Conceder de novo o acesso a notificações, pois é um app novo para o Android.
+- Os dois apps podem coexistir no mesmo aparelho, pois os IDs são diferentes.
