@@ -26,6 +26,20 @@ class NotificationCapturePolicyTest {
     }
 
     @Test
+    fun storeBuildCapturesOnlyKnownFinancialApps() {
+        assertTrue(NotificationCapturePolicy.allows("com.nu.production", ownPackage, true, restrictToKnownFinancial = true))
+        assertFalse(NotificationCapturePolicy.allows("com.example.vr", ownPackage, true, restrictToKnownFinancial = true))
+        assertFalse(NotificationCapturePolicy.allows("com.whatsapp", ownPackage, true, restrictToKnownFinancial = true))
+        assertFalse(NotificationCapturePolicy.allows("com.nu.production", ownPackage, false, restrictToKnownFinancial = true))
+        assertFalse(NotificationCapturePolicy.allows(ownPackage, ownPackage, true, restrictToKnownFinancial = true))
+    }
+
+    @Test
+    fun knownListCoversTheSupportedBanks() {
+        listOf("com.c6bank.app", "com.nu.production", "com.itau").forEach { assertTrue(KnownFinancialApps.contains(it)) }
+    }
+
+    @Test
     fun classifierSeparatesBanksFromOthers() {
         val banks = listOf("com.nu.production", "com.itau")
         assertEquals(NotificationSource.BANK, NotificationSourceClassifier.classify("com.itau", banks))
