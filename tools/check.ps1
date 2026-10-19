@@ -8,6 +8,7 @@
   e2e    Real notification delivery through Android with synthetic emitter apps.
   seed   Installs the debug build and fills it with demo data (survives schema changes).
   shots  seed + screenshots of the four tabs at the given sizes and themes.
+  release-smoke  Debug-signed minified release: install, launch, fail if the app crashes.
   all    ui + e2e.
 
   Only a disposable emulator whose AVD name starts with ApkPreview_ is ever touched.
@@ -21,7 +22,7 @@
   ./tools/check.ps1 shots -Avd ApkPreview_Phone_API37 -Serial emulator-5558 -Themes light,dark   # 1080x2424 phone
 #>
 param(
-    [Parameter(Position = 0)][ValidateSet('quick', 'ui', 'e2e', 'seed', 'shots', 'all')][string]$Mode = 'quick',
+    [Parameter(Position = 0)][ValidateSet('quick', 'ui', 'e2e', 'seed', 'shots', 'release-smoke', 'all')][string]$Mode = 'quick',
     [string]$Serial = 'emulator-5556',
     [string]$Avd = 'ApkPreview_FluxoNotify_20261004',
     [string]$Class = '',
@@ -133,8 +134,8 @@ function Invoke-Instrument([string[]]$Extras) {
 }
 
 function Install-Seeded([string]$Theme) {
-    Invoke-Adb install -r (Join-Path $project 'app/build/outputs/apk/debug/app-debug.apk') | Out-Null
-    Invoke-Adb install -r (Join-Path $project 'app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk') | Out-Null
+    Invoke-Adb install -r (Join-Path $project 'app/build/outputs/apk/github/debug/app-github-debug.apk') | Out-Null
+    Invoke-Adb install -r (Join-Path $project 'app/build/outputs/apk/androidTest/github/debug/app-github-debug-androidTest.apk') | Out-Null
     Invoke-Instrument @('-e', 'seedDemo', 'true', '-e', 'seedTheme', $Theme, '-e', 'class', "$package.SeedDemoDataTest")
 }
 
@@ -161,9 +162,9 @@ try {
     $needsDevice = $Mode -ne 'quick'
 
     if ($Mode -in 'quick', 'ui', 'all') {
-        $ok = Invoke-Gradle @(':core:test', ':app:assembleDebug', ':app:assembleDebugAndroidTest', ':app:lintDebug') 'quick'
+        $ok = Invoke-Gradle @(':core:test', ':app:assembleGithubDebug', ':app:assembleGithubDebugAndroidTest', ':app:lintGithubDebug', ':app:assemblePlayRelease') 'quick'
         $summary.jvm = Read-Counts (Join-Path $project 'core/build/test-results/test/*.xml')
-        $lint = Join-Path $project 'app/build/reports/lint-results-debug.xml'
+        $lint = Join-Path $project 'app/build/reports/lint-results-githubDebug.xml'
         if (Test-Path $lint) {
             $text = Get-Content $lint -Raw
             $summary.lint = "$(([regex]::Matches($text, 'severity="(Error|Fatal)"')).Count) errors, $(([regex]::Matches($text, 'severity="Warning"')).Count) warnings"
@@ -176,9 +177,9 @@ try {
 
     if ($Mode -in 'ui', 'all') {
         $env:ANDROID_SERIAL = $Serial
-        $arguments = @(':app:connectedDebugAndroidTest', '-Pandroid.testInstrumentationRunnerArguments.disposableEmulator=true')
+        $arguments = @(':app:connectedGithubDebugAndroidTest', '-Pandroid.testInstrumentationRunnerArguments.disposableEmulator=true')
         if ($Class) { $arguments += "-Pandroid.testInstrumentationRunnerArguments.class=$Class" }
-        $results = Join-Path $project 'app/build/outputs/androidTest-results/connected/debug'
+        $results = Join-Path $project 'app/build/outputs/androidTest-results/connected/debug/flavors/github'
         $ok = Invoke-Gradle $arguments 'ui'
         if (-not $ok -and -not (Test-DeviceHealthy)) {
             Write-Host 'Device died during the run; restarting and retrying once.'
@@ -198,8 +199,25 @@ try {
         if ($summary.e2e -eq 'FAILED') { Write-Host "Full log: $log"; throw 'notification e2e failed' }
     }
 
+    if ($Mode -eq 'release-smoke') {
+        # Local smoke test only: signs the minified release with the debug key so `install -r` works over a debug build.
+        $env:FLUXO_RELEASE_SIGN_WITH_DEBUG = '1'
+        if (-not (Invoke-Gradle @(':app:assembleGithubRelease') 'release')) { throw 'release build failed' }
+        $apk = Get-ChildItem (Join-Path $project 'app/build/outputs/apk/github/release') -Filter '*.apk' | Select-Object -First 1
+        if (-not $apk) { throw 'release APK not found' }
+        Invoke-Adb logcat -c | Out-Null
+        Invoke-Adb install -r $apk.FullName | Out-Null
+        Invoke-Adb shell am force-stop $package | Out-Null
+        Invoke-Adb -Arguments @('shell', 'am', 'start', '-W', '-n', "$package/.MainActivity") | Out-Null
+        Start-Sleep -Seconds 8
+        $pidNow = (& $adb -s $Serial shell pidof $package 2>$null)
+        $fatal = (& $adb -s $Serial logcat -d -b crash 2>$null) -match 'FATAL EXCEPTION'
+        if (-not $pidNow -or $fatal) { throw 'release build crashed on launch' }
+        $summary.release = "launched, pid $("$pidNow".Trim()), no crash"
+    }
+
     if ($Mode -in 'seed', 'shots') {
-        if (-not (Invoke-Gradle @(':app:assembleDebug', ':app:assembleDebugAndroidTest') 'build')) { throw 'build failed' }
+        if (-not (Invoke-Gradle @(':app:assembleGithubDebug', ':app:assembleGithubDebugAndroidTest') 'build')) { throw 'build failed' }
         if ($Mode -eq 'seed') { Install-Seeded $Themes[0]; $summary.seed = "demo data installed ($($Themes[0]))" }
     }
 

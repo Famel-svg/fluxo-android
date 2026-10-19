@@ -51,10 +51,10 @@ function Invoke-RestartPhase([string]$Phase) {
 }
 Push-Location $project
 try {
-    & ./gradlew.bat '-PnotificationE2e=true' :app:assembleDebug :app:assembleDebugAndroidTest :notification-fixture:assembleDebug
+    & ./gradlew.bat '-PnotificationE2e=true' :app:assembleGithubDebug :app:assembleGithubDebugAndroidTest :notification-fixture:assembleDebug
     if ($LASTEXITCODE -ne 0) { throw 'E2E build failed.' }
-    Invoke-Adb install -r (Join-Path $project 'app/build/outputs/apk/debug/app-debug.apk')
-    Invoke-Adb install -r (Join-Path $project 'app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk')
+    Invoke-Adb install -r (Join-Path $project 'app/build/outputs/apk/github/debug/app-github-debug.apk')
+    Invoke-Adb install -r (Join-Path $project 'app/build/outputs/apk/androidTest/github/debug/app-github-debug-androidTest.apk')
     foreach ($entry in $fixtures.GetEnumerator()) {
         $apk = Join-Path $project "notification-fixture/build/outputs/apk/$($entry.Key)/debug/notification-fixture-$($entry.Key)-debug.apk"
         Invoke-Adb install $apk

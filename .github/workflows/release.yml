@@ -67,11 +67,11 @@ jobs:
             exit 1
           fi
       - uses: gradle/actions/setup-gradle@v6
-      - run: bash ./gradlew :core:test :app:assembleDebug :app:lintDebug
+      - run: bash ./gradlew :core:test :app:assembleGithubDebug :app:lintGithubDebug
       - name: Verify the signing certificate
         run: |
           APKSIGNER="$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)"
-          ACTUAL="$("$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | sed -n 's/.*certificate SHA-256 digest: //p' | head -n 1)"
+          ACTUAL="$("$APKSIGNER" verify --print-certs app/build/outputs/apk/github/debug/app-github-debug.apk | sed -n 's/.*certificate SHA-256 digest: //p' | head -n 1)"
           if [ "$ACTUAL" != "$EXPECTED_CERT_SHA256" ]; then
             echo "::error::APK is signed by $ACTUAL, expected $EXPECTED_CERT_SHA256"
             exit 1
@@ -84,7 +84,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           APK="fluxo-$VERSION-debug.apk"
-          cp app/build/outputs/apk/debug/app-debug.apk "$APK"
+          cp app/build/outputs/apk/github/debug/app-github-debug.apk "$APK"
           SHA="$(sha256sum "$APK" | cut -d ' ' -f 1)"
           NOTES="docs/RELEASE_$VERSION.md"
           if [ -f "$NOTES" ]; then

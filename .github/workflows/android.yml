@@ -29,11 +29,11 @@ jobs:
           yes | "$SDKMANAGER" --licenses > /dev/null || true
           "$SDKMANAGER" --install $SDK_PACKAGES
       - uses: gradle/actions/setup-gradle@v6
-      - run: bash ./gradlew :core:test :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug
+      - run: bash ./gradlew :core:test :app:assembleGithubDebug :app:assembleGithubDebugAndroidTest :app:lintGithubDebug
       - uses: actions/upload-artifact@v7
         with:
           name: fluxo-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/github/debug/*.apk
           retention-days: 7
   instrumented:
     runs-on: ubuntu-latest
@@ -62,7 +62,7 @@ jobs:
           profile: pixel_6
           disable-animations: true
           # The CI emulator is disposable; without this flag the gated UI tests are silently skipped.
-          script: bash ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.disposableEmulator=true
+          script: bash ./gradlew :app:connectedGithubDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.disposableEmulator=true
       - uses: actions/upload-artifact@v7
         if: always()
         with:
