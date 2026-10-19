@@ -17,10 +17,17 @@ android {
     }
     flavorDimensions += "distribuicao"
     productFlavors {
-        create("github") { buildConfigField("boolean", "STORE_BUILD", "false") }
+        create("github") {
+            buildConfigField("boolean", "STORE_BUILD", "false")
+            buildConfigField("boolean", "PRO_FOR_ALL", "true")
+        }
         create("play") {
             applicationId = "io.github.famelsvg.fluxo"
             buildConfigField("boolean", "STORE_BUILD", "true")
+            // Sem conta de desenvolvedor ainda: Pro grátis para todos. Mudar para false quando houver produto fluxo_pro.
+            buildConfigField("boolean", "PRO_FOR_ALL", "true")
+            // Chave pública RSA (base64) do Play Console; vazia = compra nunca concede Pro.
+            buildConfigField("String", "PLAY_LICENSE_KEY", "\"${System.getenv("PLAY_LICENSE_KEY") ?: ""}\"")
         }
     }
     signingConfigs {
@@ -69,6 +76,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    "playImplementation"("com.android.billingclient:billing:8.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")

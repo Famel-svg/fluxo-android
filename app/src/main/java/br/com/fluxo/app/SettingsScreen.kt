@@ -322,6 +322,7 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
             item { Spacer(Modifier.height(8.dp)) }
             item { CaptureHealthCard(access, capture) }
             item { AccountsPanel(accounts, transactions, model, saving, editError) }
+            item { ProSettingsCard() }
             item {
                 FluxoSettingsCard {
                     FluxoSectionHeading("Privacidade e cobertura")

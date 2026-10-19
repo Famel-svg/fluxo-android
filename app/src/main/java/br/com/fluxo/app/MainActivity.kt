@@ -87,6 +87,11 @@ class MainActivity : ComponentActivity() {
         window.setBackgroundDrawable(ColorDrawable(paper))
         setContent { FluxoScreen() }
     }
+
+    override fun onResume() {
+        super.onResume()
+        (application as FluxoApplication).entitlements.restore()
+    }
 }
 
 /** Readable width of tab content and of the bottom navigation on very wide windows (tablets, unfolded foldables). */

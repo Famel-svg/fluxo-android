@@ -40,3 +40,12 @@ Gerar fora do repositório e guardar cópia segura (perder a upload key exige pe
 
 Segredos no GitHub: `PLAY_UPLOAD_KEYSTORE_BASE64` (base64 do .jks), `PLAY_UPLOAD_STORE_PASSWORD`, `PLAY_UPLOAD_KEY_ALIAS`,
 `PLAY_UPLOAD_KEY_PASSWORD`. Usar Play App Signing no Console. Nunca versionar o .jks.
+
+## Fase 3 — infraestrutura Pro (feito)
+- `core/FeaturePolicy.kt`: `ProFeature`, `Entitlements`, `FeaturePolicy` (`MAX_CONTAS_FREE = 2`). Gates ligados por recurso na Fase 4.
+- `EntitlementsSource` em `FluxoApplication`; `github` sempre Pro; `play` usa `BillingRepository` (Billing 8.3.0, INAPP `fluxo_pro`)
+  só quando `PRO_FOR_ALL = false`. Hoje `PRO_FOR_ALL = true`: Pro grátis para todos, sem conexão de cobrança.
+- Paywall "Fluxo Pro" em Ajustes; "Restaurar compras" só com cobrança ligada; chave "Depuração" só em debug.
+- A Billing Library adiciona INTERNET e ACCESS_NETWORK_STATE; removidas no `play` (`app/src/play/AndroidManifest.xml`) por
+  decisão do dono (2026-10-19). Antes de ligar a cobrança: definir `PLAY_LICENSE_KEY`, criar `fluxo_pro` no Console, testar compra,
+  reembolso e restauração com license tester sem essas permissões e registrar o resultado aqui.
