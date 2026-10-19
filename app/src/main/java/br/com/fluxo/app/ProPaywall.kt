@@ -58,7 +58,6 @@ internal fun ProPaywallScreen(isPro: Boolean, price: String?, proForAll: Boolean
 @Composable
 internal fun ProSettingsCard() {
     val entitlements = (LocalContext.current.applicationContext as FluxoApplication).entitlements
-    val activity = LocalActivity.current
     val isPro by entitlements.isPro.collectAsStateWithLifecycle()
     var open by rememberSaveable { mutableStateOf(false) }
     FluxoSettingsCard {
@@ -69,10 +68,18 @@ internal fun ProSettingsCard() {
         }
         (entitlements as? DebugEntitlements)?.let { DebugProRow(it) }
     }
-    if (open) Dialog(onDismissRequest = { open = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    if (open) ProPaywallDialog { open = false }
+}
+
+@Composable
+internal fun ProPaywallDialog(onClose: () -> Unit) {
+    val entitlements = (LocalContext.current.applicationContext as FluxoApplication).entitlements
+    val activity = LocalActivity.current
+    val isPro by entitlements.isPro.collectAsStateWithLifecycle()
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         var price by remember { mutableStateOf<String?>(null) }
         LaunchedEffect(Unit) { if (!BuildConfig.PRO_FOR_ALL) price = entitlements.queryPrice() }
-        ProPaywallScreen(isPro, price, BuildConfig.PRO_FOR_ALL, onBuy = { activity?.let(entitlements::launchPurchase) }, onClose = { open = false })
+        ProPaywallScreen(isPro, price, BuildConfig.PRO_FOR_ALL, onBuy = { activity?.let(entitlements::launchPurchase) }, onClose = onClose)
     }
 }
 

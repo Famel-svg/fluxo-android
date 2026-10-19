@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import br.com.fluxo.core.BenefitDays
 import br.com.fluxo.core.Budget
 import br.com.fluxo.core.Account
+import br.com.fluxo.core.FeaturePolicy
 import br.com.fluxo.core.Category
 import br.com.fluxo.core.Transaction
 import kotlinx.coroutines.CancellationException
@@ -61,7 +62,15 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
     fun save(transaction: Transaction, onSuccess: () -> Unit) = edit(onSuccess) { repository.save(transaction) }
-    fun saveAccount(account: Account, onSuccess: () -> Unit) = edit(onSuccess) { repository.saveAccount(account) }
+    /** [isPro] vem do chamador (Entitlements); só conta nova passa pelo limite do plano grátis. */
+    fun saveAccount(account: Account, isPro: Boolean, onSuccess: () -> Unit) {
+        val current = accounts.value
+        if (current.none { it.id == account.id } && !FeaturePolicy.canCreateAccount(current.count { !it.archived }, isPro)) {
+            _editError.value = "O plano grátis permite até ${FeaturePolicy.MAX_CONTAS_FREE} contas ativas. Veja o Fluxo Pro em Ajustes."
+            return
+        }
+        edit(onSuccess) { repository.saveAccount(account) }
+    }
     fun createTransfer(from: String, to: String, cents: Long, at: Long, onSuccess: () -> Unit) = edit(onSuccess) { repository.createTransfer(from, to, cents, at) }
     fun linkTransfer(outgoing: String, incoming: String, onSuccess: () -> Unit) = edit(onSuccess) { repository.linkTransfer(outgoing, incoming) }
     fun unlinkTransfer(id: String, onSuccess: () -> Unit) = edit(onSuccess) { repository.unlinkTransfer(id) }

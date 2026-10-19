@@ -7,6 +7,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.unit.dp
 import br.com.fluxo.core.*
 import java.math.BigDecimal
@@ -26,9 +29,26 @@ private fun parseMoney(value: String): Long? = runCatching {
 }.getOrNull()
 private fun accountMoney(value: java.math.BigInteger) = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("pt-BR")).format(BigDecimal(value, 2))
 
+/** Conta ativa = não arquivada. No limite grátis o botão continua visível e abre a explicação do Pro. */
+@Composable
+internal fun AddAccountButton(activeCount: Int, isPro: Boolean, onAdd: () -> Unit) {
+    var limit by rememberSaveable { mutableStateOf(false) }
+    var paywall by rememberSaveable { mutableStateOf(false) }
+    FluxoWrapButton("Adicionar conta", { if (FeaturePolicy.canCreateAccount(activeCount, isPro)) onAdd() else limit = true },
+        Modifier.testTag("accounts.add"))
+    if (limit) AlertDialog(onDismissRequest = { limit = false },
+        title = { Text("Limite do plano grátis") },
+        text = { Text("O plano grátis permite até ${FeaturePolicy.MAX_CONTAS_FREE} contas ativas. Suas contas atuais continuam disponíveis para editar, arquivar e exportar. Com o Fluxo Pro você cria quantas quiser.", Modifier.testTag("accounts.limit")) },
+        confirmButton = { TextButton({ limit = false; paywall = true }) { Text("Ver o Fluxo Pro") } },
+        dismissButton = { TextButton({ limit = false }) { Text("Agora não") } })
+    if (paywall) ProPaywallDialog { paywall = false }
+}
+
 @Composable
 fun AccountsPanel(accounts: List<Account>, rows: List<Transaction>, model: LedgerViewModel,
     saving: Boolean, error: String?) {
+    val entitlements = (LocalContext.current.applicationContext as FluxoApplication).entitlements
+    val isPro by entitlements.isPro.collectAsStateWithLifecycle()
     var editing by rememberSaveable { mutableStateOf<String?>(null) }
     var newAccount by rememberSaveable { mutableStateOf(false) }
     var transfer by rememberSaveable { mutableStateOf(false) }
@@ -43,7 +63,7 @@ fun AccountsPanel(accounts: List<Account>, rows: List<Transaction>, model: Ledge
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold))
             FluxoWrapButton("Editar ${account.name}", quiet = true, onClick = { model.resetEditError(); editing = account.id })
         }
-        FluxoWrapButton("Adicionar conta", onClick = { model.resetEditError(); newAccount = true })
+        AddAccountButton(accounts.count { !it.archived }, isPro) { model.resetEditError(); newAccount = true }
         FluxoWrapButton("Registrar transferência própria", enabled = accounts.count { !it.archived } >= 2, onClick = { model.resetEditError(); transfer = true })
         val candidates = remember(rows) {
             val available = rows.filter { it.transferId == null && it.accountId != null && it.status == ReviewStatus.CONFIRMED && it.method.affectsCash }
@@ -64,7 +84,7 @@ fun AccountsPanel(accounts: List<Account>, rows: List<Transaction>, model: Ledge
     }
     val account = accounts.firstOrNull { it.id == editing }
     if (newAccount || account != null) AccountEditor(account, saving, error, { newAccount = false; editing = null }) {
-        model.saveAccount(it) { newAccount = false; editing = null }
+        model.saveAccount(it, isPro) { newAccount = false; editing = null }
     }
     if (transfer) TransferEditor(accounts.filter { !it.archived }, saving, error, { transfer = false }) { from, to, cents, date ->
         model.createTransfer(from, to, cents, date) { transfer = false }

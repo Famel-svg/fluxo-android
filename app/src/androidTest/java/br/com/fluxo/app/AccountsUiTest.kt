@@ -1,6 +1,7 @@
 package br.com.fluxo.app
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -38,5 +39,24 @@ class AccountsUiTest {
         compose.onNode(hasText("Conta B") and hasAnyAncestor(isPopup())).performClick()
         compose.onNodeWithText("Registrar transferência").performClick()
         compose.runOnIdle { assertEquals(Triple("a", "b", 2550L), saved) }
+    }
+
+    @Test fun addAccountAtFreeLimitExplainsProAndProCreatesThird() {
+        val debug = (androidx.test.core.app.ApplicationProvider.getApplicationContext<FluxoApplication>().entitlements as DebugEntitlements)
+        try {
+            debug.forced.value = false
+            var added = 0
+            compose.setContent { MaterialTheme { AddAccountButton(2, debug.isPro.collectAsState().value) { added++ } } }
+            compose.onNodeWithTag("accounts.add").performClick()
+            compose.onNodeWithTag("accounts.limit").assertIsDisplayed()
+            compose.onNodeWithText("Ver o Fluxo Pro").performClick()
+            compose.onNodeWithTag("paywall.price").assertIsDisplayed()
+            compose.onNodeWithTag("paywall.close").performClick()
+            compose.runOnIdle { assertEquals(0, added) }
+            debug.forced.value = true
+            compose.waitForIdle()
+            compose.onNodeWithTag("accounts.add").performClick()
+            compose.runOnIdle { assertEquals(1, added) }
+        } finally { debug.forced.value = null }
     }
 }
