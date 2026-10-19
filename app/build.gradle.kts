@@ -14,6 +14,36 @@ android {
         versionName = "0.7.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+    flavorDimensions += "distribuicao"
+    productFlavors {
+        create("github")
+        create("play") { applicationId = "io.github.famelsvg.fluxo" }
+    }
+    signingConfigs {
+        // Upload key for Play: only wired when PLAY_UPLOAD_KEYSTORE points to an existing file.
+        create("upload") {
+            val path = System.getenv("PLAY_UPLOAD_KEYSTORE")
+            if (path != null && file(path).exists()) {
+                storeFile = file(path)
+                storePassword = System.getenv("PLAY_UPLOAD_STORE_PASSWORD")
+                keyAlias = System.getenv("PLAY_UPLOAD_KEY_ALIAS")
+                keyPassword = System.getenv("PLAY_UPLOAD_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            val uploadPath = System.getenv("PLAY_UPLOAD_KEYSTORE")
+            signingConfig = when {
+                System.getenv("FLUXO_RELEASE_SIGN_WITH_DEBUG") == "1" -> signingConfigs.getByName("debug")
+                uploadPath != null && file(uploadPath).exists() -> signingConfigs.getByName("upload")
+                else -> null
+            }
+        }
+    }
     buildFeatures { compose = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
