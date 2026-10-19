@@ -276,8 +276,8 @@ class LedgerRepository(context: Context) {
      * takes the latest text. Only the newest [NotificationTriage.MAX_ITEMS] rows are kept.
      */
     suspend fun recordTriage(
-        sourceKey: String, packageName: String, appLabel: String?, title: String, text: String,
-        postedAt: Long, autoStored: Boolean,
+        rawKey: String, packageName: String, appLabel: String?, title: String, text: String,
+        postedAt: Long, autoStored: Boolean, fallbackIdentity: String? = null,
     ) = withContext(Dispatchers.IO) {
         mutex.withLock {
             if (!_triageEnabled.value || !allowsNotification(packageName)) return@withLock
@@ -290,6 +290,17 @@ class LedgerRepository(context: Context) {
             }
             db.beginTransaction()
             try {
+                // Reposts without an original timestamp share one lifecycle alias with ingestion, so they update
+                // one triage row and a kept row later dedups against the parser path.
+                val sourceKey = fallbackIdentity?.let { identity ->
+                    db.query("notification_aliases", arrayOf("source_key"), "identity_key = ?",
+                        arrayOf(identity), null, null, null).use { if (it.moveToFirst()) it.getString(0) else null }
+                        ?: rawKey.also {
+                            db.insertWithOnConflict("notification_aliases", null, ContentValues().apply {
+                                put("identity_key", identity); put("source_key", rawKey)
+                            }, SQLiteDatabase.CONFLICT_IGNORE)
+                        }
+                } ?: rawKey
                 val decision = db.query("notification_triage", arrayOf("decision"), "source_key = ?", arrayOf(sourceKey),
                     null, null, null).use { if (it.moveToFirst()) TriageDecision.valueOf(it.getString(0)) else null }
                 when {
@@ -320,7 +331,7 @@ class LedgerRepository(context: Context) {
                 db.query("notification_triage", arrayOf("source_key", "package_name", "text", "posted_at", "decision"),
                     "id = ?", arrayOf(id.toString()), null, null, null).use { cursor ->
                     if (!cursor.moveToFirst()) return@use
-                    if (TriageDecision.valueOf(cursor.getString(4)) == TriageDecision.AUTO_STORED) return@use
+                    if (TriageDecision.valueOf(cursor.getString(4)) != TriageDecision.PENDING) return@use
                     val parsed = NotificationTriage.approved(cursor.getString(2))
                     val transaction = Transaction(
                         id = UUID.randomUUID().toString(), sourceKey = cursor.getString(0),

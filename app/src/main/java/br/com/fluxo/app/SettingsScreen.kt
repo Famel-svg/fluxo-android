@@ -171,7 +171,10 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
     val profileName by model.profileName.collectAsStateWithLifecycle()
     val salary by model.salaryMonthlyCents.collectAsStateWithLifecycle()
     val themeMode by model.themeMode.collectAsStateWithLifecycle()
-    val triage by model.triageEnabled.collectAsStateWithLifecycle()
+    val triageOn by model.triageEnabled.collectAsStateWithLifecycle()
+    val triageRows by model.triage.collectAsStateWithLifecycle()
+    // Text stays on the device until the owner clears the triage, even after switching it off.
+    val triage = triageOn || triageRows.isNotEmpty()
     var clear by rememberSaveable { mutableStateOf(false) }
     var editingProfile by rememberSaveable { mutableStateOf(false) }
     var profileDraft by rememberSaveable { mutableStateOf("") }
@@ -297,7 +300,7 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
                 ) {
                     Icon(Icons.Default.Lock, contentDescription = null, tint = FluxoColors.Ink, modifier = Modifier.size(22.dp))
                     Text(
-                        if (triage) "Tudo fica no aparelho. Triagem ativa: o texto das notificações fica guardado até você apagar."
+                        if (triage) "Tudo fica no aparelho. Triagem: o texto das notificações fica guardado até você apagar."
                         else "Tudo fica no aparelho. Texto das notificações não é guardado.", color = FluxoColors.Ink,
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold)
                     )

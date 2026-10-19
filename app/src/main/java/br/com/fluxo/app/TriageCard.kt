@@ -27,6 +27,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import br.com.fluxo.core.IgnoreReason
 import br.com.fluxo.core.NotificationTriage
 import br.com.fluxo.core.TriageDecision
 import br.com.fluxo.core.TriageItem
@@ -104,6 +105,9 @@ class TriageViewModel(application: Application) : AndroidViewModel(application) 
 }
 
 private val triageTime = DateTimeFormatter.ofPattern("dd/MM HH:mm")
+
+private fun verdictLabel(verdict: String) =
+    if (verdict == "ACCEPTED") "reconhecida" else IgnoreReason.entries.firstOrNull { it.name == verdict }?.label ?: verdict
 
 private fun TriageDecision.label() = when (this) {
     TriageDecision.PENDING -> "pendente"
@@ -227,7 +231,7 @@ private fun TriageRow(item: TriageItem, onKeep: (Long) -> Unit, onDiscard: (Long
             color = FluxoColors.Mute, style = FluxoType.Caption.copy(fontSize = 11.5.sp))
         Text(item.text, color = FluxoColors.Ink, maxLines = 6, style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(vertical = 4.dp))
-        Text("Leitor: ${item.verdict}", color = FluxoColors.Mute, style = FluxoType.Caption.copy(fontSize = 11.sp))
+        Text("Leitor: ${verdictLabel(item.verdict)}", color = FluxoColors.Mute, style = FluxoType.Caption.copy(fontSize = 11.sp))
         if (item.decision == TriageDecision.PENDING) FluxoTicketActions {
             FluxoPillButton("Descartar", onClick = { onDiscard(item.id) }, style = FluxoButtonStyle.Secondary,
                 modifier = Modifier.weight(1f).testTag("triage.discard"))
