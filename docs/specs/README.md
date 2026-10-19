@@ -22,6 +22,7 @@ Specs de cada incremento derivadas da auditoria de 05/09/2026. Estados abaixo di
 | M16 | [Bloqueio, modo discreto e acessibilidade](M16-privacidade-acessibilidade.md) | Proposto |
 | M17 | [CI, migrações e distribuição](M17-qualidade-distribuicao.md) | Parcial: CI instrumentado configurado |
 | M18 | [Nuvem, compartilhamento, Open Finance e IA](M18-integracoes-opcionais.md) | Proposto; decisões externas pendentes |
+| M19 | [Triagem provisória de notificações](M19-triagem-provisoria.md) | Implementado; aguarda JSON real |
 
 ## Ordem de execução
 

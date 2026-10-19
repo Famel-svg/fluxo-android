@@ -33,6 +33,7 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
     val allowOtherApps = repository.allowOtherApps
     val enabledBanks = repository.enabledBanks
     val captureError = repository.captureError
+    val triageEnabled = repository.triageEnabled
     private val _saving = MutableStateFlow(false)
     val saving = _saving.asStateFlow()
     private val _editError = MutableStateFlow<String?>(null)

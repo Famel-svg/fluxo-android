@@ -39,6 +39,12 @@ class BankNotificationListener : NotificationListenerService() {
                             }
                             val outcome = repository.ingestClassified(candidate.sourceKey, candidate.packageName,
                                 candidate.timestamp, candidate.text, candidate.fallbackIdentity, event.notification.postTime)
+                            // Ongoing notifications (players, downloads) refresh constantly and are never bank events.
+                            if (repository.triageEnabled.value &&
+                                event.notification.notification.flags and Notification.FLAG_ONGOING_EVENT == 0) {
+                                repository.recordTriage(candidate.sourceKey, pkg, appLabel(pkg), candidate.title,
+                                    candidate.text, candidate.timestamp, outcome is IngestOutcome.Stored)
+                            }
                             // Replayed active notifications were not counted as observed; keep counters consistent.
                             if (!event.replay) when (outcome) {
                                 is IngestOutcome.Stored -> CaptureHealth.stored(pkg)
@@ -60,6 +66,13 @@ class BankNotificationListener : NotificationListenerService() {
                 }
             }
         }
+    }
+
+    /** Visible app name for triage; null when Android hides the package from Fluxo. */
+    private fun appLabel(packageName: String): String? = try {
+        packageManager.getApplicationLabel(packageManager.getApplicationInfo(packageName, 0)).toString()
+    } catch (_: Exception) {
+        null
     }
 
     override fun onListenerConnected() {
@@ -102,13 +115,14 @@ class BankNotificationListener : NotificationListenerService() {
     }
 }
 
-/** Transient input only: raw text is never persisted or logged. */
+/** Transient input only: raw text is never logged, and persisted only by the opt-in triage mode. */
 internal class NotificationCandidate(
     val sourceKey: String,
     val packageName: String,
     val timestamp: Long,
     val text: String,
     val fallbackIdentity: String? = null,
+    val title: String = "",
 )
 
 /** Category for a notification that [extractNotification] rejects. Never includes content. */
@@ -135,7 +149,7 @@ internal fun extractNotification(sbn: StatusBarNotification): NotificationCandid
     val sourceKey = MessageDigest.getInstance("SHA-256").digest(identity.toByteArray(Charsets.UTF_8))
         .joinToString("") { "%02x".format(it) }
     return NotificationCandidate(sourceKey, sbn.packageName, timestamp, text,
-        notificationIdentity(sbn).takeIf { sbn.notification.`when` <= 0L })
+        notificationIdentity(sbn).takeIf { sbn.notification.`when` <= 0L }, title)
 }
 
 /** Hash only platform identity; never persist or log raw notification content. */

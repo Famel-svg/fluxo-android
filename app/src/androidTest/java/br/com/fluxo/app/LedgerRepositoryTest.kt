@@ -18,6 +18,7 @@ import br.com.fluxo.core.Category
 import br.com.fluxo.core.PaymentMethod
 import br.com.fluxo.core.ReviewStatus
 import br.com.fluxo.core.Transaction
+import br.com.fluxo.core.TriageDecision
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -43,7 +44,46 @@ class LedgerRepositoryTest {
         repository.clear()
         repository.setCaptureEnabled(false)
         repository.setAllowOtherApps(false)
+        repository.setTriageEnabled(false)
         supportedBanks.forEach { repository.setBankEnabled(it.packageName, false) }
+    }
+
+    @Test fun triageKeepsOnlyWhatTheOwnerAuthorizes() = runBlocking {
+        repository.setCaptureEnabled(true)
+        repository.recordTriage("t0", "com.example.app", null, "Antes", "Pix recebido R$ 1,00", 10, autoStored = false)
+        assertTrue("disabled triage stores nothing", repository.triage.value.isEmpty())
+        repository.setTriageEnabled(true)
+        repository.recordTriage("t1", "com.example.vr", "VR", "VR", "Você usou seu saldo de R$ 12,50", 100, autoStored = false)
+        repository.recordTriage("t2", "com.example.chat", null, "Ana", "Oi", 200, autoStored = false)
+        repository.recordTriage("t3", bank, "Nubank", "Pix", "Pix recebido R$ 10,00", 300, autoStored = true)
+        // An update of a pending notification refreshes its text without creating a second row.
+        repository.recordTriage("t2", "com.example.chat", null, "Ana", "Oi de novo", 250, autoStored = false)
+        val rows = repository.triage.value.associateBy { it.title }
+        assertEquals(3, rows.size)
+        assertEquals("Oi de novo", rows.getValue("Ana").text)
+        assertEquals(TriageDecision.AUTO_STORED, rows.getValue("Pix").decision)
+        assertTrue(repository.transactions.value.isEmpty())
+
+        repository.keepTriage(rows.getValue("VR").id)
+        repository.discardTriage(rows.getValue("Ana").id)
+        val kept = repository.transactions.value.single()
+        assertEquals("com.example.vr", kept.bankPackage)
+        assertEquals(ReviewStatus.REVIEW, kept.status)
+        assertEquals(100L, kept.occurredAt)
+        val decided = repository.triage.value.associateBy { it.title }
+        assertEquals(TriageDecision.KEPT, decided.getValue("VR").decision)
+        assertEquals(TriageDecision.DISCARDED, decided.getValue("Ana").decision)
+        // A decided notification is not reopened by later deliveries, and keeping twice adds nothing.
+        repository.recordTriage("t2", "com.example.chat", null, "Ana", "Oi 3", 260, autoStored = false)
+        repository.keepTriage(decided.getValue("VR").id)
+        assertEquals(TriageDecision.DISCARDED, repository.triage.value.single { it.title == "Ana" }.decision)
+        assertEquals(1, repository.transactions.value.size)
+
+        // Triage text never enters the backup payload.
+        assertFalse(repository.exportBackupPayload().toString(Charsets.UTF_8).contains("Oi de novo"))
+        repository.clearTriage()
+        assertTrue(repository.triage.value.isEmpty())
+        assertEquals(1, repository.transactions.value.size)
     }
 
     @Test fun ownTransfersConserveBalancesAndRestoreWithAccounts() = runBlocking {
@@ -354,7 +394,7 @@ class LedgerRepositoryTest {
         assertEquals(edited, reopened.transactions.value.single())
         assertEquals(Budget("2026-09", Category.TRANSPORT, 50000), reopened.budgets.value.single())
         context.openOrCreateDatabase("fluxo.db", Context.MODE_PRIVATE, null).use { db ->
-            assertEquals(5, db.version)
+            assertEquals(6, db.version)
             db.rawQuery("SELECT category, amount_cents FROM transactions WHERE id = 'old'", null).use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals("TRANSPORT", cursor.getString(0))
@@ -372,7 +412,7 @@ class LedgerRepositoryTest {
         val target = InstrumentationRegistry.getInstrumentation().targetContext
         fun schema(context: Context): Pair<Set<String>, Map<String, Set<String>>> =
             context.openOrCreateDatabase("fluxo.db", Context.MODE_PRIVATE, null).use { db ->
-                assertEquals(5, db.version)
+                assertEquals(6, db.version)
                 val tables = db.rawQuery("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'android_%' AND name NOT LIKE 'sqlite_%'", null).use { cursor ->
                     generateSequence { if (cursor.moveToNext()) cursor.getString(0) else null }.toSet()
                 }
