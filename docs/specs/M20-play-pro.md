@@ -24,3 +24,19 @@ offline, sem conta, sem servidor, dados só no aparelho.
 Free continua útil: captura, revisão, lançamentos manuais, categorias, orçamento, VR/VT, resumo, backup, restauração,
 CSV, bloqueio e acessibilidade ficam grátis. Perder o Pro nunca oculta, apaga nem impede exportar dados.
 Sem INTERNET, analytics ou crash reporting no `play`, salvo o que a Billing Library exigir (documentar).
+
+## Fase 1 — distribuição (feito)
+- Dimensão `distribuicao`: `github` (`br.com.fluxo.app`, comportamento atual) e `play` (`io.github.famelsvg.fluxo`).
+- Variantes: `githubDebug` (APK da release do GitHub, mesmo certificado), `githubRelease` (smoke do R8), `playRelease` (AAB da loja).
+- `release`: R8 + shrink de recursos; `app/proguard-rules.pro` mantém o nome de `BankNotificationListener`.
+- `tools/check.ps1 quick` também gera `assemblePlayRelease`; `release-smoke` instala o `githubRelease` assinado com a chave debug
+  local e confere que abre sem crash.
+- `.github/workflows/play.yml` (manual): gera `bundlePlayRelease` assinado e publica AAB + `mapping.txt` como artefato. Não envia ao Play.
+
+### Pendência do dono: upload key
+Gerar fora do repositório e guardar cópia segura (perder a upload key exige pedido de reset ao Google):
+
+    keytool -genkeypair -v -keystore fluxo-upload.jks -alias upload -keyalg RSA -keysize 4096 -validity 10000
+
+Segredos no GitHub: `PLAY_UPLOAD_KEYSTORE_BASE64` (base64 do .jks), `PLAY_UPLOAD_STORE_PASSWORD`, `PLAY_UPLOAD_KEY_ALIAS`,
+`PLAY_UPLOAD_KEY_PASSWORD`. Usar Play App Signing no Console. Nunca versionar o .jks.

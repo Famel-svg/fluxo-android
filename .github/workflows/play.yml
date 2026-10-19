@@ -1,0 +1,56 @@
+name: Play bundle
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  SDK_PACKAGES: "platforms;android-36 build-tools;36.0.0 platform-tools"
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Prepare Android SDK
+        run: |
+          SDKMANAGER="$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -n 1)"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" --install $SDK_PACKAGES
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Prepare the upload keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.PLAY_UPLOAD_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.PLAY_UPLOAD_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.PLAY_UPLOAD_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.PLAY_UPLOAD_KEY_PASSWORD }}
+        run: |
+          [ -n "$KEYSTORE_B64" ] || { echo "::error::Secret PLAY_UPLOAD_KEYSTORE_BASE64 is not set."; exit 1; }
+          [ -n "$STORE_PASSWORD" ] || { echo "::error::Secret PLAY_UPLOAD_STORE_PASSWORD is not set."; exit 1; }
+          [ -n "$KEY_ALIAS" ] || { echo "::error::Secret PLAY_UPLOAD_KEY_ALIAS is not set."; exit 1; }
+          [ -n "$KEY_PASSWORD" ] || { echo "::error::Secret PLAY_UPLOAD_KEY_PASSWORD is not set."; exit 1; }
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          chmod 600 "$RUNNER_TEMP/upload.jks"
+          echo "PLAY_UPLOAD_KEYSTORE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+      - name: Build the bundle
+        env:
+          PLAY_UPLOAD_STORE_PASSWORD: ${{ secrets.PLAY_UPLOAD_STORE_PASSWORD }}
+          PLAY_UPLOAD_KEY_ALIAS: ${{ secrets.PLAY_UPLOAD_KEY_ALIAS }}
+          PLAY_UPLOAD_KEY_PASSWORD: ${{ secrets.PLAY_UPLOAD_KEY_PASSWORD }}
+        run: bash ./gradlew :core:test :app:bundlePlayRelease :app:lintPlayRelease
+      - name: Verify the bundle signature
+        # jarsigner exits 0 on unsigned jars, so require the verified line.
+        run: jarsigner -verify app/build/outputs/bundle/playRelease/*.aab | grep -q "jar verified"
+      - name: Remove the keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload.jks"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fluxo-play-bundle
+          path: |
+            app/build/outputs/bundle/playRelease/*.aab
+            app/build/outputs/mapping/playRelease/mapping.txt
+          retention-days: 7
