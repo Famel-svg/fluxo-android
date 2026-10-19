@@ -1,6 +1,7 @@
 package br.com.fluxo.app
 
 import android.app.Notification
+import android.content.pm.ApplicationInfo
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import br.com.fluxo.core.IgnoreReason
@@ -39,17 +40,24 @@ class BankNotificationListener : NotificationListenerService() {
                             }
                             val outcome = repository.ingestClassified(candidate.sourceKey, candidate.packageName,
                                 candidate.timestamp, candidate.text, candidate.fallbackIdentity, event.notification.postTime)
-                            // Ongoing notifications (players, downloads) refresh constantly and are never bank events.
-                            if (repository.triageEnabled.value &&
-                                event.notification.notification.flags and Notification.FLAG_ONGOING_EVENT == 0) {
-                                repository.recordTriage(candidate.sourceKey, pkg, appLabel(pkg), candidate.title,
-                                    candidate.text, candidate.timestamp, outcome is IngestOutcome.Stored)
-                            }
                             // Replayed active notifications were not counted as observed; keep counters consistent.
                             if (!event.replay) when (outcome) {
                                 is IngestOutcome.Stored -> CaptureHealth.stored(pkg)
                                 is IngestOutcome.Ignored -> CaptureHealth.ignored(pkg, outcome.reason)
                                 is IngestOutcome.NotAllowed -> {}
+                            }
+                            // Ongoing notifications (players, downloads) refresh constantly and are never bank events.
+                            if (repository.triageEnabled.value &&
+                                event.notification.notification.flags and Notification.FLAG_ONGOING_EVENT == 0) {
+                                // Triage is a provisional aid: its failure must not report a lost capture.
+                                try {
+                                    repository.recordTriage(candidate.sourceKey, pkg, appLabel(event.notification),
+                                        candidate.title, candidate.text, candidate.timestamp,
+                                        outcome is IngestOutcome.Stored, candidate.fallbackIdentity)
+                                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                    throw cancelled
+                                } catch (_: Exception) {
+                                }
                             }
                         }
                         is Event.Removed -> {
@@ -69,8 +77,12 @@ class BankNotificationListener : NotificationListenerService() {
     }
 
     /** Visible app name for triage; null when Android hides the package from Fluxo. */
-    private fun appLabel(packageName: String): String? = try {
-        packageManager.getApplicationLabel(packageManager.getApplicationInfo(packageName, 0)).toString()
+    private fun appLabel(sbn: StatusBarNotification): String? = try {
+        // Package visibility hides most apps from getApplicationInfo; the posting app's info rides in the extras.
+        @Suppress("DEPRECATION")
+        val info = sbn.notification.extras.getParcelable<ApplicationInfo>("android.appInfo")
+            ?: packageManager.getApplicationInfo(sbn.packageName, 0)
+        packageManager.getApplicationLabel(info).toString()
     } catch (_: Exception) {
         null
     }

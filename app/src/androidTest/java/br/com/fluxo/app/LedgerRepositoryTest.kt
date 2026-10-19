@@ -37,6 +37,7 @@ class LedgerRepositoryTest {
         repository.clear()
         repository.setCaptureEnabled(false)
         repository.setAllowOtherApps(false)
+        repository.setTriageEnabled(false)
         supportedBanks.forEach { repository.setBankEnabled(it.packageName, false) }
     }
 
@@ -83,6 +84,19 @@ class LedgerRepositoryTest {
         assertFalse(repository.exportBackupPayload().toString(Charsets.UTF_8).contains("Oi de novo"))
         repository.clearTriage()
         assertTrue(repository.triage.value.isEmpty())
+        assertEquals(1, repository.transactions.value.size)
+    }
+
+    @Test fun triageRepostsShareOneRowAndKeptRowDedupsWithParser() = runBlocking {
+        repository.setCaptureEnabled(true)
+        repository.setTriageEnabled(true)
+        // Without an original timestamp each repost hashes a new key; the lifecycle identity ties them together.
+        repository.recordTriage("first", "com.example.vr", null, "VR", "Saldo usado", 100, autoStored = false, fallbackIdentity = "life")
+        repository.recordTriage("second", "com.example.vr", null, "VR", "Saldo usado agora", 110, autoStored = false, fallbackIdentity = "life")
+        val row = repository.triage.value.single()
+        assertEquals("Saldo usado agora", row.text)
+        repository.keepTriage(row.id)
+        repository.ingest("third", "com.example.vr", 120, "Compra aprovada de R$ 12,50", fallbackIdentity = "life")
         assertEquals(1, repository.transactions.value.size)
     }
 
