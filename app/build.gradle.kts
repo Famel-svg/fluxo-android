@@ -13,11 +13,15 @@ android {
         versionCode = 9
         versionName = "0.7.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "PRIVACY_URL", "\"https://famel-svg.github.io/fluxo-privacidade/\"")
     }
     flavorDimensions += "distribuicao"
     productFlavors {
-        create("github")
-        create("play") { applicationId = "io.github.famelsvg.fluxo" }
+        create("github") { buildConfigField("boolean", "STORE_BUILD", "false") }
+        create("play") {
+            applicationId = "io.github.famelsvg.fluxo"
+            buildConfigField("boolean", "STORE_BUILD", "true")
+        }
     }
     signingConfigs {
         // Upload key for Play: only wired when PLAY_UPLOAD_KEYSTORE points to an existing file.
@@ -44,7 +48,10 @@ android {
             }
         }
     }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21

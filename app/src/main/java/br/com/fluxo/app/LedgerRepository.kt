@@ -83,7 +83,10 @@ class LedgerRepository(context: Context) {
     val enabledBanks: StateFlow<Set<String>> = _enabledBanks
     // Provisional triage: off by default. While on, raw notification text is kept on the device (never logged,
     // never in the backup or CSV) until the owner decides, exports or clears it.
-    private val _triageEnabled = MutableStateFlow(preferences.getBoolean("triage", false))
+    // The store build never keeps raw notification text, whatever an old preference says.
+    private val _triageEnabled = MutableStateFlow(!BuildConfig.STORE_BUILD && preferences.getBoolean("triage", false))
+    private val _disclosureAccepted = MutableStateFlow(preferences.getBoolean("disclosure_accepted", false))
+    val disclosureAccepted: StateFlow<Boolean> = _disclosureAccepted
     val triageEnabled: StateFlow<Boolean> = _triageEnabled
     private val _triage = MutableStateFlow<List<TriageItem>>(emptyList())
     val triage: StateFlow<List<TriageItem>> = _triage
@@ -266,7 +269,14 @@ class LedgerRepository(context: Context) {
     }
 
     @Synchronized
+    fun setDisclosureAccepted(value: Boolean) {
+        preferences.edit().putBoolean("disclosure_accepted", value).apply()
+        _disclosureAccepted.value = value
+    }
+
+    @Synchronized
     fun setTriageEnabled(value: Boolean) {
+        if (BuildConfig.STORE_BUILD) return
         preferences.edit().putBoolean("triage", value).apply()
         _triageEnabled.value = value
     }
@@ -280,7 +290,7 @@ class LedgerRepository(context: Context) {
         postedAt: Long, autoStored: Boolean, fallbackIdentity: String? = null,
     ) = withContext(Dispatchers.IO) {
         mutex.withLock {
-            if (!_triageEnabled.value || !allowsNotification(packageName)) return@withLock
+            if (BuildConfig.STORE_BUILD || !_triageEnabled.value || !allowsNotification(packageName)) return@withLock
             val db = database.writableDatabase
             val clipped = text.take(NotificationTriage.MAX_TEXT)
             val values = ContentValues().apply {
@@ -376,6 +386,7 @@ class LedgerRepository(context: Context) {
         packageName = packageName,
         ownPackageName = appPackageName,
         captureEnabled = _captureEnabled.value,
+        restrictToKnownFinancial = BuildConfig.STORE_BUILD,
     )
 
     @Synchronized

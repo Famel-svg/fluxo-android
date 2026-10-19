@@ -1,6 +1,8 @@
 package br.com.fluxo.app
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.net.Uri
 import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -183,6 +185,11 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
     // Keep document pickers registered even when their cards scroll off screen.
     val backupActions = rememberBackupActions()
     val listenerState = snapshot.listenerState(access)
+    val consented by model.disclosureAccepted.collectAsStateWithLifecycle()
+    val openNotificationAccess = rememberNotificationAccessOpener(
+        consented, onConsent = model::acceptDisclosure, onOpened = { settingsError = !it },
+        open = { CaptureConnection.open(context, SettingsTarget.NOTIFICATION_ACCESS) },
+    )
     val allOk = access && capture && listenerState == ListenerState.CONNECTED
     val canReconnect = access && capture && listenerState != ListenerState.CONNECTED
 
@@ -210,9 +217,7 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
                     if (!allOk) {
                         Spacer(Modifier.height(6.dp))
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (!access) FluxoWrapButton("Abrir configurações do Android", onClick = {
-                                settingsError = !CaptureConnection.open(context, SettingsTarget.NOTIFICATION_ACCESS)
-                            })
+                            if (!access) FluxoWrapButton("Abrir configurações do Android", onClick = openNotificationAccess)
                             if (!capture) FluxoWrapButton("Ativar captura", onClick = { model.capture(true) })
                             if (canReconnect) {
                                 val busy = listenerState == ListenerState.CONNECTING
@@ -244,6 +249,7 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
                             when {
                                 !capture -> "Pausada por você"
                                 !access -> "Aguardando permissão Android"
+                                BuildConfig.STORE_BUILD -> "Ativa para bancos e apps de benefícios"
                                 else -> "Ativa para todos os apps"
                             },
                             color = FluxoColors.Mute, style = FluxoType.Caption.copy(fontSize = 11.5.sp, lineHeight = 14.sp)
@@ -309,7 +315,7 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
             item { SectionTitle("Dados") }
             item { BackupCard(backupActions) }
             item { ExportCsvCard(transactions) }
-            item { TriageCard() }
+            if (!BuildConfig.STORE_BUILD) item { TriageCard() }
             item {
                 FluxoDataRow("Apagar histórico", onClick = { clear = true }, destructive = true)
             }
@@ -319,8 +325,14 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
             item {
                 FluxoSettingsCard {
                     FluxoSectionHeading("Privacidade e cobertura")
-                    Text("O Android permite acesso às notificações. Com a captura ativa, o Fluxo lê notificações de todos os apps e só guarda eventos financeiros reconhecidos. Texto completo não é guardado nem enviado à internet, exceto pela triagem provisória, que guarda o texto só neste aparelho enquanto estiver ativa.",
+                    Text(
+                        if (BuildConfig.STORE_BUILD) "O Android permite acesso às notificações. Com a captura ativa, o Fluxo lê notificações de bancos e apps de benefícios e só guarda eventos financeiros reconhecidos. Texto completo não é guardado nem enviado à internet."
+                        else "O Android permite acesso às notificações. Com a captura ativa, o Fluxo lê notificações de todos os apps e só guarda eventos financeiros reconhecidos. Texto completo não é guardado nem enviado à internet, exceto pela triagem provisória, que guarda o texto só neste aparelho enquanto estiver ativa.",
                         color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
+                    FluxoDataRow("Política de privacidade", modifier = Modifier.testTag("settings.privacy"), onClick = {
+                        try { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.PRIVACY_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        catch (_: ActivityNotFoundException) { }
+                    })
                     Text("Dados no armazenamento privado do aplicativo. Sem login, servidor ou backup automático. A proteção depende também do bloqueio e da segurança do aparelho.\n\nBancos podem omitir valores, mudar mensagens ou não notificar. Revise registros ambíguos. Pagamentos de fatura não devem virar novas compras. Totais não substituem o extrato bancário.",
                         color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
                 }

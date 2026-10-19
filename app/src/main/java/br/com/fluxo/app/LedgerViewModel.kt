@@ -34,6 +34,7 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
     val enabledBanks = repository.enabledBanks
     val captureError = repository.captureError
     val triageEnabled = repository.triageEnabled
+    val disclosureAccepted = repository.disclosureAccepted
     val triage = repository.triage
     private val _saving = MutableStateFlow(false)
     val saving = _saving.asStateFlow()
@@ -82,6 +83,7 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
     fun resetEditError() { _editError.value = null }
     fun clear() = execute { repository.clear() }
     fun capture(enabled: Boolean) = execute { repository.setCaptureEnabled(enabled) }
+    fun acceptDisclosure() = execute { repository.setDisclosureAccepted(true) }
     fun allowOtherApps(enabled: Boolean) = execute { repository.setAllowOtherApps(enabled) }
     fun bank(packageName: String, enabled: Boolean) = execute { repository.setBankEnabled(packageName, enabled) }
 }
