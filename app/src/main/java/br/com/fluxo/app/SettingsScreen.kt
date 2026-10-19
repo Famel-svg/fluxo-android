@@ -171,6 +171,7 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
     val profileName by model.profileName.collectAsStateWithLifecycle()
     val salary by model.salaryMonthlyCents.collectAsStateWithLifecycle()
     val themeMode by model.themeMode.collectAsStateWithLifecycle()
+    val triage by model.triageEnabled.collectAsStateWithLifecycle()
     var clear by rememberSaveable { mutableStateOf(false) }
     var editingProfile by rememberSaveable { mutableStateOf(false) }
     var profileDraft by rememberSaveable { mutableStateOf("") }
@@ -296,7 +297,8 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
                 ) {
                     Icon(Icons.Default.Lock, contentDescription = null, tint = FluxoColors.Ink, modifier = Modifier.size(22.dp))
                     Text(
-                        "Tudo fica no aparelho. Texto das notificações não é guardado.", color = FluxoColors.Ink,
+                        if (triage) "Tudo fica no aparelho. Triagem ativa: o texto das notificações fica guardado até você apagar."
+                        else "Tudo fica no aparelho. Texto das notificações não é guardado.", color = FluxoColors.Ink,
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold)
                     )
                 }
@@ -304,6 +306,7 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
             item { SectionTitle("Dados") }
             item { BackupCard(backupActions) }
             item { ExportCsvCard(transactions) }
+            item { TriageCard() }
             item {
                 FluxoDataRow("Apagar histórico", onClick = { clear = true }, destructive = true)
             }
@@ -313,7 +316,7 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
             item {
                 FluxoSettingsCard {
                     FluxoSectionHeading("Privacidade e cobertura")
-                    Text("O Android permite acesso às notificações. Com a captura ativa, o Fluxo lê notificações de todos os apps e só guarda eventos financeiros reconhecidos. Texto completo não é guardado nem enviado à internet.",
+                    Text("O Android permite acesso às notificações. Com a captura ativa, o Fluxo lê notificações de todos os apps e só guarda eventos financeiros reconhecidos. Texto completo não é guardado nem enviado à internet, exceto pela triagem provisória, que guarda o texto só neste aparelho enquanto estiver ativa.",
                         color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
                     Text("Dados no armazenamento privado do aplicativo. Sem login, servidor ou backup automático. A proteção depende também do bloqueio e da segurança do aparelho.\n\nBancos podem omitir valores, mudar mensagens ou não notificar. Revise registros ambíguos. Pagamentos de fatura não devem virar novas compras. Totais não substituem o extrato bancário.",
                         color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)

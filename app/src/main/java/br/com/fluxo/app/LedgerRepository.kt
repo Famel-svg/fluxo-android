@@ -15,10 +15,13 @@ import br.com.fluxo.core.Category
 import br.com.fluxo.core.Direction
 import br.com.fluxo.core.IgnoreReason
 import br.com.fluxo.core.NotificationCapturePolicy
+import br.com.fluxo.core.NotificationTriage
 import br.com.fluxo.core.NotificationParser
 import br.com.fluxo.core.PaymentMethod
 import br.com.fluxo.core.ReviewStatus
 import br.com.fluxo.core.Transaction
+import br.com.fluxo.core.TriageDecision
+import br.com.fluxo.core.TriageItem
 import java.util.UUID
 import java.security.MessageDigest
 import java.time.DayOfWeek
@@ -78,6 +81,12 @@ class LedgerRepository(context: Context) {
     val allowOtherApps: StateFlow<Boolean> = _allowOtherApps
     private val _enabledBanks = MutableStateFlow(preferences.getStringSet("banks", emptySet())!!.toSet())
     val enabledBanks: StateFlow<Set<String>> = _enabledBanks
+    // Provisional triage: off by default. While on, raw notification text is kept on the device (never logged,
+    // never in the backup or CSV) until the owner decides, exports or clears it.
+    private val _triageEnabled = MutableStateFlow(preferences.getBoolean("triage", false))
+    val triageEnabled: StateFlow<Boolean> = _triageEnabled
+    private val _triage = MutableStateFlow<List<TriageItem>>(emptyList())
+    val triage: StateFlow<List<TriageItem>> = _triage
     private val _captureError = MutableStateFlow<String?>(null)
     val captureError: StateFlow<String?> = _captureError
 
@@ -254,6 +263,102 @@ class LedgerRepository(context: Context) {
     fun setAllowOtherApps(value: Boolean) {
         preferences.edit().putBoolean("allow_other_apps", value).apply()
         _allowOtherApps.value = value
+    }
+
+    @Synchronized
+    fun setTriageEnabled(value: Boolean) {
+        preferences.edit().putBoolean("triage", value).apply()
+        _triageEnabled.value = value
+    }
+
+    /**
+     * Keeps one observed notification for triage. A notification already decided stays as decided; a pending one
+     * takes the latest text. Only the newest [NotificationTriage.MAX_ITEMS] rows are kept.
+     */
+    suspend fun recordTriage(
+        sourceKey: String, packageName: String, appLabel: String?, title: String, text: String,
+        postedAt: Long, autoStored: Boolean,
+    ) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            if (!_triageEnabled.value || !allowsNotification(packageName)) return@withLock
+            val db = database.writableDatabase
+            val clipped = text.take(NotificationTriage.MAX_TEXT)
+            val values = ContentValues().apply {
+                put("package_name", packageName); put("app_label", appLabel?.take(120))
+                put("title", title.take(NotificationTriage.MAX_TEXT)); put("text", clipped)
+                put("posted_at", postedAt); put("verdict", NotificationTriage.verdict(clipped))
+            }
+            db.beginTransaction()
+            try {
+                val decision = db.query("notification_triage", arrayOf("decision"), "source_key = ?", arrayOf(sourceKey),
+                    null, null, null).use { if (it.moveToFirst()) TriageDecision.valueOf(it.getString(0)) else null }
+                when {
+                    decision == null -> db.insertOrThrow("notification_triage", null, values.apply {
+                        put("source_key", sourceKey)
+                        put("decision", (if (autoStored) TriageDecision.AUTO_STORED else TriageDecision.PENDING).name)
+                    })
+                    decision == TriageDecision.PENDING -> db.update("notification_triage", values.apply {
+                        if (autoStored) put("decision", TriageDecision.AUTO_STORED.name)
+                    }, "source_key = ?", arrayOf(sourceKey))
+                }
+                db.execSQL("DELETE FROM notification_triage WHERE id NOT IN " +
+                    "(SELECT id FROM notification_triage ORDER BY id DESC LIMIT ${NotificationTriage.MAX_ITEMS})")
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+            readTriage()
+        }
+    }
+
+    /** Owner authorized this notification: it becomes a transaction that still needs review. */
+    suspend fun keepTriage(id: Long) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val db = database.writableDatabase
+            db.beginTransaction()
+            try {
+                db.query("notification_triage", arrayOf("source_key", "package_name", "text", "posted_at", "decision"),
+                    "id = ?", arrayOf(id.toString()), null, null, null).use { cursor ->
+                    if (!cursor.moveToFirst()) return@use
+                    if (TriageDecision.valueOf(cursor.getString(4)) == TriageDecision.AUTO_STORED) return@use
+                    val parsed = NotificationTriage.approved(cursor.getString(2))
+                    val transaction = Transaction(
+                        id = UUID.randomUUID().toString(), sourceKey = cursor.getString(0),
+                        bankPackage = cursor.getString(1), amountCents = parsed.amountCents,
+                        direction = parsed.direction, method = parsed.method, status = parsed.status,
+                        occurredAt = cursor.getLong(3), description = "Movimentação autorizada", reason = parsed.reason,
+                    )
+                    // The same source key keeps later updates of this notification from creating a duplicate.
+                    db.insertWithOnConflict("transactions", null, values(transaction).apply {
+                        put("user_modified", 0)
+                        put("last_observed_at", cursor.getLong(3))
+                    }, SQLiteDatabase.CONFLICT_IGNORE)
+                    db.update("notification_triage", ContentValues().apply {
+                        put("decision", TriageDecision.KEPT.name); put("decided_at", System.currentTimeMillis())
+                    }, "id = ?", arrayOf(id.toString()))
+                }
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+            readAll()
+        }
+    }
+
+    suspend fun discardTriage(id: Long) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            database.writableDatabase.update("notification_triage", ContentValues().apply {
+                put("decision", TriageDecision.DISCARDED.name); put("decided_at", System.currentTimeMillis())
+            }, "id = ? AND decision = ?", arrayOf(id.toString(), TriageDecision.PENDING.name))
+            readTriage()
+        }
+    }
+
+    suspend fun clearTriage() = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            database.writableDatabase.delete("notification_triage", null, null)
+            readTriage()
+        }
     }
 
     fun allowsNotification(packageName: String): Boolean = NotificationCapturePolicy.allows(
@@ -439,6 +544,7 @@ class LedgerRepository(context: Context) {
                 db.delete("budgets", null, null)
                 db.delete("notification_aliases", null, null)
                 db.delete("accounts", null, null)
+                db.delete("notification_triage", null, null)
                 db.setTransactionSuccessful()
             } finally {
                 db.endTransaction()
@@ -524,6 +630,23 @@ class LedgerRepository(context: Context) {
                 cursor.getLong(cursor.getColumnIndexOrThrow("opening_at")), cursor.getInt(cursor.getColumnIndexOrThrow("archived")) == 1, AccountType.valueOf(cursor.getString(cursor.getColumnIndexOrThrow("type"))))
         }
         _accounts.value = accountRows
+        readTriage()
+    }
+
+    private fun readTriage() {
+        val rows = mutableListOf<TriageItem>()
+        database.readableDatabase.query("notification_triage", null, null, null, null, null, "posted_at DESC, id DESC").use { cursor ->
+            fun index(name: String) = cursor.getColumnIndexOrThrow(name)
+            while (cursor.moveToNext()) rows += TriageItem(
+                id = cursor.getLong(index("id")), packageName = cursor.getString(index("package_name")),
+                appLabel = cursor.getString(index("app_label")), title = cursor.getString(index("title")),
+                text = cursor.getString(index("text")), postedAt = cursor.getLong(index("posted_at")),
+                verdict = cursor.getString(index("verdict")),
+                decision = TriageDecision.valueOf(cursor.getString(index("decision"))),
+                decidedAt = if (cursor.isNull(index("decided_at"))) null else cursor.getLong(index("decided_at")),
+            )
+        }
+        _triage.value = rows
     }
 
     suspend fun saveAccount(account: Account) = withContext(Dispatchers.IO) { mutex.withLock {
@@ -590,7 +713,7 @@ class LedgerRepository(context: Context) {
     }
 }
 
-private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "fluxo.db", null, 5) {
+private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "fluxo.db", null, 6) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
             CREATE TABLE transactions (
@@ -617,6 +740,7 @@ private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "flux
         createBudgets(db)
         createNotificationAliases(db)
         createAccounts(db)
+        createNotificationTriage(db)
     }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) {
@@ -648,6 +772,7 @@ private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "flux
                 }
             }
         }
+        if (oldVersion < 6) createNotificationTriage(db)
     }
 
     private fun hasColumn(db: SQLiteDatabase, table: String, column: String): Boolean =
@@ -662,6 +787,23 @@ private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "flux
 
     private fun createNotificationAliases(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE notification_aliases (identity_key TEXT PRIMARY KEY NOT NULL, source_key TEXT NOT NULL)")
+    }
+
+    private fun createNotificationTriage(db: SQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE notification_triage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_key TEXT UNIQUE NOT NULL,
+                package_name TEXT NOT NULL,
+                app_label TEXT,
+                title TEXT NOT NULL,
+                text TEXT NOT NULL,
+                posted_at INTEGER NOT NULL,
+                verdict TEXT NOT NULL,
+                decision TEXT NOT NULL,
+                decided_at INTEGER
+            )
+        """.trimIndent())
     }
 
     private fun createBudgets(db: SQLiteDatabase) {
