@@ -7,7 +7,7 @@ Fase 4, item 1 do [M20](M20-play-pro.md).
 
 ## O que conta
 Contas **ativas** (não arquivadas). Não existe conta embutida/padrão: todas são criadas pelo usuário (o banco nasce sem contas),
-então nada é excluído da contagem além das arquivadas. Arquivar libera vaga; desarquivar/editar nunca é bloqueado.
+então nada é excluído da contagem além das arquivadas. Arquivar libera vaga. Desarquivar conta como criar: no grátis, só abaixo do limite. Editar nunca é bloqueado.
 
 ## Comportamento
 - "Adicionar conta" fica sempre visível. No limite sem Pro, abre explicação curta com botão "Ver o Fluxo Pro" (paywall existente).

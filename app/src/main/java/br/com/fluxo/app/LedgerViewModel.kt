@@ -62,10 +62,12 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
     fun save(transaction: Transaction, onSuccess: () -> Unit) = edit(onSuccess) { repository.save(transaction) }
-    /** [isPro] vem do chamador (Entitlements); só conta nova passa pelo limite do plano grátis. */
+    /** [isPro] vem do chamador (Entitlements); conta nova ou desarquivada passa pelo limite do plano grátis. */
     fun saveAccount(account: Account, isPro: Boolean, onSuccess: () -> Unit) {
         val current = accounts.value
-        if (current.none { it.id == account.id } && !FeaturePolicy.canCreateAccount(current.count { !it.archived }, isPro)) {
+        val previous = current.firstOrNull { it.id == account.id }
+        val activates = !account.archived && (previous == null || previous.archived)
+        if (activates && !FeaturePolicy.canCreateAccount(current.count { !it.archived }, isPro)) {
             _editError.value = "O plano grátis permite até ${FeaturePolicy.MAX_CONTAS_FREE} contas ativas. Veja o Fluxo Pro em Ajustes."
             return
         }
