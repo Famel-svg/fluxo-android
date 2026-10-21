@@ -100,6 +100,28 @@ class LedgerRepositoryTest {
         assertEquals(1, repository.transactions.value.size)
     }
 
+    @Test fun walletReceiptFoldsIntoTheIssuerNotificationInEitherOrder() = runBlocking {
+        repository.setCaptureEnabled(true)
+        val wallet = br.com.fluxo.core.WalletReceipt.GOOGLE_WALLET
+        val receipt = "MERCADO EXEMPLO\nR$ 7,98 com Cartão C6 Mastercard ••1234"
+        val issuer = "Compra no crédito aprovada\nSua compra no cartão final 1234 no valor de R$ 7,98 em MERCADO EXEMPLO foi aprovada."
+        // Wallet first: stored for review, then retired when the issuer confirms the same purchase.
+        repository.ingest("w1", wallet, 1_000_000, receipt)
+        assertEquals(ReviewStatus.REVIEW, repository.transactions.value.single().status)
+        repository.ingest("c1", "com.c6bank.app", 1_010_000, issuer)
+        assertEquals("com.c6bank.app", repository.transactions.value.single().bankPackage)
+        repository.ingest("w1", wallet, 1_000_000, receipt)
+        assertEquals(1, repository.transactions.value.size)
+        // Issuer first: the later wallet receipt adds nothing.
+        repository.ingest("c2", "com.c6bank.app", 5_000_000, issuer)
+        assertEquals(IngestOutcome.Ignored(br.com.fluxo.core.IgnoreReason.WALLET_DUPLICATE),
+            repository.ingestClassified("w2", wallet, 5_004_000, receipt))
+        assertEquals(2, repository.transactions.value.size)
+        // Outside the window it is a separate purchase that still needs review.
+        repository.ingest("w3", wallet, 5_000_000 + br.com.fluxo.core.WalletReceipt.MATCH_WINDOW_MS + 1, receipt)
+        assertEquals(ReviewStatus.REVIEW, repository.transactions.value.single { it.bankPackage == wallet }.status)
+    }
+
     @Test fun ownTransfersConserveBalancesAndRestoreWithAccounts() = runBlocking {
         val a = br.com.fluxo.core.Account("a", "Conta A", "manual", 100000, 0)
         val b = br.com.fluxo.core.Account("b", "Conta B", "manual", 20000, 0, type = br.com.fluxo.core.AccountType.SAVINGS)

@@ -115,6 +115,7 @@ enum class IgnoreReason(val label: String) {
     PROMOTION("promoção"),
     NO_FINANCIAL_WORD("sem palavra financeira"),
     UNCLEAR_DIRECTION("sem entrada ou saída clara"),
+    WALLET_DUPLICATE("repetida da notificação do banco"),
 }
 
 /** Session counters of one source package. */

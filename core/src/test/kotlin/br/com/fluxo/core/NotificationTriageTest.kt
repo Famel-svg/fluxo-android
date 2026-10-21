@@ -11,7 +11,7 @@ class NotificationTriageTest {
     private fun export(items: List<TriageItem>) = StringWriter().also { NotificationTriage.writeJson(items, it, 0) }.toString()
 
     @Test fun `approval always needs review and keeps parsed amount`() {
-        val parsed = NotificationTriage.approved("Pix recebido de R$ 50,00")
+        val parsed = NotificationTriage.approved("com.nu.production", "Pix recebido de R$ 50,00")
         assertEquals(5000L, parsed.amountCents)
         assertEquals(Direction.INCOME, parsed.direction)
         assertEquals(ReviewStatus.REVIEW, parsed.status)
@@ -19,7 +19,7 @@ class NotificationTriageTest {
     }
 
     @Test fun `approval of unrecognized text has no invented amount`() {
-        val parsed = NotificationTriage.approved("Você usou seu saldo")
+        val parsed = NotificationTriage.approved("com.example.vr", "Você usou seu saldo")
         assertNull(parsed.amountCents)
         assertEquals(Direction.UNKNOWN, parsed.direction)
         assertEquals(PaymentMethod.UNKNOWN, parsed.method)
@@ -27,8 +27,8 @@ class NotificationTriageTest {
     }
 
     @Test fun `verdict names parser outcome`() {
-        assertEquals("ACCEPTED", NotificationTriage.verdict("Pix recebido de R$ 50,00"))
-        assertEquals(IgnoreReason.NO_FINANCIAL_WORD.name, NotificationTriage.verdict("Nova mensagem de Ana"))
+        assertEquals("ACCEPTED", NotificationTriage.verdict("com.nu.production", "Pix recebido de R$ 50,00"))
+        assertEquals(IgnoreReason.NO_FINANCIAL_WORD.name, NotificationTriage.verdict("com.whatsapp", "Nova mensagem de Ana"))
     }
 
     @Test fun `json groups apps and escapes content`() {

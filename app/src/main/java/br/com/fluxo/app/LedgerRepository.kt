@@ -22,6 +22,7 @@ import br.com.fluxo.core.ReviewStatus
 import br.com.fluxo.core.Transaction
 import br.com.fluxo.core.TriageDecision
 import br.com.fluxo.core.TriageItem
+import br.com.fluxo.core.WalletReceipt
 import java.util.UUID
 import java.security.MessageDigest
 import java.time.DayOfWeek
@@ -296,7 +297,7 @@ class LedgerRepository(context: Context) {
             val values = ContentValues().apply {
                 put("package_name", packageName); put("app_label", appLabel?.take(120))
                 put("title", title.take(NotificationTriage.MAX_TEXT)); put("text", clipped)
-                put("posted_at", postedAt); put("verdict", NotificationTriage.verdict(clipped))
+                put("posted_at", postedAt); put("verdict", NotificationTriage.verdict(packageName, clipped))
             }
             db.beginTransaction()
             try {
@@ -342,7 +343,7 @@ class LedgerRepository(context: Context) {
                     "id = ?", arrayOf(id.toString()), null, null, null).use { cursor ->
                     if (!cursor.moveToFirst()) return@use
                     if (TriageDecision.valueOf(cursor.getString(4)) != TriageDecision.PENDING) return@use
-                    val parsed = NotificationTriage.approved(cursor.getString(2))
+                    val parsed = NotificationTriage.approved(cursor.getString(1), cursor.getString(2))
                     val transaction = Transaction(
                         id = UUID.randomUUID().toString(), sourceKey = cursor.getString(0),
                         bankPackage = cursor.getString(1), amountCents = parsed.amountCents,
@@ -437,7 +438,7 @@ class LedgerRepository(context: Context) {
         mutex.withLock {
             if (!allowsNotification(bankPackage)) return@withLock IngestOutcome.NotAllowed
             // Only financial events with directional and monetary evidence may reach storage.
-            val parsed = when (val screening = NotificationParser.screen(text)) {
+            val parsed = when (val screening = WalletReceipt.screen(bankPackage, text)) {
                 is NotificationParser.Screening.Ignored -> return@withLock IngestOutcome.Ignored(screening.reason)
                 is NotificationParser.Screening.Accepted -> screening.parsed
             }
@@ -460,6 +461,7 @@ class LedgerRepository(context: Context) {
                         if (cursor.moveToFirst()) cursor.getString(0) else null
                     }
                 } ?: sourceKey
+                val wallet = WalletReceipt.isWallet(bankPackage)
                 var exists = false
                 db.query("transactions", arrayOf("id", "deleted", "user_modified", "observation_hash", "last_observed_at"),
                     "source_key = ?", arrayOf(canonicalKey), null, null, null).use { cursor ->
@@ -485,6 +487,11 @@ class LedgerRepository(context: Context) {
                         }
                     }
                 }
+                // A wallet receipt arriving after the issuer's notification of the same purchase adds nothing.
+                if (!exists && wallet && hasIssuerPurchase(db, parsed.amountCents, occurredAt)) {
+                    db.setTransactionSuccessful()
+                    return@withLock IngestOutcome.Ignored(IgnoreReason.WALLET_DUPLICATE)
+                }
                 if (!exists) {
                     val transaction = Transaction(
                         id = UUID.randomUUID().toString(), sourceKey = canonicalKey,
@@ -497,6 +504,8 @@ class LedgerRepository(context: Context) {
                         put("observation_hash", signature)
                         put("last_observed_at", observedAt)
                     })
+                    // The issuer's notification supersedes an earlier wallet receipt of the same purchase.
+                    if (!wallet) retireWalletReceipts(db, parsed.amountCents, parsed.direction, occurredAt)
                 }
                 if (fallbackIdentity != null) {
                     db.insertWithOnConflict("notification_aliases", null, ContentValues().apply {
@@ -540,6 +549,27 @@ class LedgerRepository(context: Context) {
             if (changed == 0) db.insertOrThrow("transactions", null, values(transaction).apply { put("user_modified", 1) })
             readAll()
         }
+    }
+
+    private fun walletPackagesSql() = WalletReceipt.packages.joinToString(",") { "'$it'" }
+
+    /** Whether a live issuer expense with this amount was seen within the wallet match window. */
+    private fun hasIssuerPurchase(db: SQLiteDatabase, cents: Long?, at: Long): Boolean = cents != null &&
+        db.query("transactions", arrayOf("id"),
+            "deleted = 0 AND direction = ? AND amount_cents = ? AND occurred_at BETWEEN ? AND ? " +
+                "AND bank_package NOT IN (${walletPackagesSql()})",
+            arrayOf(Direction.EXPENSE.name, cents.toString(), (at - WalletReceipt.MATCH_WINDOW_MS).toString(),
+                (at + WalletReceipt.MATCH_WINDOW_MS).toString()), null, null, null, "1").use { it.moveToFirst() }
+
+    /** Tombstones untouched wallet receipts of the same purchase; the key stays so reposts are not recreated. */
+    private fun retireWalletReceipts(db: SQLiteDatabase, cents: Long?, direction: Direction, at: Long) {
+        if (cents == null || direction != Direction.EXPENSE) return
+        db.update("transactions", ContentValues().apply {
+            put("deleted", 1); putNull("amount_cents"); put("description", ""); put("reason", "")
+            put("category", Category.UNCATEGORIZED.name)
+        }, "deleted = 0 AND user_modified = 0 AND transfer_id IS NULL AND amount_cents = ? AND occurred_at BETWEEN ? AND ? " +
+            "AND bank_package IN (${walletPackagesSql()})",
+            arrayOf(cents.toString(), (at - WalletReceipt.MATCH_WINDOW_MS).toString(), (at + WalletReceipt.MATCH_WINDOW_MS).toString()))
     }
 
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {

@@ -31,7 +31,7 @@ object NotificationTriage {
     const val APPROVED_REASON = "Autorizada manualmente na triagem; confira valor, direção e meio."
 
     /** Verdict label for the parser outcome, never content. */
-    fun verdict(text: String): String = when (val screening = NotificationParser.screen(text)) {
+    fun verdict(packageName: String, text: String): String = when (val screening = WalletReceipt.screen(packageName, text)) {
         is NotificationParser.Screening.Accepted -> "ACCEPTED"
         is NotificationParser.Screening.Ignored -> screening.reason.name
     }
@@ -40,8 +40,9 @@ object NotificationTriage {
      * Fields for a notification the owner authorized by hand. Whatever the parser recognized is kept, but the
      * result always needs review: a manual approval is not evidence of amount or direction.
      */
-    fun approved(text: String): ParsedNotification {
-        val parsed = NotificationParser.parse(text)
+    fun approved(packageName: String, text: String): ParsedNotification {
+        val parsed = (WalletReceipt.screen(packageName, text) as? NotificationParser.Screening.Accepted)?.parsed
+            ?: NotificationParser.parse(text)
         val reason = listOfNotNull(APPROVED_REASON, parsed?.reason?.takeIf { it.isNotBlank() }).joinToString(" ")
         return ParsedNotification(
             amountCents = parsed?.amountCents,
