@@ -25,6 +25,8 @@ class WalletReceiptTest {
         assertNull(WalletReceipt.parse("LOJA\nR$ 7,98 com Cartão ••1234 e R$ 2,00 de taxa"))
         assertNull(WalletReceipt.parse("LOJA\nR$ 7,9 com Cartão ••1234"))
         assertNull(WalletReceipt.parse(""))
+        assertNull(WalletReceipt.parse("Estorno\nR$ 7,98 com Cartão C6 Mastercard ••1234"))
+        assertNull(WalletReceipt.parse("Pagamento recusado\nR$ 7,98 com Cartão C6 Mastercard ••1234"))
     }
 
     @Test fun `only wallet packages use the receipt reader`() {

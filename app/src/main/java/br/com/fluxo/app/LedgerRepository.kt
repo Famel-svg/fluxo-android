@@ -462,6 +462,8 @@ class LedgerRepository(context: Context) {
                     }
                 } ?: sourceKey
                 val wallet = WalletReceipt.isWallet(bankPackage)
+                // Only a parsed tap-to-pay receipt can duplicate an issuer purchase; refunds and other texts cannot.
+                val receipt = wallet && parsed.reason == WalletReceipt.REASON && parsed.direction == Direction.EXPENSE
                 var exists = false
                 db.query("transactions", arrayOf("id", "deleted", "user_modified", "observation_hash", "last_observed_at"),
                     "source_key = ?", arrayOf(canonicalKey), null, null, null).use { cursor ->
@@ -488,7 +490,7 @@ class LedgerRepository(context: Context) {
                     }
                 }
                 // A wallet receipt arriving after the issuer's notification of the same purchase adds nothing.
-                if (!exists && wallet && hasIssuerPurchase(db, parsed.amountCents, occurredAt)) {
+                if (!exists && receipt && hasIssuerPurchase(db, parsed.amountCents, occurredAt)) {
                     db.setTransactionSuccessful()
                     return@withLock IngestOutcome.Ignored(IgnoreReason.WALLET_DUPLICATE)
                 }
@@ -505,7 +507,7 @@ class LedgerRepository(context: Context) {
                         put("last_observed_at", observedAt)
                     })
                     // The issuer's notification supersedes an earlier wallet receipt of the same purchase.
-                    if (!wallet) retireWalletReceipts(db, parsed.amountCents, parsed.direction, occurredAt)
+                    if (!wallet) retireWalletReceipts(db, parsed.amountCents, parsed.direction, parsed.method, occurredAt)
                 }
                 if (fallbackIdentity != null) {
                     db.insertWithOnConflict("notification_aliases", null, ContentValues().apply {
@@ -556,20 +558,25 @@ class LedgerRepository(context: Context) {
     /** Whether a live issuer expense with this amount was seen within the wallet match window. */
     private fun hasIssuerPurchase(db: SQLiteDatabase, cents: Long?, at: Long): Boolean = cents != null &&
         db.query("transactions", arrayOf("id"),
-            "deleted = 0 AND direction = ? AND amount_cents = ? AND occurred_at BETWEEN ? AND ? " +
-                "AND bank_package NOT IN (${walletPackagesSql()})",
-            arrayOf(Direction.EXPENSE.name, cents.toString(), (at - WalletReceipt.MATCH_WINDOW_MS).toString(),
+            "deleted = 0 AND transfer_id IS NULL AND direction = ? AND method != ? AND amount_cents = ? " +
+                "AND occurred_at BETWEEN ? AND ? AND bank_package NOT IN (${walletPackagesSql()})",
+            arrayOf(Direction.EXPENSE.name, PaymentMethod.PIX.name, cents.toString(), (at - WalletReceipt.MATCH_WINDOW_MS).toString(),
                 (at + WalletReceipt.MATCH_WINDOW_MS).toString()), null, null, null, "1").use { it.moveToFirst() }
 
-    /** Tombstones untouched wallet receipts of the same purchase; the key stays so reposts are not recreated. */
-    private fun retireWalletReceipts(db: SQLiteDatabase, cents: Long?, direction: Direction, at: Long) {
-        if (cents == null || direction != Direction.EXPENSE) return
+    /**
+     * Tombstones the untouched wallet receipt closest in time to this purchase; the key stays so reposts are not
+     * recreated. One issuer notification retires one receipt, so two equal purchases are not merged.
+     */
+    private fun retireWalletReceipts(db: SQLiteDatabase, cents: Long?, direction: Direction, method: PaymentMethod, at: Long) {
+        if (cents == null || direction != Direction.EXPENSE || method == PaymentMethod.PIX) return
         db.update("transactions", ContentValues().apply {
             put("deleted", 1); putNull("amount_cents"); put("description", ""); put("reason", "")
             put("category", Category.UNCATEGORIZED.name)
-        }, "deleted = 0 AND user_modified = 0 AND transfer_id IS NULL AND amount_cents = ? AND occurred_at BETWEEN ? AND ? " +
-            "AND bank_package IN (${walletPackagesSql()})",
-            arrayOf(cents.toString(), (at - WalletReceipt.MATCH_WINDOW_MS).toString(), (at + WalletReceipt.MATCH_WINDOW_MS).toString()))
+        }, "id IN (SELECT id FROM transactions WHERE deleted = 0 AND user_modified = 0 AND transfer_id IS NULL " +
+            "AND direction = ? AND reason = ? AND amount_cents = ? AND occurred_at BETWEEN ? AND ? " +
+            "AND bank_package IN (${walletPackagesSql()}) ORDER BY abs(occurred_at - ?) LIMIT 1)",
+            arrayOf(Direction.EXPENSE.name, WalletReceipt.REASON, cents.toString(),
+                (at - WalletReceipt.MATCH_WINDOW_MS).toString(), (at + WalletReceipt.MATCH_WINDOW_MS).toString(), at.toString()))
     }
 
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {

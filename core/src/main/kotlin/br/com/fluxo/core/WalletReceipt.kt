@@ -18,6 +18,9 @@ object WalletReceipt {
     // The whole receipt line: one amount, "com", a card name and its masked final digits.
     private val receipt = Regex("""(?<![a-z0-9])r\$ ?((?:[0-9]+|[1-9][0-9]{0,2}(?:\.[0-9]{3})+),[0-9]{2}) com [^\n]{1,80}?(?:\u2022+|\*+|final) ?[0-9]{4}\b""")
 
+    // Refunds and failed payments share the receipt layout but are not a purchase.
+    private val notAPurchase = Regex("\\b(estorn|reembols|devolu|recusad|negad|cancelad|falh|nao aprovad)")
+
     fun isWallet(packageName: String) = packageName in packages
 
     /** Parsed receipt, or null when the wallet text is not a payment receipt. */
@@ -27,7 +30,7 @@ object WalletReceipt {
             .replace(Regex("\\p{M}+"), "").lowercase(Locale.ROOT).replace('\u00a0', ' ')
             .replace(Regex("[ \\t]+"), " ").trim()
         // A second amount means it is not a single receipt line.
-        if (Regex("r\\$").findAll(normalized).count() != 1) return null
+        if (Regex("r\\$").findAll(normalized).count() != 1 || notAPurchase.containsMatchIn(normalized)) return null
         val match = receipt.find(normalized) ?: return null
         val cents = match.groupValues[1].replace(".", "").replace(",", "").toLongOrNull()?.takeIf { it > 0 } ?: return null
         val method = when {

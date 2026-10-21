@@ -53,7 +53,10 @@ class BankNotificationListener : NotificationListenerService() {
                                 try {
                                     repository.recordTriage(candidate.sourceKey, pkg, appLabel(event.notification),
                                         candidate.title, candidate.text, candidate.timestamp,
-                                        outcome is IngestOutcome.Stored, candidate.fallbackIdentity)
+                                        // A wallet receipt folded into the issuer's notification was handled; keeping it would count twice.
+                                        outcome is IngestOutcome.Stored ||
+                                            outcome == IngestOutcome.Ignored(IgnoreReason.WALLET_DUPLICATE),
+                                        candidate.fallbackIdentity)
                                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
                                     throw cancelled
                                 } catch (_: Exception) {
