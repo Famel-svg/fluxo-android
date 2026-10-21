@@ -12,7 +12,8 @@ read -r W H < <(adb shell wm size | sed -n 's/.*Physical size: \([0-9]*\)x\([0-9
 tap_text() {
   adb shell uiautomator dump /sdcard/ui.xml > /dev/null
   local b
-  b=$(adb shell cat /sdcard/ui.xml | tr '>' '\n' | grep -m1 "text=\"$1\"" | sed -n 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p')
+  # Every stage reads its whole input: an early exit (grep -m1) would SIGPIPE the pipeline under pipefail.
+  b=$(adb shell cat /sdcard/ui.xml | tr '>' '\n' | grep "text=\"$1\"" | sed -n 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p' | sed -n 1p)
   [ -n "$b" ] || { echo "tab '$1' not found"; return 1; }
   read -r x1 y1 x2 y2 <<< "$b"
   adb shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))
