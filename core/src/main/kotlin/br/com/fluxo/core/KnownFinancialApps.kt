@@ -19,7 +19,7 @@ object KnownFinancialApps {
         "br.com.uol.ps.myaccount", // PagBank
         "com.picpay", // PicPay
         "com.mercadopago.wallet", // Mercado Pago
-    )
+    ) + WalletReceipt.packages // Carteira do Google: recibos de aproximação
 
     fun contains(packageName: String): Boolean = packageName in packages
 }

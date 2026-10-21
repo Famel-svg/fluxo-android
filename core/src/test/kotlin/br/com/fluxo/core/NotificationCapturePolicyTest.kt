@@ -36,7 +36,7 @@ class NotificationCapturePolicyTest {
 
     @Test
     fun knownListCoversTheSupportedBanks() {
-        listOf("com.c6bank.app", "com.nu.production", "com.itau").forEach { assertTrue(KnownFinancialApps.contains(it)) }
+        listOf("com.c6bank.app", "com.nu.production", "com.itau", WalletReceipt.GOOGLE_WALLET).forEach { assertTrue(KnownFinancialApps.contains(it)) }
     }
 
     @Test
