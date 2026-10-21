@@ -14,6 +14,7 @@ import br.com.fluxo.core.AccountType
 import br.com.fluxo.core.Category
 import br.com.fluxo.core.Direction
 import br.com.fluxo.core.IgnoreReason
+import br.com.fluxo.core.MerchantCategorizer
 import br.com.fluxo.core.NotificationCapturePolicy
 import br.com.fluxo.core.NotificationTriage
 import br.com.fluxo.core.NotificationParser
@@ -40,6 +41,9 @@ val supportedBanks = listOf(
     Bank("com.nu.production", "Nubank"),
     Bank("com.itau", "Itaú"),
 )
+
+/** Description of a captured movement whose notification names no merchant. */
+private const val CAPTURED_DESCRIPTION = "Movimentação detectada"
 
 /** Result of one ingestion; carries only a fixed category, never notification content. */
 sealed interface IngestOutcome {
@@ -495,11 +499,15 @@ class LedgerRepository(context: Context) {
                     return@withLock IngestOutcome.Ignored(IgnoreReason.WALLET_DUPLICATE)
                 }
                 if (!exists) {
+                    // The merchant names the purchase; a category chosen for it before is reused.
+                    val merchant = MerchantCategorizer.merchant(bankPackage, text)
+                    val category = MerchantCategorizer.suggest(merchant) { key -> learnedCategory(db, key) }
                     val transaction = Transaction(
                         id = UUID.randomUUID().toString(), sourceKey = canonicalKey,
                         bankPackage = bankPackage, amountCents = parsed.amountCents,
                         direction = parsed.direction, method = parsed.method, status = initialStatus,
-                        occurredAt = occurredAt, description = "Movimentação detectada", reason = parsed.reason,
+                        occurredAt = occurredAt, description = merchant ?: CAPTURED_DESCRIPTION, reason = parsed.reason,
+                        category = category,
                     )
                     db.insertOrThrow("transactions", null, values(transaction).apply {
                         put("user_modified", 0)
@@ -549,9 +557,22 @@ class LedgerRepository(context: Context) {
             }
             val changed = db.update("transactions", values(transaction).apply { put("user_modified", 1) }, "id = ? AND deleted = 0", arrayOf(transaction.id))
             if (changed == 0) db.insertOrThrow("transactions", null, values(transaction).apply { put("user_modified", 1) })
+            // A category the owner sets on a captured purchase is remembered for that merchant.
+            if (transaction.sourceKey != null && transaction.category != Category.UNCATEGORIZED &&
+                transaction.description.isNotBlank() && transaction.description != CAPTURED_DESCRIPTION) {
+                db.insertWithOnConflict("merchant_categories", null, ContentValues().apply {
+                    put("merchant_key", MerchantCategorizer.key(transaction.description))
+                    put("category", transaction.category.name)
+                }, SQLiteDatabase.CONFLICT_REPLACE)
+            }
             readAll()
         }
     }
+
+    private fun learnedCategory(db: SQLiteDatabase, key: String): Category? =
+        db.query("merchant_categories", arrayOf("category"), "merchant_key = ?", arrayOf(key), null, null, null).use {
+            if (it.moveToFirst()) Category.entries.firstOrNull { c -> c.name == it.getString(0) } else null
+        }
 
     private fun walletPackagesSql() = WalletReceipt.packages.joinToString(",") { "'$it'" }
 
@@ -604,6 +625,7 @@ class LedgerRepository(context: Context) {
                 db.delete("notification_aliases", null, null)
                 db.delete("accounts", null, null)
                 db.delete("notification_triage", null, null)
+                db.delete("merchant_categories", null, null)
                 db.setTransactionSuccessful()
             } finally {
                 db.endTransaction()
@@ -772,7 +794,7 @@ class LedgerRepository(context: Context) {
     }
 }
 
-private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "fluxo.db", null, 6) {
+private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "fluxo.db", null, 7) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
             CREATE TABLE transactions (
@@ -800,6 +822,7 @@ private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "flux
         createNotificationAliases(db)
         createAccounts(db)
         createNotificationTriage(db)
+        createMerchantCategories(db)
     }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) {
@@ -832,6 +855,7 @@ private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "flux
             }
         }
         if (oldVersion < 6) createNotificationTriage(db)
+        if (oldVersion < 7) createMerchantCategories(db)
     }
 
     private fun hasColumn(db: SQLiteDatabase, table: String, column: String): Boolean =
@@ -846,6 +870,11 @@ private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "flux
 
     private fun createNotificationAliases(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE notification_aliases (identity_key TEXT PRIMARY KEY NOT NULL, source_key TEXT NOT NULL)")
+    }
+
+    /** Category the owner chose for a merchant; keyed by MerchantCategorizer.key, never raw notification text. */
+    private fun createMerchantCategories(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE merchant_categories (merchant_key TEXT PRIMARY KEY NOT NULL, category TEXT NOT NULL)")
     }
 
     private fun createNotificationTriage(db: SQLiteDatabase) {

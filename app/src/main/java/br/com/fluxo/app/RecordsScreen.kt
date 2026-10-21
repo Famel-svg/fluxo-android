@@ -340,7 +340,9 @@ private fun ReviewTicket(
                     FluxoPillButton("VR", { save(confirmed(PaymentMethod.MEAL_VOUCHER)) }, Modifier.weight(1f), FluxoButtonStyle.Secondary, enabled = !saving)
                 }
             } else {
-                FluxoPillButton("Confirmar", { save(confirmed()) }, Modifier.weight(1f), FluxoButtonStyle.Primary, enabled = known && !saving)
+                // Without amount or direction there is nothing to confirm yet: the primary action opens the editor instead.
+                FluxoPillButton(if (known) "Confirmar" else "Completar", { if (known) save(confirmed()) else edit(row) },
+                    Modifier.weight(1f), FluxoButtonStyle.Primary, enabled = !saving)
                 FluxoPillButton("Editar", { edit(row) }, Modifier.weight(1f), FluxoButtonStyle.Secondary)
             }
         }

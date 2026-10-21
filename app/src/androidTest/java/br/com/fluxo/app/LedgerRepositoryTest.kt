@@ -341,9 +341,28 @@ class LedgerRepositoryTest {
         assertEquals(ReviewStatus.CONFIRMED, purchase.status)
         assertEquals(Direction.EXPENSE, purchase.direction)
         assertEquals(PaymentMethod.DEBIT_CARD, purchase.method)
+        assertEquals("FARMACIA Z", purchase.description)
+        assertEquals(br.com.fluxo.core.Category.HEALTH, purchase.category)
         val invoice = rows.single { it.amountCents == 90000L }
         assertEquals(ReviewStatus.REVIEW, invoice.status)
         assertTrue(invoice.reason.isNotBlank())
+    }
+
+    @Test fun categoryChosenForAMerchantIsReusedOnTheNextCapture() = runBlocking {
+        enableCapture()
+        repository.ingest("first", bank, 1L, "Compra no débito\nCompra no débito de R$ 20,00 em LOJA XYZ aprovada.")
+        val first = repository.transactions.value.single()
+        assertEquals("LOJA XYZ", first.description)
+        assertEquals(br.com.fluxo.core.Category.UNCATEGORIZED, first.category)
+        repository.save(first.copy(category = br.com.fluxo.core.Category.LEISURE))
+        repository.ingest("second", bank, 2L, "Compra no débito\nCompra no débito de R$ 35,00 em Loja  XYZ aprovada.")
+        assertEquals(br.com.fluxo.core.Category.LEISURE,
+            repository.transactions.value.single { it.sourceKey == "second" }.category)
+        // Clearing the history forgets learned merchants too.
+        repository.clear()
+        enableCapture()
+        repository.ingest("third", bank, 3L, "Compra no débito\nCompra no débito de R$ 35,00 em LOJA XYZ aprovada.")
+        assertEquals(br.com.fluxo.core.Category.UNCATEGORIZED, repository.transactions.value.single().category)
     }
 
     @Test fun clearRemovesHistoryAndFingerprintsAndPausesCapture() = runBlocking {
@@ -430,7 +449,7 @@ class LedgerRepositoryTest {
         assertEquals(edited, reopened.transactions.value.single())
         assertEquals(Budget("2026-09", Category.TRANSPORT, 50000), reopened.budgets.value.single())
         context.openOrCreateDatabase("fluxo.db", Context.MODE_PRIVATE, null).use { db ->
-            assertEquals(6, db.version)
+            assertEquals(7, db.version)
             db.rawQuery("SELECT category, amount_cents FROM transactions WHERE id = 'old'", null).use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals("TRANSPORT", cursor.getString(0))
@@ -448,7 +467,7 @@ class LedgerRepositoryTest {
         val target = InstrumentationRegistry.getInstrumentation().targetContext
         fun schema(context: Context): Pair<Set<String>, Map<String, Set<String>>> =
             context.openOrCreateDatabase("fluxo.db", Context.MODE_PRIVATE, null).use { db ->
-                assertEquals(6, db.version)
+                assertEquals(7, db.version)
                 val tables = db.rawQuery("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'android_%' AND name NOT LIKE 'sqlite_%'", null).use { cursor ->
                     generateSequence { if (cursor.moveToNext()) cursor.getString(0) else null }.toSet()
                 }

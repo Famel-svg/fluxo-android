@@ -117,6 +117,24 @@ fun CaptureHealthCard(access: Boolean, capture: Boolean) {
     }
 }
 
+/** Ways to stop the battery manager from closing the capture service in the background. */
+@Composable
+private fun KeepCaptureRunning(manufacturer: String = Build.MANUFACTURER) {
+    val context = LocalContext.current
+    var openFailed by remember { mutableStateOf(false) }
+    fun open(target: SettingsTarget) { openFailed = !CaptureConnection.open(context, target) }
+    val xiaomi = manufacturer.trim().lowercase(java.util.Locale.ROOT) in setOf("xiaomi", "redmi", "poco")
+    Text("Manter a captura ativa", style = MaterialTheme.typography.titleSmall)
+    Text("O Fluxo não precisa ficar aberto, mas o Android pode fechar o serviço para economizar bateria. " +
+        "Deixe o Fluxo sem restrição de bateria" + if (xiaomi) " e com início automático ligado." else ".",
+        style = MaterialTheme.typography.bodySmall)
+    FluxoWrapButton("Abrir otimização de bateria", onClick = { open(SettingsTarget.BATTERY) })
+    if (xiaomi) FluxoWrapButton("Abrir início automático", onClick = { open(SettingsTarget.AUTOSTART) })
+    OemHints.forManufacturer(manufacturer)?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+    if (openFailed) Text("Não foi possível abrir essa tela. Abra as Configurações do Android manualmente.",
+        style = MaterialTheme.typography.bodySmall)
+}
+
 /** Shown only after a reconnect attempt left the listener disconnected: plain explanation and ways out. */
 @Composable
 internal fun ListenerRecoveryGuide(manufacturer: String = Build.MANUFACTURER) {
@@ -181,6 +199,7 @@ internal fun CaptureHealthContent(
                 FluxoWrapButton(if (busy) "Conectando…" else "Solicitar reconexão", onClick = reconnect, enabled = !busy)
             }
             if (!snapshot.reconnecting) snapshot.lastResult?.let { Text(it.message, style = note) }
+            if (access && capture) KeepCaptureRunning()
             Text("Mantenha notificações do banco ativas. O Android pode ocultar conteúdo sensível. Confira pendências e complete manualmente o que faltar.",
                 style = note)
         }

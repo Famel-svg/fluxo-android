@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-enum class SettingsTarget { NOTIFICATION_ACCESS, APP_DETAILS, BATTERY }
+enum class SettingsTarget { NOTIFICATION_ACCESS, APP_DETAILS, BATTERY, AUTOSTART }
 
 /**
  * Android calls around the notification listener. Decisions live in core (ListenerStatus,
@@ -140,6 +140,13 @@ object CaptureConnection {
                 }
                 SettingsTarget.BATTERY -> add(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                 SettingsTarget.APP_DETAILS -> {}
+                // Xiaomi security center screens; names vary by MIUI/HyperOS version, so app details is the fallback.
+                SettingsTarget.AUTOSTART -> {
+                    add(Intent().setComponent(ComponentName("com.miui.securitycenter",
+                        "com.miui.permcenter.autostart.AutoStartManagementActivity")))
+                    add(Intent("miui.intent.action.APP_PERM_EDITOR").setPackage("com.miui.securitycenter")
+                        .putExtra("extra_pkgname", context.packageName))
+                }
             }
             add(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)))
             add(Intent(Settings.ACTION_SETTINGS))

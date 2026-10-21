@@ -12,5 +12,6 @@ class FluxoApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         CaptureConnection.ensureComponentEnabled(this)
+        CaptureKeeper.schedule(this)
     }
 }

@@ -65,7 +65,7 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
     var category by rememberSaveable(existing?.id) { mutableStateOf(existing?.category ?: Category.UNCATEGORIZED) }
     var date by rememberSaveable(existing?.id) { mutableStateOf((existing?.let { Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate() } ?: LocalDate.now()).format(DateTimeFormatter.ofPattern("dd/MM/uuuu"))) }
     var deleting by rememberSaveable { mutableStateOf(false) }
-    val cents = remember(amount) { runCatching { require(amount.matches(Regex("[0-9]+([,.][0-9]{1,2})?"))); BigDecimal(amount.replace(',', '.')).movePointRight(2).longValueExact().also { require(it > 0) } }.getOrNull() }
+    val cents = remember(amount) { parseAmountInput(amount) }
     val parsedDate = remember(date) { runCatching { LocalDate.parse(date, DateTimeFormatter.ofPattern("dd/MM/uuuu").withResolverStyle(java.time.format.ResolverStyle.STRICT)) }.getOrNull() }
     Dialog(onDismissRequest = { if (!saving) onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         // Slides up a little while fading in; the dialog window itself is removed at once on close.
@@ -118,7 +118,7 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                             textStyle = FluxoType.number(32.sp, FontWeight.ExtraBold),
                             shape = RoundedCornerShape(16.dp), colors = editorFieldColors(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            isError = amount.isNotEmpty() && cents == null,
+                            isError = cents == null && (amount.isNotEmpty() || existing != null),
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -146,6 +146,15 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                     }
                     Spacer(Modifier.height(4.dp))
                 }
+                // Say what still blocks saving instead of leaving a silently disabled button.
+                val blockers = buildList {
+                    if (cents == null) add(if (amount.isBlank()) "informe o valor" else "valor inválido (ex.: 125,90)")
+                    if (direction == Direction.UNKNOWN) add("escolha Saída ou Entrada")
+                    if (parsedDate == null) add("informe uma data válida")
+                }
+                if (blockers.isNotEmpty() && !saving) Text("Para salvar: " + blockers.joinToString("; ") + ".",
+                    color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 16.dp))
                 FluxoPillButton(
                     if (saving) "Salvando…" else "Salvar lançamento",
                     modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp).heightIn(min = 56.dp),
@@ -209,3 +218,11 @@ internal fun formatDateInput(raw: String): String {
         }
     }
 }
+
+/** Amount typed by the owner in reais: accepts "125,90", "125.90", "1.234,56" and an "R$" prefix; null when invalid. */
+internal fun parseAmountInput(input: String): Long? = runCatching {
+    val clean = input.replace("R$", "").replace(" ", "").replace("\u00a0", "")
+        .let { if (',' in it) it.replace(".", "") else it }
+    require(clean.matches(Regex("[0-9]+([,.][0-9]{1,2})?")))
+    BigDecimal(clean.replace(',', '.')).movePointRight(2).longValueExact().also { require(it > 0) }
+}.getOrNull()
