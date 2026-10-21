@@ -7,11 +7,17 @@ OUT=${1:-shots}
 mkdir -p "$OUT"
 adb install -r app/build/outputs/apk/github/debug/app-github-debug.apk > /dev/null
 adb install -r app/build/outputs/apk/androidTest/github/debug/app-github-debug-androidTest.apk > /dev/null
+# A fresh CI emulator often shows "System UI / Quickstep isn't responding" over the app; hide those dialogs and
+# let the launcher settle before tapping.
+adb shell settings put global hide_error_dialogs 1 || true
+sleep 20
+dismiss_dialogs() { adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS > /dev/null 2>&1 || true; }
 read -r W H < <(adb shell wm size | sed -n 's/.*Physical size: \([0-9]*\)x\([0-9]*\).*/\1 \2/p')
 # Taps the app's own tab $1 (index $2), not the system nav bar. Looks it up by text in a UI dump; when the dump
 # does not expose it, falls back to the tab bar position measured on a 1080x2400 Pixel 6 (centre at 91.5% height).
 tap_tab() {
   local b="" try
+  dismiss_dialogs
   for try in 1 2 3; do
     adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1 || true
     # Every stage reads its whole input and never fails: an early exit would abort the script under pipefail.
@@ -34,6 +40,7 @@ for THEME in light dark; do
   adb shell am force-stop "$PKG"
   adb shell am start -W -n "$PKG/.MainActivity" > /dev/null
   sleep 8
+  dismiss_dialogs
   i=0
   for PAIR in "Início:inicio" "Registros:registros" "Planejar:planejar" "Ajustes:ajustes"; do
     tap_tab "${PAIR%%:*}" "$i"
