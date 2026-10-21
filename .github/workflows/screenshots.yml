@@ -3,7 +3,8 @@ name: Screenshots
 on:
   workflow_dispatch:
 permissions:
-  contents: read
+  # Writes only the design-shots branch, so the images can be fetched with git as well as downloaded.
+  contents: write
 env:
   SDK_PACKAGES: "platforms;android-36 build-tools;36.0.0 platform-tools"
 jobs:
@@ -40,3 +41,13 @@ jobs:
           name: fluxo-shots
           path: shots/*.png
           retention-days: 7
+      - name: Publish to the design-shots branch
+        run: |
+          SRC="$(git rev-parse --short HEAD)"
+          cd shots
+          git init -q -b design-shots
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add *.png
+          git commit -q -m "capturas de $SRC"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" design-shots
