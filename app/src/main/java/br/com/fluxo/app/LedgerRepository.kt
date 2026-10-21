@@ -45,7 +45,7 @@ val supportedBanks = listOf(
 /** Description of a captured movement whose notification names no merchant. */
 private const val CAPTURED_DESCRIPTION = "Movimentação detectada"
 
-/** Result of one ingestion; carries only a fixed category, never notification content. */
+/** Result of one ingestion; carries only a fixed category. Only the merchant name from a notification is stored. */
 sealed interface IngestOutcome {
     data object Stored : IngestOutcome
     data object NotAllowed : IngestOutcome
@@ -559,7 +559,8 @@ class LedgerRepository(context: Context) {
             if (changed == 0) db.insertOrThrow("transactions", null, values(transaction).apply { put("user_modified", 1) })
             // A category the owner sets on a captured purchase is remembered for that merchant.
             if (transaction.sourceKey != null && transaction.category != Category.UNCATEGORIZED &&
-                transaction.description.isNotBlank() && transaction.description != CAPTURED_DESCRIPTION) {
+                transaction.method != PaymentMethod.PIX && transaction.description.isNotBlank() &&
+                transaction.description != CAPTURED_DESCRIPTION && transaction.description != "Lançamento manual") {
                 db.insertWithOnConflict("merchant_categories", null, ContentValues().apply {
                     put("merchant_key", MerchantCategorizer.key(transaction.description))
                     put("category", transaction.category.name)

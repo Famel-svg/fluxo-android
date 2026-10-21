@@ -199,7 +199,8 @@ internal fun CaptureHealthContent(
                 FluxoWrapButton(if (busy) "Conectando…" else "Solicitar reconexão", onClick = reconnect, enabled = !busy)
             }
             if (!snapshot.reconnecting) snapshot.lastResult?.let { Text(it.message, style = note) }
-            if (access && capture) KeepCaptureRunning()
+            // The recovery guide already shows these settings when the service is stuck.
+            if (access && capture && state != ListenerState.STUCK) KeepCaptureRunning()
             Text("Mantenha notificações do banco ativas. O Android pode ocultar conteúdo sensível. Confira pendências e complete manualmente o que faltar.",
                 style = note)
         }

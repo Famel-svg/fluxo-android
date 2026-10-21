@@ -19,7 +19,7 @@ object MerchantCategorizer {
     // Words after "em" that are a state or a place in the message, not a merchant.
     private val notMerchant = Regex(
         "^(?:sua|seu|suas|seus|analise|processamento|aberto|andamento|breve|ate|instantes|nome|conta|cartao|" +
-            "credito|debito|[0-9/:]+)\\b",
+            "credito|debito|parcela|[0-9]+x|[0-9/:]+)\\b",
     )
 
     /** Merchant shown as the description, or null when the text names none with confidence. */
@@ -45,11 +45,15 @@ object MerchantCategorizer {
 
     // First match wins: specific stores come before generic words they contain ("mercado livre" before "mercado").
     private val keywords: List<Pair<Regex, Category>> = listOf(
+        // Payment processors name no kind of purchase; delivery and streaming brands beat their generic words.
+        "mercado ?pago|pagseguro|pag\\*|picpay|stone|cielo|sumup" to Category.UNCATEGORIZED,
+        "uber ?eats|ifood|rappi|ze delivery|aiqfome" to Category.FOOD,
+        "amazon ?prime|prime video" to Category.LEISURE,
         "mercado ?livre|mercadolivre|shopee|amazon|magalu|magazine luiza|americanas|shein|aliexpress|renner|riachuelo|c&a|zara|centauro|decathlon|kalunga" to Category.SHOPPING,
-        "uber|99 ?app|99 ?pop|99 ?taxi|cabify|posto|auto ?posto|combustive|shell|ipiranga|petrobras|br mania|estacionamento|estapar|metro|cptm|sptrans|bilhete unico|pedagio|sem parar|veloe|conectcar|onibus|rodoviaria" to Category.TRANSPORT,
+        "uber|99 ?app|99 ?pop|99 ?taxi|cabify|posto|auto ?posto|combustive|shell|ipiranga|petrobras|br mania|estacionamento|estapar|metro\\b|cptm|sptrans|bilhete unico|pedagio|sem parar|veloe|conectcar|onibus|rodoviaria" to Category.TRANSPORT,
         "farmacia|drogaria|droga ?raia|drogasil|pague menos|panvel|hospital|clinica|laboratorio|odonto|otica|dentista" to Category.HEALTH,
         "supermercado|mercado|mercadinho|atacad|assai|carrefour|extra\\b|pao de acucar|dia supermercado|hortifruti|sacolao|acougue|padaria|panificadora|confeitaria|restaurante|lanchonete|lanches|pizzaria|hamburgueria|burger|mcdonald|mc donalds|bk\\b|subway|habibs|ifood|rappi|cafe|cafeteria|starbucks|sorveteria|doceria|bar\\b|food|refeicao|alimentacao" to Category.FOOD,
-        "netflix|spotify|disney|hbo|prime video|globoplay|youtube|deezer|steam|playstation|xbox|nintendo|cinema|cinemark|ingresso|sympla|teatro|parque" to Category.LEISURE,
+        "netflix|spotify|disney|hbo|prime video|globoplay|youtube|deezer|steam|playstation|xbox|nintendo|cinema|cinemark|ingresso|sympla|teatro" to Category.LEISURE,
         "aluguel|condominio|enel|light\\b|sabesp|comgas|cemig|copel|celesc|energia|saneamento|imobiliaria" to Category.HOUSING,
         "vivo|claro|tim\\b|oi fibra|internet|telecom|academia|smart ?fit|bluefit|lavanderia|barbearia|salao|cabeleireiro|pet ?shop|petz|cobasi|seguro" to Category.SERVICES,
         "escola|colegio|faculdade|universidade|curso|udemy|alura|livraria|papelaria" to Category.EDUCATION,

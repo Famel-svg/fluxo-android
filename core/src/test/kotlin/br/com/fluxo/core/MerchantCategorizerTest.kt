@@ -26,6 +26,7 @@ class MerchantCategorizerTest {
         assertNull(MerchantCategorizer.merchant("com.nu.production", "Pix enviado\nVocê enviou R$ 50,00 em Pix para Ana"))
         assertNull(MerchantCategorizer.merchant("com.nu.production", "Pix recebido\nVocê recebeu R$ 50,00 em sua conta"))
         assertNull(MerchantCategorizer.merchant("com.c6bank.app", "Compra aprovada\nCompra de R$ 9,00 em processamento"))
+        assertNull(MerchantCategorizer.merchant("com.c6bank.app", "Compra aprovada\nCompra de R$ 90,00 em 3x no cartão"))
     }
 
     @Test fun `keywords suggest a category`() {
@@ -39,6 +40,10 @@ class MerchantCategorizerTest {
         assertEquals(Category.UNCATEGORIZED, MerchantCategorizer.suggest(null, none))
         // A word containing a keyword is not that keyword.
         assertEquals(Category.UNCATEGORIZED, MerchantCategorizer.suggest("IMPOSTO MUNICIPAL", none))
+        assertEquals(Category.UNCATEGORIZED, MerchantCategorizer.suggest("MERCADOPAGO*LOJA", none))
+        assertEquals(Category.FOOD, MerchantCategorizer.suggest("UBER EATS", none))
+        assertEquals(Category.TRANSPORT, MerchantCategorizer.suggest("UBER TRIP", none))
+        assertEquals(Category.UNCATEGORIZED, MerchantCategorizer.suggest("METROPOLE LTDA", none))
     }
 
     @Test fun `owner choice for a merchant wins over keywords`() {

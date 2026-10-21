@@ -58,7 +58,10 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
             try { action(); withContext(Dispatchers.Main) { onSuccess() } }
             catch (cancelled: CancellationException) { throw cancelled }
             // Validation messages from the repository say what to fix; anything else stays generic.
-            catch (invalid: IllegalArgumentException) { _editError.value = invalid.message ?: "Não foi possível salvar a alteração." }
+            catch (invalid: IllegalArgumentException) {
+                _editError.value = invalid.message?.takeIf { it != "Failed requirement." }
+                    ?: "Não foi possível salvar a alteração. Confira os campos e tente novamente."
+            }
             catch (_: Exception) { _editError.value = "Não foi possível salvar a alteração. Seus campos foram mantidos; tente novamente." }
             finally { _saving.value = false }
         }

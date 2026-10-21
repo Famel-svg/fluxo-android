@@ -23,7 +23,8 @@ object CaptureKeeper {
     fun rebindIfNeeded(context: Context) {
         val app = context.applicationContext
         if (!CaptureConnection.hasAccess(app)) return
-        if (!(app as FluxoApplication).repository.captureEnabled.value) return
+        // Read the switch directly: building the repository here would load all of its state on the main thread.
+        if (!app.getSharedPreferences("capture", Context.MODE_PRIVATE).getBoolean("enabled", false)) return
         if (CaptureHealth.state.value.connected == true) return
         try {
             NotificationListenerService.requestRebind(ComponentName(app, BankNotificationListener::class.java))

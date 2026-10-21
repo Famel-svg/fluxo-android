@@ -114,7 +114,7 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                             onValueChange = { amount = it },
                             label = { Text("Valor em reais") },
                             placeholder = { Text("R$ 0,00") },
-                            supportingText = { Text("Ex.: 125,90 · sem separador de milhar") },
+                            supportingText = { Text("Ex.: 125,90 ou 1.234,56") },
                             textStyle = FluxoType.number(32.sp, FontWeight.ExtraBold),
                             shape = RoundedCornerShape(16.dp), colors = editorFieldColors(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -148,7 +148,9 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                 }
                 // Say what still blocks saving instead of leaving a silently disabled button.
                 val blockers = buildList {
-                    if (cents == null) add(if (amount.isBlank()) "informe o valor" else "valor inválido (ex.: 125,90)")
+                    // A new entry starts empty; asking for the amount before anything is typed would read as an error.
+                    if (cents == null && (amount.isNotBlank() || existing != null))
+                        add(if (amount.isBlank()) "informe o valor" else "valor inválido (ex.: 125,90)")
                     if (direction == Direction.UNKNOWN) add("escolha Saída ou Entrada")
                     if (parsedDate == null) add("informe uma data válida")
                 }
@@ -221,8 +223,8 @@ internal fun formatDateInput(raw: String): String {
 
 /** Amount typed by the owner in reais: accepts "125,90", "125.90", "1.234,56" and an "R$" prefix; null when invalid. */
 internal fun parseAmountInput(input: String): Long? = runCatching {
-    val clean = input.replace("R$", "").replace(" ", "").replace("\u00a0", "")
-        .let { if (',' in it) it.replace(".", "") else it }
+    val clean = input.replace("R$", "", ignoreCase = true).replace(" ", "").replace("\u00a0", "")
+        .let { if (',' in it && Regex("[0-9]{1,3}(\\.[0-9]{3})*,[0-9]{1,2}").matches(it)) it.replace(".", "") else it }
     require(clean.matches(Regex("[0-9]+([,.][0-9]{1,2})?")))
     BigDecimal(clean.replace(',', '.')).movePointRight(2).longValueExact().also { require(it > 0) }
 }.getOrNull()

@@ -355,7 +355,7 @@ class LedgerRepositoryTest {
         assertEquals("LOJA XYZ", first.description)
         assertEquals(br.com.fluxo.core.Category.UNCATEGORIZED, first.category)
         repository.save(first.copy(category = br.com.fluxo.core.Category.LEISURE))
-        repository.ingest("second", bank, 2L, "Compra no débito\nCompra no débito de R$ 35,00 em Loja  XYZ aprovada.")
+        repository.ingest("second", bank, 2L, "Compra no débito\nCompra no débito de R$ 35,00 em Loja Xyz aprovada.")
         assertEquals(br.com.fluxo.core.Category.LEISURE,
             repository.transactions.value.single { it.sourceKey == "second" }.category)
         // Clearing the history forgets learned merchants too.
