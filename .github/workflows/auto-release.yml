@@ -1,0 +1,50 @@
+name: Auto release
+# When the Android workflow passes on a push to main and versionName names a version that has no tag yet,
+# tags that exact commit and starts the Release workflow. No command on the owner's machine is needed:
+# raising versionName and writing docs/RELEASE_X.Y.Z.md in a commit to main is the whole release step.
+on:
+  workflow_run:
+    workflows: [Android]
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+jobs:
+  tag:
+    # Only a green run of a push to main; pull requests and tag pushes never release.
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+      - name: Tag a new version and start the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          VERSION="$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
+          case "$VERSION" in [0-9]*.[0-9]*.[0-9]*) ;; *) echo "::error::versionName '$VERSION' is not X.Y.Z"; exit 1 ;; esac
+          TAG="v$VERSION"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null; then
+            echo "$TAG already exists; nothing to release."
+            exit 0
+          fi
+          if [ ! -f "docs/RELEASE_$VERSION.md" ]; then
+            echo "::notice::versionName is $VERSION but docs/RELEASE_$VERSION.md is missing; write the notes to release."
+            exit 0
+          fi
+          # Only the commit the green run tested is released, and only while it is still on main.
+          git fetch -q origin main
+          git merge-base --is-ancestor "$SHA" origin/main
+          git tag "$TAG" "$SHA"
+          git push origin "refs/tags/$TAG"
+          # A tag pushed with this token does not start other workflows; a dispatch does.
+          gh workflow run Release --ref main -f tag="$TAG"
+          echo "Started the release of $TAG at $SHA."
