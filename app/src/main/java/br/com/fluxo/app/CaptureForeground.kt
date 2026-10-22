@@ -26,6 +26,8 @@ object CaptureForeground {
     // The connected listener, so the app can retry the promotion once it is in the foreground.
     @Volatile private var service: Service? = null
     @Volatile private var lastCaptureAt: Long? = null
+    // True only while startForeground succeeded; the notification is never posted outside the foreground service.
+    @Volatile private var promoted = false
 
     private fun channel(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
@@ -62,15 +64,20 @@ object CaptureForeground {
             } else {
                 listener.startForeground(ID, build(listener))
             }
+            promoted = true
             true
         } catch (_: Exception) {
+            promoted = false
             false
         }
     }
 
     /** Capture paused or listener gone: remove the notification and leave the foreground. */
     fun demote(listener: Service) {
+        promoted = false
         try { listener.stopForeground(Service.STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
+        // Also clears a copy left by a refresh racing with the demotion.
+        try { listener.getSystemService(NotificationManager::class.java)?.cancel(ID) } catch (_: Exception) {}
     }
 
     fun disconnected(listener: Service) {
@@ -87,7 +94,7 @@ object CaptureForeground {
     /** Refreshes the "last capture" line of the visible notification. */
     fun captured(context: Context, at: Long) {
         lastCaptureAt = at
-        if (service == null) return
+        if (!promoted) return
         try {
             context.getSystemService(NotificationManager::class.java)?.notify(ID, build(context))
         } catch (_: Exception) {

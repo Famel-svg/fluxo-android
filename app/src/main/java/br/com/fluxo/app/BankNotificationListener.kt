@@ -42,7 +42,7 @@ class BankNotificationListener : NotificationListenerService() {
                             val outcome = repository.ingestClassified(candidate.sourceKey, candidate.packageName,
                                 candidate.timestamp, candidate.text, candidate.fallbackIdentity, event.notification.postTime)
                             // Replayed active notifications were not counted as observed; keep counters consistent.
-                            if (outcome is IngestOutcome.Stored) CaptureForeground.captured(this@BankNotificationListener, System.currentTimeMillis())
+                            if (!event.replay && outcome is IngestOutcome.Stored) CaptureForeground.captured(this@BankNotificationListener, System.currentTimeMillis())
                             if (!event.replay) when (outcome) {
                                 is IngestOutcome.Stored -> CaptureHealth.stored(pkg)
                                 is IngestOutcome.Ignored -> CaptureHealth.ignored(pkg, outcome.reason)
@@ -120,6 +120,8 @@ class BankNotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
+        // Fluxo's own "capture active" notification is not an outside event; it must not count as blocked.
+        if (sbn.packageName == packageName) return
         val repository = (application as FluxoApplication).repository
         if (!repository.allowsNotification(sbn.packageName)) { CaptureHealth.blocked(); return }
         CaptureHealth.observed(sbn.packageName, System.currentTimeMillis())
@@ -127,6 +129,7 @@ class BankNotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        if (sbn.packageName == packageName) return
         val repository = (application as FluxoApplication).repository
         if (!repository.allowsNotification(sbn.packageName)) return
         if (!events.trySend(Event.Removed(sbn.packageName, notificationIdentity(sbn))).isSuccess) {

@@ -130,11 +130,11 @@ private fun KeepCaptureRunning(manufacturer: String = Build.MANUFACTURER) {
         context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED) }
     val askNotify = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { notifyAllowed = it }
-    Text(if (notifyAllowed) "Enquanto a captura estiver ligada, a notificação fixa \"Fluxo está lendo suas notificações\" fica visível. Se ela sumir, a captura parou."
+    Text(if (notifyAllowed) "Enquanto a captura estiver ligada, o Fluxo mostra o aviso fixo \"Fluxo está lendo suas notificações\" com a hora da última captura."
         else "Permita notificações do Fluxo para ver o aviso fixo de captura ativa.",
         style = MaterialTheme.typography.bodySmall)
     if (!notifyAllowed) FluxoWrapButton("Permitir aviso de captura ativa",
-        onClick = { askNotify.launch(android.Manifest.permission.POST_NOTIFICATIONS) })
+        onClick = { if (Build.VERSION.SDK_INT >= 33) askNotify.launch(android.Manifest.permission.POST_NOTIFICATIONS) })
     Text("O Fluxo não precisa ficar aberto, mas o Android pode fechar o serviço para economizar bateria. " +
         "Deixe o Fluxo sem restrição de bateria" + if (xiaomi) " e com início automático ligado." else ".",
         style = MaterialTheme.typography.bodySmall)
