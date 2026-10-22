@@ -23,6 +23,7 @@ class BankNotificationListener : NotificationListenerService() {
     }
     // Callback order matters: a removal must finish before an Android key is reused.
     private val events = Channel<Event>(256)
+    private var foreground: kotlinx.coroutines.Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -41,6 +42,7 @@ class BankNotificationListener : NotificationListenerService() {
                             val outcome = repository.ingestClassified(candidate.sourceKey, candidate.packageName,
                                 candidate.timestamp, candidate.text, candidate.fallbackIdentity, event.notification.postTime)
                             // Replayed active notifications were not counted as observed; keep counters consistent.
+                            if (outcome is IngestOutcome.Stored) CaptureForeground.captured(this@BankNotificationListener, System.currentTimeMillis())
                             if (!event.replay) when (outcome) {
                                 is IngestOutcome.Stored -> CaptureHealth.stored(pkg)
                                 is IngestOutcome.Ignored -> CaptureHealth.ignored(pkg, outcome.reason)
@@ -93,6 +95,14 @@ class BankNotificationListener : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         CaptureHealth.connected(true)
+        // The fixed notification follows the capture switch: shown while capturing, removed when paused.
+        foreground?.cancel()
+        foreground = scope.launch {
+            (application as FluxoApplication).repository.captureEnabled.collect { on ->
+                if (on) CaptureForeground.promote(this@BankNotificationListener)
+                else CaptureForeground.demote(this@BankNotificationListener)
+            }
+        }
         // Notifications posted while the listener was unbound never reach onNotificationPosted.
         // Replaying the ones still visible is safe: ingestion is idempotent per source key.
         val repository = (application as FluxoApplication).repository
@@ -104,6 +114,8 @@ class BankNotificationListener : NotificationListenerService() {
 
     override fun onListenerDisconnected() {
         CaptureHealth.connected(false)
+        foreground?.cancel()
+        CaptureForeground.disconnected(this)
         super.onListenerDisconnected()
     }
 
@@ -124,6 +136,7 @@ class BankNotificationListener : NotificationListenerService() {
 
     override fun onDestroy() {
         CaptureHealth.connected(false)
+        CaptureForeground.disconnected(this)
         events.close()
         scope.cancel()
         super.onDestroy()

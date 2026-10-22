@@ -134,9 +134,12 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
     // opens, ask for one recovery (rate limited inside CaptureConnection).
     LaunchedEffect(access, capture, lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            // Android may refuse the fixed notification while the app is in the background; retry it now.
+            CaptureForeground.retry(capture)
             CaptureConnection.autoReconnectIfNeeded(context, capture)
         }
     }
+
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var filter by rememberSaveable { mutableIntStateOf(0) }
     var allMonths by rememberSaveable { mutableStateOf(false) }
