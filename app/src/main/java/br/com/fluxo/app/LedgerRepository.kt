@@ -52,6 +52,10 @@ sealed interface IngestOutcome {
     data class Ignored(val reason: IgnoreReason) : IngestOutcome
 }
 
+/** Restore stopped before the SQLite commit; [previousKept] is true only if history and preferences are as before. */
+class RestoreFailedException(val previousKept: Boolean, cause: Throwable) :
+    IllegalStateException("Restauração não concluída.", cause)
+
 class LedgerRepository(context: Context) {
     private val appPackageName = context.applicationContext.packageName
     private val preferences = context.getSharedPreferences("capture", Context.MODE_PRIVATE)
@@ -158,7 +162,7 @@ class LedgerRepository(context: Context) {
             }
         }
 
-    /** Caller holds the mutex. Replaces stored benefits entirely; runs only after the SQLite restore succeeded. */
+    /** Caller holds the mutex. Replaces stored benefits entirely; runs inside the restore transaction, before its commit. */
     private fun replaceBenefits(settings: BenefitSettings) {
         val editor = benefitPreferences.edit()
         benefitPreferences.all.keys.filter { it.startsWith("vr_days:") || it.startsWith("vt_days:") }
@@ -174,7 +178,7 @@ class LedgerRepository(context: Context) {
         _benefits.value = settings
     }
 
-    /** Caller holds the mutex. Runs only after the SQLite restore succeeded; v5 backups carry the salary. */
+    /** Caller holds the mutex. Runs inside the restore transaction, before its commit; v5 backups carry the salary. */
     private fun replaceSalary(cents: Long) {
         check(profilePreferences.edit().putLong("salary_monthly_cents", cents).commit()) {
             "Não foi possível salvar o salário no aparelho."
@@ -414,17 +418,55 @@ class LedgerRepository(context: Context) {
 
     fun inspectBackupPayload(payload: ByteArray): BackupSummary = LedgerBackup.validate(payload).summary
 
+    /**
+     * SQLite rows, benefits and salary are replaced together: preferences are written before the SQLite commit, and
+     * any failure rolls the database back and rewrites the previous preferences. A failure before the commit throws
+     * [RestoreFailedException]; its [RestoreFailedException.previousKept] says whether the previous state is intact.
+     */
     suspend fun restoreBackupPayload(payload: ByteArray) = withContext(Dispatchers.IO) {
         val validated = LedgerBackup.validate(payload)
         mutex.withLock {
             // Device permissions and bank selection are not imported. Consent stays local.
             setCaptureEnabled(false)
-            LedgerBackup.restore(database.writableDatabase, validated)
-            validated.benefits?.let { replaceBenefits(it) }
-            validated.salaryMonthlyCents?.let { replaceSalary(it) }
-            _captureError.value = null
-            readAll()
+            val previousBenefits = benefitPreferences.all.toMap()
+            val previousSalary = profilePreferences.all["salary_monthly_cents"]
+            try {
+                LedgerBackup.restore(database.writableDatabase, validated) {
+                    validated.benefits?.let { replaceBenefits(it) }
+                    validated.salaryMonthlyCents?.let { replaceSalary(it) }
+                }
+                _captureError.value = null
+            } catch (failure: Exception) {
+                val reverted = runCatching {
+                    rewrite(benefitPreferences, previousBenefits, clearFirst = true)
+                    rewrite(profilePreferences, mapOf("salary_monthly_cents" to previousSalary), clearFirst = false)
+                }
+                reverted.exceptionOrNull()?.let(failure::addSuppressed)
+                _benefits.value = readBenefits()
+                _salaryMonthlyCents.value = readSalary()
+                throw RestoreFailedException(reverted.isSuccess, failure)
+            } finally {
+                readAll()
+            }
         }
+    }
+
+    /** Writes [values] back exactly as read from SharedPreferences.all; a null value removes the key. */
+    private fun rewrite(prefs: android.content.SharedPreferences, values: Map<String, Any?>, clearFirst: Boolean) {
+        val editor = prefs.edit()
+        if (clearFirst) editor.clear()
+        values.forEach { (key, value) ->
+            when (value) {
+                null -> editor.remove(key)
+                is Long -> editor.putLong(key, value)
+                is Int -> editor.putInt(key, value)
+                is String -> editor.putString(key, value)
+                is Boolean -> editor.putBoolean(key, value)
+                is Float -> editor.putFloat(key, value)
+                is Set<*> -> editor.putStringSet(key, value.filterIsInstance<String>().toSet())
+            }
+        }
+        check(editor.commit()) { "Não foi possível reverter as preferências no aparelho." }
     }
 
     suspend fun ingest(

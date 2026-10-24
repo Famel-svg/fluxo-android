@@ -101,7 +101,12 @@ class BackupViewModel(application: Application) : AndroidViewModel(application) 
                 repository.restoreBackupPayload(payload)
                 mutable.value = BackupState(message = "Histórico restaurado. Captura pausada; confira dados e bancos antes de reativar.")
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { mutable.value = BackupState(message = "Restauração não concluída. Histórico anterior preservado; captura pode estar pausada.") }
+            catch (failure: Exception) {
+                // Only claim the old history survived when the repository confirmed the rollback.
+                mutable.value = BackupState(message = if ((failure as? RestoreFailedException)?.previousKept == true)
+                    "Restauração não concluída. Histórico anterior preservado; captura pausada."
+                    else "Não foi possível confirmar a restauração. Feche e reabra o app e confira histórico e benefícios antes de reativar a captura.")
+            }
             finally { payload.fill(0) }
         }
     }

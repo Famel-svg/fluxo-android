@@ -1082,6 +1082,68 @@ class LedgerRepositoryTest {
         }
     }
 
+    @Test fun restoreFailingOnPreferenceWriteRollsBackDatabaseAndRevertsPreferences() {
+        var profileStore: FailingPreferences? = null
+        val context = IsolatedContext(InstrumentationRegistry.getInstrumentation().targetContext,
+            "restore_atomic_${java.util.UUID.randomUUID()}_") { name, prefs ->
+            if (name == "profile") FailingPreferences(prefs).also { profileStore = it } else prefs
+        }
+        val repo = LedgerRepository(context)
+        val benefitPrefs = context.getSharedPreferences("benefits", Context.MODE_PRIVATE)
+        try { runBlocking {
+            val sep = YearMonth.of(2026, 9)
+            repo.save(manualTransaction())
+            repo.saveBenefits(sep, 2550, 1050, BenefitDays(7, 8))
+            repo.setSalaryMonthlyCents(350000)
+            val payload = repo.exportBackupPayload()
+            // Device drifts after the backup: one more transaction, other benefits and salary.
+            repo.save(manualTransaction().copy(id = "after", amountCents = 2500L))
+            repo.saveBenefits(sep, 1, 2, BenefitDays())
+            repo.setSalaryMonthlyCents(420000)
+            val ledger = repo.transactions.value
+            val benefits = repo.benefits.value
+            val storedBenefits = benefitPrefs.all.toMap()
+            // Benefits are written first and succeed; the salary write then fails before the SQLite commit.
+            profileStore!!.failures = 1
+            try { repo.restoreBackupPayload(payload); fail("restore must fail") }
+            catch (e: RestoreFailedException) { assertTrue(e.previousKept) }
+            assertEquals(ledger, repo.transactions.value)
+            assertEquals(benefits, repo.benefits.value)
+            assertEquals(storedBenefits, benefitPrefs.all)
+            assertEquals(420000L, repo.salaryMonthlyCents.value)
+            assertEquals(420000L, profileStore!!.getLong("salary_monthly_cents", -1))
+            // Once the store works again the same payload restores completely.
+            repo.restoreBackupPayload(payload)
+            assertEquals(listOf("manual"), repo.transactions.value.map { it.id })
+            assertEquals(2550L, repo.benefits.value.vrDailyCents)
+            assertEquals(350000L, repo.salaryMonthlyCents.value)
+        } } finally {
+            runBlocking { repo.clear() }
+            benefitPrefs.edit().clear().commit()
+            profileStore?.edit()?.clear()?.commit()
+        }
+    }
+
+    /** Preference store whose next [failures] commits throw, as a failed disk write would. */
+    private class FailingPreferences(private val base: SharedPreferences) : SharedPreferences by base {
+        var failures = 0
+        override fun edit(): SharedPreferences.Editor = Editor(base.edit())
+        private inner class Editor(private val e: SharedPreferences.Editor) : SharedPreferences.Editor by e {
+            override fun putString(key: String?, value: String?) = apply { e.putString(key, value) }
+            override fun putStringSet(key: String?, values: MutableSet<String>?) = apply { e.putStringSet(key, values) }
+            override fun putInt(key: String?, value: Int) = apply { e.putInt(key, value) }
+            override fun putLong(key: String?, value: Long) = apply { e.putLong(key, value) }
+            override fun putFloat(key: String?, value: Float) = apply { e.putFloat(key, value) }
+            override fun putBoolean(key: String?, value: Boolean) = apply { e.putBoolean(key, value) }
+            override fun remove(key: String?) = apply { e.remove(key) }
+            override fun clear() = apply { e.clear() }
+            override fun commit(): Boolean {
+                if (failures > 0) { failures--; throw IllegalStateException("Falha simulada de gravação.") }
+                return e.commit()
+            }
+        }
+    }
+
     private fun enableCapture() {
         repository.setBankEnabled(bank, true)
         repository.setCaptureEnabled(true)
@@ -1126,11 +1188,14 @@ class LedgerRepositoryTest {
         }
     }
 
-    private class IsolatedContext(base: Context, private val prefix: String = "instrumentation_ledger_") : ContextWrapper(base) {
+    private class IsolatedContext(
+        base: Context, private val prefix: String = "instrumentation_ledger_",
+        private val wrap: (String, SharedPreferences) -> SharedPreferences = { _, prefs -> prefs },
+    ) : ContextWrapper(base) {
         private fun isolated(name: String) = "$prefix$name"
         override fun getApplicationContext(): Context = this
         override fun getSharedPreferences(name: String, mode: Int): SharedPreferences =
-            baseContext.getSharedPreferences(isolated(name), mode)
+            wrap(name, baseContext.getSharedPreferences(isolated(name), mode))
         override fun getDatabasePath(name: String): File = baseContext.getDatabasePath(isolated(name))
         override fun openOrCreateDatabase(name: String, mode: Int, factory: SQLiteDatabase.CursorFactory?): SQLiteDatabase =
             baseContext.openOrCreateDatabase(isolated(name), mode, factory)

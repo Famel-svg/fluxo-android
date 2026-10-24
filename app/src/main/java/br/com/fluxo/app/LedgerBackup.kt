@@ -166,11 +166,13 @@ internal object LedgerBackup {
             allRows.getValue("budgets").size, deleted, accountIds.size, withBenefits), benefits, salary)
     }
 
-    fun restore(db: SQLiteDatabase, validated: Validated) {
+    /** [beforeCommit] runs inside the transaction; if it throws, the SQLite restore is rolled back. */
+    fun restore(db: SQLiteDatabase, validated: Validated, beforeCommit: () -> Unit = {}) {
         db.beginTransaction()
         try {
             columns.keys.reversed().forEach { db.delete(it, null, null) }
             validated.rows.forEach { (table, rows) -> rows.forEach { db.insertOrThrow(table, null, it) } }
+            beforeCommit()
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
     }
