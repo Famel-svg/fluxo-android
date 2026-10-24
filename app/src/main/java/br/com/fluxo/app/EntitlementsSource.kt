@@ -1,6 +1,7 @@
 package br.com.fluxo.app
 
 import android.app.Activity
+import br.com.fluxo.core.DebugEntitlementPolicy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,8 +25,9 @@ object AlwaysPro : EntitlementsSource {
 }
 
 /** Só em debug: força Pro ligado/desligado (null = segue [base]) para testes de interface. */
-class DebugEntitlements(private val base: EntitlementsSource) : EntitlementsSource by base {
+class DebugEntitlements(private val base: EntitlementsSource, private val published: Boolean = !BuildConfig.DEBUG) : EntitlementsSource by base {
+    val switchVisible: Boolean get() = DebugEntitlementPolicy.switchVisible(published)
     val forced = MutableStateFlow<Boolean?>(null)
-    override val isPro: StateFlow<Boolean> = combine(base.isPro, forced) { real, f -> f ?: real }
+    override val isPro: StateFlow<Boolean> = combine(base.isPro, forced) { real, f -> DebugEntitlementPolicy.effectivePro(published, real, f) }
         .stateIn(CoroutineScope(SupervisorJob() + Dispatchers.Unconfined), SharingStarted.Eagerly, base.isPro.value)
 }

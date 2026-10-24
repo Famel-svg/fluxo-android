@@ -66,7 +66,7 @@ internal fun ProSettingsCard() {
         if (BuildConfig.STORE_BUILD && !BuildConfig.PRO_FOR_ALL) {
             FluxoDataRow("Restaurar compras", modifier = Modifier.testTag("settings.pro.restore"), onClick = { entitlements.restore() })
         }
-        (entitlements as? DebugEntitlements)?.let { DebugProRow(it) }
+        (entitlements as? DebugEntitlements)?.takeIf { it.switchVisible }?.let { DebugProRow(it) }
     }
     if (open) ProPaywallDialog { open = false }
 }
