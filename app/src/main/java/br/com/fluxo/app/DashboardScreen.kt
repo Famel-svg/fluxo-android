@@ -78,7 +78,6 @@ internal fun Dashboard(
     val income = total { it.direction == Direction.INCOME }
     val cash = total { it.direction == Direction.EXPENSE && it.method.affectsCash }
     val credit = total { it.direction == Direction.EXPENSE && it.method == PaymentMethod.CREDIT_CARD }
-    val result = income - cash
     val pending = rows.count { it.status == ReviewStatus.REVIEW }
     val pendingCredit = rows.count { it.status == ReviewStatus.REVIEW && it.method == PaymentMethod.CREDIT_CARD }
     var hidden by rememberSaveable { mutableStateOf(false) }
@@ -116,27 +115,6 @@ internal fun Dashboard(
             Text("Olá, $greetingName", color = FluxoColors.Mute, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
                 modifier = Modifier.padding(horizontal = 4.dp).testTag("dashboard.greeting"))
-        }
-        item {
-            FluxoHero(
-                label = "Resultado observado do mês",
-                value = if (hidden) HIDDEN else plainMoney(result),
-                currency = if (hidden) null else "R$",
-                equation = "Entradas ${amount(income)} − saídas de caixa ${amount(cash)}",
-                note = "Cobertura parcial — não é seu saldo bancário.",
-                trailing = if (hidden) null else {
-                    {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Sparkline(
-                                dailyValues,
-                                "Gastos por dia nos últimos 7 dias: " + daily.joinToString(", ") { "${it.day.dayOfMonth}: ${cents(it.totalCents)}" },
-                                Modifier.size(width = 84.dp, height = 36.dp)
-                            )
-                            Text("gasto · 7 dias", color = FluxoColors.OnPetrolSoft, style = FluxoType.Caption.copy(fontSize = 10.sp))
-                        }
-                    }
-                }
-            )
         }
         item {
             InOutTile(income, cash + credit, hidden)
@@ -305,6 +283,13 @@ private fun InOutTile(income: BigInteger, spent: BigInteger, hidden: Boolean) {
     FluxoTile(Modifier.fillMaxWidth().testTag("dashboard.inout")) {
         Text("Entrou x saiu no mês", style = TileTitle)
         Text("sem VR/VT", style = FluxoType.Caption.copy(fontSize = 10.sp), color = FluxoColors.Mute)
+        Text(
+            if (hidden) HIDDEN else plainMoney(net), maxLines = 1,
+            style = FluxoType.number(30.sp), color = if (!hidden && net.signum() < 0) FluxoColors.Expense else FluxoColors.Ink,
+            modifier = Modifier.padding(top = 6.dp)
+        )
+        Text("Entradas − saídas (caixa + crédito)", style = FluxoType.Caption, color = FluxoColors.Mute)
+        Text("Cobertura parcial — não é seu saldo bancário.", style = FluxoType.Caption, color = FluxoColors.Mute)
         listOf(
             Triple("Entradas", income, FluxoColors.Income),
             Triple("Saídas", spent, FluxoColors.Petrol),

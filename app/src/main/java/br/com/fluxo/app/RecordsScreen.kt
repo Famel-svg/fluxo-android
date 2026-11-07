@@ -105,10 +105,10 @@ internal fun RecordsScreen(
         if (allMonths) {
             val latest = rows.maxOfOrNull { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() }
             val end = if (latest == null || !latest.isBefore(today.minusDays(6))) today else latest
-            SpendingAnalytics.dailyExpenses(rows, end, 7, zone)
+            SpendingAnalytics.dailyExpenses(rows.filter { !it.method.isVoucher }, end, 7, zone)
         } else {
             // All transactions, not just the month slice: early in a month the window reaches into the previous one.
-            SpendingAnalytics.recentDaysForMonth(allRows, month, today, 7, zone)
+            SpendingAnalytics.recentDaysForMonth(allRows.filter { !it.method.isVoucher }, month, today, 7, zone)
         }
     }
     Surface(modifier = Modifier.fillMaxSize(), color = FluxoColors.Paper) {

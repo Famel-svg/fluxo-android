@@ -87,7 +87,7 @@ internal fun PlanningScreen(
     nextMonth: (() -> Unit)? = null,
     salaryMonthlyCents: Long = 0
 ) {
-    val totals = remember(transactions, month) { SpendingAnalytics.byCategory(transactions, month) }
+    val totals = remember(transactions, month) { SpendingAnalytics.byCategory(transactions.filter { !it.method.isVoucher }, month) }
     val monthly = remember(transactions, month) { SpendingAnalytics.monthlyExpenses(transactions, month, 6) }
     val total = totals.values.fold(BigInteger.ZERO, BigInteger::add)
     val previousTotal = monthly.getOrNull(monthly.size - 2)?.totalCents ?: BigInteger.ZERO

@@ -108,13 +108,16 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                     }
                     if (editError != null) Text(editError, color = MaterialTheme.colorScheme.error)
                     FluxoPanel(accent = FluxoColors.Petrol) {
-                        Text("Valor", style = MaterialTheme.typography.titleMedium, color = FluxoColors.Mute)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(Direction.EXPENSE, Direction.INCOME).forEach { option ->
+                                FluxoChip(option.label(), direction == option, { direction = option }, Modifier.weight(1f))
+                            }
+                        }
                         OutlinedTextField(
                             value = amount,
                             onValueChange = { amount = it },
                             label = { Text("Valor em reais") },
                             placeholder = { Text("R$ 0,00") },
-                            supportingText = { Text("Ex.: 125,90 ou 1.234,56") },
                             textStyle = FluxoType.number(40.sp, FontWeight.ExtraBold),
                             shape = RoundedCornerShape(16.dp), colors = editorFieldColors(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -122,16 +125,18 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf(Direction.EXPENSE, Direction.INCOME).forEach { option ->
-                                FluxoChip(option.label(), direction == option, { direction = option }, Modifier.weight(1f))
-                            }
-                        }
                     }
                     FluxoPanel(accent = FluxoColors.PetrolMid) {
                         FluxoSectionHeading("Detalhes", icon = Icons.AutoMirrored.Filled.ReceiptLong, accent = FluxoColors.Petrol)
                         OutlinedTextField(value = description, onValueChange = { description = it.take(120) }, label = { Text("Descrição") }, singleLine = true, shape = RoundedCornerShape(16.dp), colors = editorFieldColors(), modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(value = date, onValueChange = { date = formatDateInput(it) }, label = { Text("Data (dd/mm/aaaa)") }, isError = parsedDate == null, singleLine = true, shape = RoundedCornerShape(16.dp), colors = editorFieldColors(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(value = date, onValueChange = { date = formatDateInput(it) }, label = { Text("Data (dd/mm/aaaa)") }, isError = parsedDate == null, singleLine = true, shape = RoundedCornerShape(16.dp), colors = editorFieldColors(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
+                            Column(Modifier.width(88.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                val dayFormat = DateTimeFormatter.ofPattern("dd/MM/uuuu")
+                                FluxoChip("Hoje", false, { date = LocalDate.now().format(dayFormat) }, Modifier.fillMaxWidth())
+                                FluxoChip("Ontem", false, { date = LocalDate.now().minusDays(1).format(dayFormat) }, Modifier.fillMaxWidth())
+                            }
+                        }
                     }
                     FluxoPanel(accent = FluxoColors.Petrol) {
                         FluxoSectionHeading("Classificação", icon = Icons.Default.PieChart, accent = FluxoColors.Petrol)
