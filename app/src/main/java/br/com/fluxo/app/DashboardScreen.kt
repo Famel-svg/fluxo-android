@@ -71,7 +71,8 @@ internal fun Dashboard(
     benefits: BenefitSettings = BenefitSettings()
 ) {
     // Baseline accounting: only confirmed, non-transfer records enter totals; credit stays apart from cash.
-    val confirmed = rows.filter { it.status == ReviewStatus.CONFIRMED && it.transferId == null }
+    // Voucher (VR/VT) rows stay out of every spending and income figure here: they are read in the VR block.
+    val confirmed = rows.filter { it.status == ReviewStatus.CONFIRMED && it.transferId == null && !it.method.isVoucher }
     fun total(predicate: (Transaction) -> Boolean): BigInteger = confirmed.filter(predicate)
         .fold(BigInteger.ZERO) { sum, row -> sum + BigInteger.valueOf(row.amountCents ?: 0) }
     val income = total { it.direction == Direction.INCOME }
@@ -86,10 +87,10 @@ internal fun Dashboard(
     val today = LocalDate.now()
     val currentMonth = YearMonth.from(today) == month
     // The 7-day series uses every transaction so the first days of a month still see the previous month.
-    val daily = SpendingAnalytics.recentDaysForMonth(allRows, month, today)
+    val daily = SpendingAnalytics.recentDaysForMonth(allRows.filter { !it.method.isVoucher }, month, today)
     val dailyValues = daily.map { it.totalCents }
     val weekTotal = dailyValues.fold(BigInteger.ZERO, BigInteger::add)
-    val byCategory = SpendingAnalytics.byCategory(rows, month).entries.sortedByDescending { it.value }
+    val byCategory = SpendingAnalytics.byCategory(rows.filter { !it.method.isVoucher }, month).entries.sortedByDescending { it.value }
     val monthExpenses = byCategory.fold(BigInteger.ZERO) { sum, e -> sum + e.value }
     val share = SpendingAnalytics.captureShare(rows, month)
     // Voucher balances are estimates for the selected month; spending is read from the same month slice.
@@ -136,6 +137,9 @@ internal fun Dashboard(
                     }
                 }
             )
+        }
+        item {
+            InOutTile(income, cash + credit, hidden)
         }
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -286,6 +290,46 @@ internal fun Dashboard(
         if (pendingCredit > 0) item {
             Text("$pendingCredit lançamento(s) de crédito pendente(s) de revisão. Fatura, limite e vencimento não estão disponíveis; confira no emissor do cartão.", style = FluxoType.Caption, color = FluxoColors.Mute, modifier = Modifier.padding(horizontal = 4.dp))
         }
+    }
+}
+
+/**
+ * Entradas x saídas do mês, sem VR/VT: one proportional bar per side, so the owner sees at a glance
+ * whether more came in than went out. Zero months show an empty bar instead of a measured-looking zero.
+ */
+@Composable
+private fun InOutTile(income: BigInteger, spent: BigInteger, hidden: Boolean) {
+    val peak = maxOf(income, spent)
+    val net = income - spent
+    fun v(value: BigInteger) = if (hidden) HIDDEN else cents(value)
+    FluxoTile(Modifier.fillMaxWidth().testTag("dashboard.inout")) {
+        Text("Entrou x saiu no mês", style = TileTitle)
+        Text("sem VR/VT", style = FluxoType.Caption.copy(fontSize = 10.sp), color = FluxoColors.Mute)
+        listOf(
+            Triple("Entradas", income, FluxoColors.Income),
+            Triple("Saídas", spent, FluxoColors.Petrol),
+        ).forEach { (label, value, color) ->
+            Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                    Text(label, Modifier.weight(1f), style = LegendStyle.copy(fontSize = 13.sp))
+                    Text(v(value), style = FluxoType.number(16.sp), maxLines = 1)
+                }
+                Box(Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)).background(FluxoColors.Soft)) {
+                    val fraction = if (hidden) 0f else chartFraction(value, peak)
+                    if (fraction > 0f) Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().clip(RoundedCornerShape(5.dp)).background(color))
+                }
+            }
+        }
+        Text(
+            when {
+                hidden -> "Saldo oculto"
+                income.signum() == 0 && spent.signum() == 0 -> "Sem entradas nem saídas confirmadas neste mês."
+                net.signum() >= 0 -> "Sobrou ${cents(net)} neste mês."
+                else -> "Gastou ${cents(net.abs())} a mais do que entrou."
+            },
+            style = FluxoType.Caption, color = if (!hidden && net.signum() < 0) FluxoColors.Expense else FluxoColors.Mute,
+            modifier = Modifier.padding(top = 10.dp)
+        )
     }
 }
 

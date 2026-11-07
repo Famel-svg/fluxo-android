@@ -32,3 +32,6 @@ artifacts/
 /test_*.txt
 __pycache__/
 *.py[cod]
+
+# Graphify knowledge graph output (local, regenerable)
+graphify-out/

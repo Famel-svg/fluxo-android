@@ -99,8 +99,8 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                     )
                 }
                 Column(
-                    Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(24.dp)
                 ) {
                     if (existing?.status == ReviewStatus.REVIEW) FluxoTicket {
                         Text(existing.reason.ifBlank { "Confira os dados antes de confirmar." }, modifier = Modifier.padding(vertical = 6.dp),
@@ -115,7 +115,7 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                             label = { Text("Valor em reais") },
                             placeholder = { Text("R$ 0,00") },
                             supportingText = { Text("Ex.: 125,90 ou 1.234,56") },
-                            textStyle = FluxoType.number(32.sp, FontWeight.ExtraBold),
+                            textStyle = FluxoType.number(40.sp, FontWeight.ExtraBold),
                             shape = RoundedCornerShape(16.dp), colors = editorFieldColors(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             isError = cents == null && (amount.isNotEmpty() || existing != null),
@@ -159,7 +159,7 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                     modifier = Modifier.padding(horizontal = 16.dp))
                 FluxoPillButton(
                     if (saving) "Salvando…" else "Salvar lançamento",
-                    modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp).heightIn(min = 56.dp),
+                    modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 14.dp).heightIn(min = 64.dp),
                     enabled = !saving && cents != null && direction != Direction.UNKNOWN && parsedDate != null,
                     onClick = {
         val validDate = parsedDate ?: return@FluxoPillButton
@@ -189,14 +189,14 @@ internal fun <T> Choice(label: String, selected: T, options: List<T>, display: (
     var expanded by remember { mutableStateOf(false) }
     Box {
         Row(
-            Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(FluxoShapes.Pill).background(FluxoColors.Paper)
+            Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(FluxoShapes.Pill).background(FluxoColors.Paper)
                 .border(2.dp, FluxoColors.ChipBorder, FluxoShapes.Pill)
                 .clickable(role = Role.Button) { expanded = true }
-                .padding(horizontal = 16.dp, vertical = 6.dp),
+                .padding(horizontal = 18.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("$label: ${display(selected)}", modifier = Modifier.weight(1f), color = FluxoColors.Ink,
-                style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp))
+                style = MaterialTheme.typography.labelLarge.copy(fontSize = 15.sp))
             Icon(Icons.Default.ArrowDropDown, null, tint = FluxoColors.Ink)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, containerColor = FluxoColors.Paper) {
