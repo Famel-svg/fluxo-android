@@ -225,18 +225,15 @@ private fun PlanningHero(total: BigInteger, previousTotal: BigInteger, month: Ye
 private fun ExpectedIncomeBlock(month: YearMonth, salaryCents: Long, benefits: BenefitSettings, spent: BigInteger) {
     val estimate = BenefitCalculator.estimate(month, benefits)
     val salary = BigInteger.valueOf(salaryCents)
-    val expected = salary + estimate.totalCents
     val percent = SalaryPlanner.percentSpent(salaryCents, spent) ?: 0
     Column(
         Modifier.fillMaxWidth().testTag("planning.income").clip(RoundedCornerShape(16.dp)).background(FluxoColors.Pale)
             .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Text("Renda prevista do mês (inclui VR/VT estimados)", style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
+        Text("Renda prevista do mês (salário)", style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
             modifier = Modifier.semantics { heading() })
-        Text("Salário ${planningMoney(salary)} + VR ${planningMoney(estimate.vrCents)} + VT ${planningMoney(estimate.vtCents)}",
-            style = FluxoType.Caption.copy(fontSize = 12.sp, fontFeatureSettings = "tnum"), color = FluxoColors.Ink)
-        Text("= ${planningMoney(expected)}", style = FluxoType.number(18.sp, FontWeight.ExtraBold), color = FluxoColors.Ink)
+        Text(planningMoney(salary), style = FluxoType.number(18.sp, FontWeight.ExtraBold), color = FluxoColors.Ink)
         Text("Gastos do mês: $percent% do salário", color = if (percent > 100) FluxoColors.Expense else FluxoColors.Ink,
             style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold),
             modifier = Modifier.padding(top = 4.dp).testTag("planning.salaryShare"))
@@ -245,6 +242,8 @@ private fun ExpectedIncomeBlock(month: YearMonth, salaryCents: Long, benefits: B
             contentDescription = "Gastos do mês: $percent% do salário",
             modifier = Modifier.fillMaxWidth().height(10.dp), thickness = 6.dp
         )
+        Text("Benefícios (estimativa): VR ${planningMoney(estimate.vrCents)} · VT ${planningMoney(estimate.vtCents)}",
+            style = FluxoType.Caption.copy(fontSize = 12.sp, fontFeatureSettings = "tnum"), color = FluxoColors.Mute)
         Text("Estimativa para planejamento: não altera renda, gastos, caixa nem o resultado observado.",
             style = FluxoType.Caption.copy(fontSize = 11.5.sp, lineHeight = 15.sp), color = FluxoColors.Mute)
     }

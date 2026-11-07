@@ -177,7 +177,7 @@ internal fun Dashboard(
             val donutTile: @Composable () -> Unit = {
                 FluxoTile(Modifier.fillMaxWidth()) {
                     Text("Despesas do mês", style = TileTitle)
-                    Text("inclui crédito", style = FluxoType.Caption.copy(fontSize = 10.sp), color = FluxoColors.Mute)
+                    Text("inclui crédito", style = FluxoType.Caption.copy(fontSize = 12.sp), color = FluxoColors.Mute)
                     Text(amount(monthExpenses), style = FluxoType.number(16.sp))
                     DonutChart(
                         slices = legend.map { DonutSlice(it.second, it.third) },
@@ -189,7 +189,7 @@ internal fun Dashboard(
                             Text("${percent(topCategory.value, monthExpenses)}%", style = FluxoType.number(14.sp), color = FluxoColors.Ink)
                             Text(
                                 donutShortLabel(topCategory.key),
-                                style = FluxoType.Caption.copy(fontSize = 9.sp, lineHeight = 11.sp), color = FluxoColors.Mute, maxLines = 1
+                                style = FluxoType.Caption.copy(fontSize = 12.sp, lineHeight = 14.sp), color = FluxoColors.Mute, maxLines = 1
                             )
                         }
                     }
@@ -208,7 +208,7 @@ internal fun Dashboard(
                     Text("Gastos por dia", style = TileTitle)
                     Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         Text(amount(lastDay.totalCents), style = FluxoType.number(16.sp), maxLines = 1)
-                        Text(if (currentMonth) "hoje" else lastDay.day.format(DateTimeFormatter.ofPattern("dd/MM")), style = FluxoType.Caption.copy(fontSize = 10.5.sp), color = FluxoColors.Mute)
+                        Text(if (currentMonth) "hoje" else lastDay.day.format(DateTimeFormatter.ofPattern("dd/MM")), style = FluxoType.Caption.copy(fontSize = 12.sp), color = FluxoColors.Mute)
                     }
                     BarChart(
                         entries = daily.mapIndexed { i, d ->
@@ -232,7 +232,7 @@ internal fun Dashboard(
                         Text(if (share.total > 0) "$autoPct%" else "—", style = FluxoType.number(13.sp))
                         Text(
                             if (share.total > 0) "${share.automatic} auto · ${share.manual} manual" else "Sem lançamentos",
-                            style = FluxoType.Caption.copy(fontSize = 10.5.sp), color = FluxoColors.Ink
+                            style = FluxoType.Caption.copy(fontSize = 12.sp), color = FluxoColors.Ink
                         )
                     }
                 }
@@ -304,16 +304,6 @@ private fun InOutTile(income: BigInteger, spent: BigInteger, hidden: Boolean) {
                 }
             }
         }
-        Text(
-            when {
-                hidden -> "Saldo oculto"
-                income.signum() == 0 && spent.signum() == 0 -> "Sem entradas nem saídas confirmadas neste mês."
-                net.signum() >= 0 -> "Sobrou ${cents(net)} neste mês."
-                else -> "Gastou ${cents(net.abs())} a mais do que entrou."
-            },
-            style = FluxoType.Caption, color = if (!hidden && net.signum() < 0) FluxoColors.Expense else FluxoColors.Mute,
-            modifier = Modifier.padding(top = 10.dp)
-        )
     }
 }
 
@@ -328,7 +318,7 @@ private fun donutShortLabel(category: br.com.fluxo.core.Category): String = when
 }
 
 private val TileTitle: TextStyle get() = TextStyle(fontFamily = FluxoType.Body, fontSize = 12.sp, lineHeight = 15.sp, fontWeight = FontWeight.Bold, color = FluxoColors.Ink)
-private val LegendStyle: TextStyle get() = TextStyle(fontFamily = FluxoType.Body, fontSize = 11.sp, lineHeight = 13.5.sp, fontWeight = FontWeight.Normal, color = FluxoColors.Ink)
+private val LegendStyle: TextStyle get() = TextStyle(fontFamily = FluxoType.Body, fontSize = 12.sp, lineHeight = 14.sp, fontWeight = FontWeight.Normal, color = FluxoColors.Ink)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
