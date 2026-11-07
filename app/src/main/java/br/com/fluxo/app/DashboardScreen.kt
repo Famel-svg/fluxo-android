@@ -282,13 +282,12 @@ private fun InOutTile(income: BigInteger, spent: BigInteger, hidden: Boolean) {
     fun v(value: BigInteger) = if (hidden) HIDDEN else cents(value)
     FluxoTile(Modifier.fillMaxWidth().testTag("dashboard.inout")) {
         Text("Entrou x saiu no mês", style = TileTitle)
-        Text("sem VR/VT", style = FluxoType.Caption.copy(fontSize = 10.sp), color = FluxoColors.Mute)
+        Text("Entradas − saídas, sem VR/VT (caixa + crédito)", style = FluxoType.Caption.copy(fontSize = 12.sp), color = FluxoColors.Mute)
         Text(
-            if (hidden) HIDDEN else plainMoney(net), maxLines = 1,
+            if (hidden) HIDDEN else cents(net), maxLines = 1,
             style = FluxoType.number(30.sp), color = if (!hidden && net.signum() < 0) FluxoColors.Expense else FluxoColors.Ink,
             modifier = Modifier.padding(top = 6.dp)
         )
-        Text("Entradas − saídas (caixa + crédito)", style = FluxoType.Caption, color = FluxoColors.Mute)
         Text("Cobertura parcial — não é seu saldo bancário.", style = FluxoType.Caption, color = FluxoColors.Mute)
         listOf(
             Triple("Entradas", income, FluxoColors.Income),

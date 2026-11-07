@@ -88,13 +88,13 @@ internal fun PlanningScreen(
     salaryMonthlyCents: Long = 0
 ) {
     val totals = remember(transactions, month) { SpendingAnalytics.byCategory(transactions.filter { !it.method.isVoucher }, month) }
-    val monthly = remember(transactions, month) { SpendingAnalytics.monthlyExpenses(transactions, month, 6) }
+    val monthly = remember(transactions, month) { SpendingAnalytics.monthlyExpenses(transactions.filter { !it.method.isVoucher }, month, 6) }
     val total = totals.values.fold(BigInteger.ZERO, BigInteger::add)
     val previousTotal = monthly.getOrNull(monthly.size - 2)?.totalCents ?: BigInteger.ZERO
     val monthBudgets = budgets.filter { it.month == month.toString() }.sortedBy { it.category.ordinal }
     val counts = remember(transactions, month) {
         transactions.filter {
-            it.status == ReviewStatus.CONFIRMED && it.transferId == null && it.direction == Direction.EXPENSE && (it.amountCents ?: 0) > 0 &&
+            !it.method.isVoucher && it.status == ReviewStatus.CONFIRMED && it.transferId == null && it.direction == Direction.EXPENSE && (it.amountCents ?: 0) > 0 &&
                 YearMonth.from(Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault())) == month
         }.groupingBy { it.category }.eachCount()
     }
@@ -232,7 +232,7 @@ private fun ExpectedIncomeBlock(month: YearMonth, salaryCents: Long, benefits: B
             .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Text("Renda prevista do mês", style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
+        Text("Renda prevista do mês (inclui VR/VT estimados)", style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
             modifier = Modifier.semantics { heading() })
         Text("Salário ${planningMoney(salary)} + VR ${planningMoney(estimate.vrCents)} + VT ${planningMoney(estimate.vtCents)}",
             style = FluxoType.Caption.copy(fontSize = 12.sp, fontFeatureSettings = "tnum"), color = FluxoColors.Ink)

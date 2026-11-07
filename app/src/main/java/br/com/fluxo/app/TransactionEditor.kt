@@ -133,8 +133,8 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                             OutlinedTextField(value = date, onValueChange = { date = formatDateInput(it) }, label = { Text("Data (dd/mm/aaaa)") }, isError = parsedDate == null, singleLine = true, shape = RoundedCornerShape(16.dp), colors = editorFieldColors(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
                             Column(Modifier.width(88.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 val dayFormat = DateTimeFormatter.ofPattern("dd/MM/uuuu")
-                                FluxoChip("Hoje", false, { date = LocalDate.now().format(dayFormat) }, Modifier.fillMaxWidth())
-                                FluxoChip("Ontem", false, { date = LocalDate.now().minusDays(1).format(dayFormat) }, Modifier.fillMaxWidth())
+                                FluxoChip("Hoje", date == LocalDate.now().format(dayFormat), { date = LocalDate.now().format(dayFormat) }, Modifier.fillMaxWidth())
+                                FluxoChip("Ontem", date == LocalDate.now().minusDays(1).format(dayFormat), { date = LocalDate.now().minusDays(1).format(dayFormat) }, Modifier.fillMaxWidth())
                             }
                         }
                     }
