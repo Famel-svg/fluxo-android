@@ -22,6 +22,29 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.composed
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
+import android.provider.Settings
+import kotlinx.coroutines.delay
+import java.math.BigDecimal
+import kotlin.math.roundToLong
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -339,6 +362,61 @@ internal fun FluxoVisualTheme(mode: ThemeMode = ThemeMode.SYSTEM, content: @Comp
 internal val FluxoTypography: Typography by lazy { fluxoTypography() }
 
 // ---------------------------------------------------------------------------------------------
+// Motion helpers
+// ---------------------------------------------------------------------------------------------
+
+/** False when the system "remove animations" setting (animator duration scale 0) is on. */
+@Composable
+internal fun rememberAnimationsEnabled(): Boolean {
+    val resolver = LocalContext.current.contentResolver
+    return remember(resolver) {
+        runCatching { Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f }.getOrDefault(true)
+    }
+}
+
+/** Staggered entrance (fade + 12dp slide up, 40ms * [index], index capped at 8), played once per composition. */
+internal fun Modifier.fluxoEnter(index: Int): Modifier = composed {
+    val enabled = rememberAnimationsEnabled()
+    val progress = remember { Animatable(if (enabled) 0f else 1f) }
+    LaunchedEffect(Unit) {
+        if (!enabled) return@LaunchedEffect
+        delay(40L * index.coerceIn(0, 8))
+        progress.animateTo(1f, tween(320, easing = FastOutSlowInEasing))
+    }
+    val offsetPx = with(LocalDensity.current) { 12.dp.toPx() }
+    graphicsLayer {
+        alpha = progress.value
+        translationY = (1f - progress.value) * offsetPx
+    }
+}
+
+/** Scales to 0.97 while [interactionSource] reports a press; pass the same source to the clickable. */
+internal fun Modifier.fluxoPress(interactionSource: InteractionSource): Modifier = composed {
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, tween(90, easing = FastOutSlowInEasing), label = "press")
+    graphicsLayer { scaleX = scale; scaleY = scale }
+}
+
+/** Cents counting from the previously shown value to [target] in ~600ms; the first composition shows [target]. */
+@Composable
+internal fun animatedCents(target: Long): Long {
+    var shown by remember { mutableLongStateOf(target) }
+    LaunchedEffect(target) {
+        val start = shown
+        if (start == target) return@LaunchedEffect
+        animate(0f, 1f, animationSpec = tween(600, easing = FastOutSlowInEasing)) { v, _ ->
+            shown = start + ((target - start).toDouble() * v).roundToLong()
+        }
+        shown = target
+    }
+    return shown
+}
+
+/** Money text without the currency symbol (the hero draws its own "R$" prefix). */
+internal fun moneyDigits(cents: Long): String =
+    money(BigDecimal.valueOf(cents, 2)).replace("R$", "").trim()
+
+// ---------------------------------------------------------------------------------------------
 // Layout containers
 // ---------------------------------------------------------------------------------------------
 
@@ -353,16 +431,24 @@ internal fun FluxoPanel(
     @Suppress("UNUSED_PARAMETER") gradient: List<Color>? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val shape = RoundedCornerShape(FluxoDesignTokens.PanelRadius)
     Column(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(FluxoDesignTokens.PanelRadius))
+            .fluxoElevation(shape)
+            .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .border(1.dp, accent.copy(alpha = .38f), RoundedCornerShape(FluxoDesignTokens.PanelRadius))
+            .border(1.dp, accent.copy(alpha = .38f), shape)
             .padding(FluxoDesignTokens.ScreenPadding),
         verticalArrangement = Arrangement.spacedBy(FluxoDesignTokens.ContentSpacing),
         content = content
     )
+}
+
+/** Soft 2dp shadow in light mode; dark mode has no shadow, so a 1dp [FluxoColors.Line] border draws the edge. */
+private fun Modifier.fluxoElevation(shape: Shape): Modifier = composed {
+    if (FluxoPaletteHolder.current.isDark) border(1.dp, FluxoColors.Line, shape)
+    else shadow(2.dp, shape, clip = false, ambientColor = FluxoColors.Ink.copy(alpha = .18f), spotColor = FluxoColors.Ink.copy(alpha = .18f))
 }
 
 /** Visual role of a [FluxoTile], which decides fill, border and corner radius. */
@@ -375,6 +461,8 @@ internal enum class FluxoTileRole {
     Accent
 }
 
+private val FluxoTileShape: Shape = RoundedCornerShape(20.dp)
+
 /** Compact tile with role-based fill and radius; content is a 10dp-padded column. */
 @Composable
 internal fun FluxoTile(
@@ -384,12 +472,12 @@ internal fun FluxoTile(
 ) {
     val (shape, fill) = when (role) {
         FluxoTileRole.Feature -> FluxoShapes.TileFeature to FluxoColors.Soft
-        FluxoTileRole.Outlined -> FluxoShapes.TileOutlined to FluxoColors.Paper
-        FluxoTileRole.Accent -> FluxoShapes.TileAccent to FluxoColors.Pale
+        FluxoTileRole.Outlined -> FluxoTileShape to FluxoColors.Paper
+        FluxoTileRole.Accent -> FluxoTileShape to FluxoColors.Pale
     }
     val outline = if (role == FluxoTileRole.Outlined) Modifier.border(BorderStroke(1.5.dp, FluxoColors.Line), shape) else Modifier
     Column(
-        modifier.clip(shape).background(fill).then(outline).padding(10.dp),
+        modifier.fluxoElevation(shape).clip(shape).background(fill).then(outline).padding(10.dp),
         content = content
     )
 }
@@ -407,21 +495,29 @@ internal fun FluxoHero(
     equation: String? = null,
     note: String? = null,
     trailing: (@Composable () -> Unit)? = null,
+    valueCents: Long? = null,
     content: @Composable ColumnScope.() -> Unit = {}
 ) {
     val overlay = LocalDensity.current.fontScale < 1.3f
+    val deep = if (FluxoPaletteHolder.current.isDark) Color(0xFF0A3341) else FluxoColors.PetrolDark
+    val hero = FluxoColors.Hero
     Box(
         modifier
             .fillMaxWidth()
             .clip(FluxoShapes.Hero)
-            .background(FluxoColors.Hero)
+            .background(Brush.linearGradient(listOf(hero, deep)))
+            .drawBehind {
+                drawRect(
+                    Brush.radialGradient(
+                        listOf(Color.White.copy(alpha = .10f), Color.Transparent),
+                        center = Offset(size.width, 0f), radius = size.width * .6f
+                    )
+                )
+            }
     ) {
         Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 11.dp, bottom = 12.dp)) {
             Text(label, color = FluxoColors.OnHero, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold))
-            Crossfade(
-                targetState = currency to value, animationSpec = tween(200), label = "heroValue",
-                modifier = Modifier.padding(top = 1.dp, bottom = 3.dp)
-            ) { (unit, amount) ->
+            val heroText: @Composable (String?, String) -> Unit = { unit, amount ->
                 Text(
                     buildAnnotatedString {
                         if (unit != null) {
@@ -432,6 +528,12 @@ internal fun FluxoHero(
                     color = FluxoColors.OnHero, style = FluxoType.HeroNumber, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip
                 )
             }
+            if (valueCents != null) {
+                Box(Modifier.padding(top = 1.dp, bottom = 3.dp)) { heroText(currency, moneyDigits(animatedCents(valueCents))) }
+            } else Crossfade(
+                targetState = currency to value, animationSpec = tween(200), label = "heroValue",
+                modifier = Modifier.padding(top = 1.dp, bottom = 3.dp)
+            ) { (unit, amount) -> heroText(unit, amount) }
             if (equation != null) Text(
                 equation, color = FluxoColors.OnHero,
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, fontFeatureSettings = "tnum")
@@ -622,13 +724,15 @@ internal fun FluxoPillButton(
     }
     val alpha by androidx.compose.animation.core.animateFloatAsState(
         if (enabled) 1f else .38f, androidx.compose.animation.core.tween(180), label = "pillEnabled")
+    val source = remember { MutableInteractionSource() }
     Row(
         modifier
+            .fluxoPress(source)
             .heightIn(min = 44.dp)
             .clip(FluxoShapes.Pill)
             .background(fill.copy(alpha = fill.alpha * alpha))
             .border(borderWidth, borderColor.copy(alpha = alpha), FluxoShapes.Pill)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .clickable(interactionSource = source, indication = LocalIndication.current, enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = 14.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically
@@ -725,7 +829,7 @@ internal fun FluxoCaptureStrip(
         val stacked = action != null && (fontScale >= 1.3f || maxWidth < 340.dp)
         val text: @Composable ColumnScope.() -> Unit = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                FluxoDot(if (live) FluxoColors.Live else FluxoColors.Gray, size = 10.dp)
+                LiveDot(live)
                 Text(title, color = FluxoColors.OnStrip, modifier = Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.5.sp, fontWeight = FontWeight.Bold))
             }
             Text(detail, color = FluxoColors.OnStrip, style = MaterialTheme.typography.bodySmall)
@@ -746,4 +850,21 @@ internal fun FluxoCaptureStrip(
             }
         }
     }
+}
+
+/** Strip dot; when [live] a halo expands and fades in a ~1.6s loop (static if animations are removed). */
+@Composable
+private fun LiveDot(live: Boolean) {
+    val color = if (live) FluxoColors.Live else FluxoColors.Gray
+    val animate = live && rememberAnimationsEnabled()
+    val pulse = if (animate) {
+        rememberInfiniteTransition(label = "livePulse").animateFloat(
+            0f, 1f, infiniteRepeatable(tween(1600, easing = LinearEasing), RepeatMode.Restart), label = "pulse"
+        ).value
+    } else 0f
+    Box(
+        Modifier.size(10.dp).drawBehind {
+            if (animate) drawCircle(color.copy(alpha = .45f * (1f - pulse)), radius = size.minDimension / 2f * (1f + 1.4f * pulse))
+        }.clip(CircleShape).background(color)
+    )
 }

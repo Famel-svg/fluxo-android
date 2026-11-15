@@ -5,9 +5,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -20,6 +24,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -76,6 +81,20 @@ internal fun budgetRatio(spent: BigInteger, limit: BigInteger, cap: Float = 1.2f
     return BigDecimal(spent).divide(BigDecimal(limit), 6, RoundingMode.HALF_UP).toFloat().coerceIn(0f, cap)
 }
 
+/**
+ * 0..1 entry progress played once per composition over [durationMs] (FastOutSlowIn unless [easing] is overridden);
+ * already 1 when the system "remove animations" setting is on. Read `.value` in draw blocks only.
+ */
+@Composable
+private fun rememberEntryProgress(durationMs: Int): Animatable<Float, *> {
+    val enabled = rememberAnimationsEnabled()
+    val progress = remember { Animatable(if (enabled) 0f else 1f) }
+    LaunchedEffect(Unit) {
+        if (enabled) progress.animateTo(1f, tween(durationMs, easing = LinearEasing))
+    }
+    return progress
+}
+
 private fun chartLabelStyle(color: Color, bold: Boolean = false) = TextStyle(
     fontFamily = FluxoType.Body, fontSize = 10.sp, color = color,
     fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal, fontFeatureSettings = "tnum"
@@ -108,11 +127,14 @@ internal fun DonutChart(
     sliceGapDegrees: Float = 1.5f,
     center: @Composable BoxScope.() -> Unit = {}
 ) {
+    val entry = rememberEntryProgress(700)
     Box(
         modifier.clearAndSetSemantics { this.contentDescription = contentDescription; role = Role.Image },
         contentAlignment = Alignment.Center
     ) {
         Canvas(Modifier.fillMaxSize()) {
+            // Sweep reveals slices clockwise: only the first `limit` degrees of the ring are drawn.
+            val limit = FastOutSlowInEasing.transform(entry.value) * 360f
             val stroke = strokeWidth.toPx()
             val diameter = min(size.width, size.height) - stroke
             if (diameter <= 0f) return@Canvas
@@ -124,14 +146,17 @@ internal fun DonutChart(
             if (total.signum() <= 0) return@Canvas
             val gap = if (positive.size > 1) sliceGapDegrees else 0f
             var start = -90f
+            var done = 0f
             positive.forEach { slice ->
                 val sweep = chartFraction(slice.value, total) * 360f
                 val drawn = max(sweep - gap, 0.5f.coerceAtMost(sweep))
-                drawArc(
-                    slice.color, start + (sweep - drawn) / 2f, drawn, useCenter = false,
+                val shown = min(drawn, (limit - done - (sweep - drawn) / 2f).coerceAtLeast(0f))
+                if (shown > 0f) drawArc(
+                    slice.color, start + (sweep - drawn) / 2f, shown, useCenter = false,
                     topLeft = topLeft, size = arcSize, style = Stroke(stroke)
                 )
                 start += sweep
+                done += sweep
             }
         }
         center()
@@ -158,8 +183,11 @@ internal fun BarChart(
     highlightLabelColor: Color = FluxoColors.Ink,
 ) {
     val measurer = rememberTextMeasurer()
+    val stagger = 40
+    val entry = rememberEntryProgress(500 + stagger * (entries.size - 1).coerceAtLeast(0))
     Canvas(modifier.semantics { this.contentDescription = contentDescription; role = Role.Image }) {
         if (entries.isEmpty() || size.width <= 0f || size.height <= 0f) return@Canvas
+        val totalMs = 500f + stagger * (entries.size - 1)
         val normal = chartLabelStyle(labelColor)
         val bold = chartLabelStyle(highlightLabelColor, bold = true)
         val labelHeight = measurer.measure("0", normal).size.height.toFloat()
@@ -173,12 +201,13 @@ internal fun BarChart(
         val maxValue = entries.maxOf { it.value.max(BigInteger.ZERO) }
         val radius = CornerRadius(min(3.dp.toPx(), barWidth / 2f))
         drawLine(baselineColor, Offset(0f, baseline), Offset(size.width, baseline), strokeWidth = 1.dp.toPx())
-        entries.forEachIndexed { i, entry ->
+        entries.forEachIndexed { i, bar ->
             val highlighted = i == highlightedIndex
-            val h = chartFraction(entry.value, maxValue) * barsHeight
+            val h = chartFraction(bar.value, maxValue) * barsHeight
             val x = slot * i + (slot - barWidth) / 2f
             val cx = slot * i + slot / 2f
-            val barHeight = if (entry.value.signum() > 0) max(h, 2.dp.toPx().coerceAtMost(barsHeight)) else 0f
+            val grow = FastOutSlowInEasing.transform(((entry.value * totalMs - stagger * i) / 500f).coerceIn(0f, 1f))
+            val barHeight = (if (bar.value.signum() > 0) max(h, 2.dp.toPx().coerceAtMost(barsHeight)) else 0f) * grow
             if (barHeight > 0f) {
                 drawRoundRect(
                     if (highlighted) highlightColor else barColor,
@@ -186,13 +215,13 @@ internal fun BarChart(
                     cornerRadius = radius, style = Fill
                 )
             }
-            if (showValueLabels && entry.valueLabel != null) {
+            if (showValueLabels && bar.valueLabel != null && grow >= 1f) {
                 val style = if (highlighted) bold else normal
                 val top = (baseline - barHeight - labelHeight - pad / 2f).coerceAtLeast(0f)
-                drawLabel(measurer, entry.valueLabel, style, cx, top, slot * 2.6f)
+                drawLabel(measurer, bar.valueLabel, style, cx, top, slot * 2.6f)
             }
-            if (bottomReserve > 0f && entry.axisLabel != null) {
-                drawLabel(measurer, entry.axisLabel, if (highlighted) bold else normal, cx, baseline + pad, slot * 1.6f)
+            if (bottomReserve > 0f && bar.axisLabel != null) {
+                drawLabel(measurer, bar.axisLabel, if (highlighted) bold else normal, cx, baseline + pad, slot * 1.6f)
             }
         }
     }
@@ -256,8 +285,10 @@ internal fun SplitBar(
     trackColor: Color = FluxoColors.Soft,
     gap: Dp = 1.5.dp,
 ) {
+    val entry = rememberEntryProgress(500)
     Canvas(modifier.semantics { this.contentDescription = contentDescription; role = Role.Image }) {
         if (size.width <= 0f || size.height <= 0f) return@Canvas
+        val reveal = FastOutSlowInEasing.transform(entry.value)
         val a = first.max(BigInteger.ZERO)
         val b = second.max(BigInteger.ZERO)
         val total = a + b
@@ -266,15 +297,19 @@ internal fun SplitBar(
             drawRoundRect(trackColor, size = size, cornerRadius = r)
             return@Canvas
         }
-        if (a.signum() == 0 || b.signum() == 0) {
-            drawRoundRect(if (a.signum() > 0) firstColor else secondColor, size = size, cornerRadius = r)
-            return@Canvas
+        // Width animates from the start edge: the capsule is revealed by clipping to `reveal` of its width.
+        drawRoundRect(trackColor, size = size, cornerRadius = r)
+        clipRect(right = size.width * reveal) {
+            if (a.signum() == 0 || b.signum() == 0) {
+                drawRoundRect(if (a.signum() > 0) firstColor else secondColor, size = size, cornerRadius = r)
+                return@clipRect
+            }
+            val g = gap.toPx()
+            val usable = (size.width - g).coerceAtLeast(0f)
+            val wa = usable * chartFraction(a, total)
+            drawRoundRect(firstColor, size = Size(wa, size.height), cornerRadius = r)
+            drawRoundRect(secondColor, topLeft = Offset(wa + g, 0f), size = Size(usable - wa, size.height), cornerRadius = r)
         }
-        val g = gap.toPx()
-        val usable = (size.width - g).coerceAtLeast(0f)
-        val wa = usable * chartFraction(a, total)
-        drawRoundRect(firstColor, size = Size(wa, size.height), cornerRadius = r)
-        drawRoundRect(secondColor, topLeft = Offset(wa + g, 0f), size = Size(usable - wa, size.height), cornerRadius = r)
     }
 }
 
