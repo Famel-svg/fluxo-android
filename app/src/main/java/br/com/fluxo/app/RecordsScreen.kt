@@ -197,7 +197,7 @@ internal fun RecordsScreen(
             }
             if (advanced) {
                 item { Choice("Banco", bank, bankOptions, { it?.let(bankLabel) ?: "Todos" }) { bank = it } }
-                item { Choice("Meio", method, listOf<PaymentMethod?>(null) + PaymentMethod.entries, { it?.let(methodLabel) ?: "Todos" }) { method = it } }
+                item { Choice("Meio", method, listOf<PaymentMethod?>(null) + PaymentMethod.entries.filter { it != PaymentMethod.TRANSPORT_VOUCHER || method == it || rows.any { r -> r.method == it } }, { it?.let(methodLabel) ?: "Todos" }) { method = it } }
                 item { Choice("Categoria", category, listOf<Category?>(null) + Category.entries, { it?.label ?: "Todas" }) { category = it } }
                 item { WeekStrip(weekCap) }
             }
@@ -397,14 +397,13 @@ private fun ReviewTicket(
         )
         FluxoTicketActions {
             if (methodOnly) {
-                // Three compact choices; FlowRow wraps to a second line instead of clipping at 320dp or large fonts.
+                // Two compact choices (VR or credit); FlowRow wraps to a second line instead of clipping at 320dp or large fonts.
                 FlowRow(
                     Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp), itemVerticalAlignment = Alignment.CenterVertically
                 ) {
-                    FluxoPillButton("Crédito", { save(confirmed(PaymentMethod.CREDIT_CARD)) }, Modifier.weight(1f), FluxoButtonStyle.Primary, enabled = !saving)
-                    FluxoPillButton("Débito", { save(confirmed(PaymentMethod.DEBIT_CARD)) }, Modifier.weight(1f), FluxoButtonStyle.Secondary, enabled = !saving)
                     FluxoPillButton("VR", { save(confirmed(PaymentMethod.MEAL_VOUCHER)) }, Modifier.weight(1f), FluxoButtonStyle.Secondary, enabled = !saving)
+                    FluxoPillButton("Crédito", { save(confirmed(PaymentMethod.CREDIT_CARD)) }, Modifier.weight(1f), FluxoButtonStyle.Primary, enabled = !saving)
                 }
             } else {
                 // Without amount or direction there is nothing to confirm yet: the primary action opens the editor instead.
