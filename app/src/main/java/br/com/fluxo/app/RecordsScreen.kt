@@ -375,7 +375,7 @@ private fun ReviewTicket(
     ) {
     FluxoTicket {
         FluxoTicketHeader(
-            (row.description.ifBlank { methodLabel(row.method) }) + " · " + money(amount),
+            money(amount),
             Modifier.semantics {
                 customActions = listOf(
                     CustomAccessibilityAction(primaryLabel) { if (!saving) primary(); true },
@@ -384,6 +384,8 @@ private fun ReviewTicket(
             },
             badge = bankLabel(row.bankPackage)
         )
+        Text(row.description.ifBlank { methodLabel(row.method) }, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            color = FluxoColors.Mute, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp))
         Text(
             row.reason.ifBlank { "Confirme valor e classificação" } + missing,
             style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold)

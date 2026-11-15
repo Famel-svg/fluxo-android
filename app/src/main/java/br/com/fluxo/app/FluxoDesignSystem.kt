@@ -777,7 +777,7 @@ internal fun FluxoTicketHeader(title: String, modifier: Modifier = Modifier, bad
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             title, modifier = Modifier.weight(1f),
-            style = FluxoType.number(14.5.sp, FontWeight.ExtraBold).copy(lineHeight = 18.sp)
+            style = FluxoType.number(18.sp, FontWeight.ExtraBold).copy(lineHeight = 22.sp)
         )
         if (badge != null) FluxoBadge(badge, kind = FluxoBadgeKind.Bank)
     }
