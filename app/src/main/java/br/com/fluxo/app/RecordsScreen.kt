@@ -14,6 +14,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.foundation.border
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -209,6 +214,18 @@ internal fun RecordsScreen(
                 item {
                     FluxoSectionHeading("Revisar", Modifier.padding(start = 2.dp, top = 6.dp, end = 2.dp, bottom = 2.dp), trailing = "um toque resolve")
                 }
+                item {
+                    val progress by animateFloatAsState(
+                        if (rows.isEmpty()) 0f else 1f - reviewCount / rows.size.toFloat(), tween(300, easing = FastOutSlowInEasing), label = "reviewProgress"
+                    )
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 2.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        LinearProgressIndicator(
+                            progress = { progress }, modifier = Modifier.fillMaxWidth().height(3.dp).clip(FluxoShapes.Pill),
+                            color = FluxoColors.Income, trackColor = FluxoColors.Soft, gapSize = 0.dp, drawStopIndicator = {}
+                        )
+                        Text("${reviewing.size} para revisar · deslize → para confirmar", color = FluxoColors.Mute, style = FluxoType.Caption)
+                    }
+                }
                 if (editError != null) item {
                     Text(editError.orEmpty(), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(horizontal = 2.dp))
@@ -315,9 +332,56 @@ private fun ReviewTicket(
     val methodOnly = known && row.direction == Direction.EXPENSE && row.method == PaymentMethod.UNKNOWN &&
         row.reason.startsWith(METHOD_ONLY_REASON)
     fun confirmed(method: PaymentMethod = row.method) = row.copy(status = ReviewStatus.CONFIRMED, reason = "", method = method)
+    // Same action as the first button; ambiguous ones (Completar) open the editor.
+    val primary: () -> Unit = when {
+        methodOnly -> { { save(confirmed(PaymentMethod.CREDIT_CARD)) } }
+        known -> { { save(confirmed()) } }
+        else -> { { edit(row) } }
+    }
+    val primaryLabel = if (methodOnly) "Crédito" else if (known) "Confirmar" else "Completar"
+    // The state is remembered once; read the latest callbacks through it.
+    val onPrimary by rememberUpdatedState(primary)
+    val onEdit by rememberUpdatedState({ edit(row) })
+    val swipe = rememberSwipeToDismissBoxState(
+        positionalThreshold = { it * 0.35f },
+        confirmValueChange = { value ->
+            when (value) {
+                SwipeToDismissBoxValue.StartToEnd -> onPrimary()
+                SwipeToDismissBoxValue.EndToStart -> onEdit()
+                SwipeToDismissBoxValue.Settled -> Unit
+            }
+            false // snap back; a confirmed row leaves the list through animateItem
+        }
+    )
+    SwipeToDismissBox(
+        state = swipe,
+        enableDismissFromStartToEnd = !saving,
+        backgroundContent = {
+            val toConfirm = swipe.dismissDirection == SwipeToDismissBoxValue.StartToEnd
+            val toEdit = swipe.dismissDirection == SwipeToDismissBoxValue.EndToStart
+            if (toConfirm || toEdit) Row(
+                Modifier.fillMaxSize().clip(FluxoShapes.Ticket)
+                    .background(if (toConfirm) FluxoColors.Income else FluxoColors.Petrol).padding(horizontal = 18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = if (toConfirm) Arrangement.Start else Arrangement.End
+            ) {
+                val tint = androidx.compose.ui.graphics.Color.White
+                if (toConfirm) Icon(Icons.Default.Check, null, tint = tint)
+                Text(if (toConfirm) primaryLabel else "Editar", Modifier.padding(horizontal = 8.dp), color = tint,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                if (toEdit) Icon(Icons.Default.Edit, null, tint = tint)
+            }
+        }
+    ) {
     FluxoTicket {
         FluxoTicketHeader(
             (row.description.ifBlank { methodLabel(row.method) }) + " · " + money(amount),
+            Modifier.semantics {
+                customActions = listOf(
+                    CustomAccessibilityAction(primaryLabel) { if (!saving) primary(); true },
+                    CustomAccessibilityAction("Editar") { edit(row); true }
+                )
+            },
             badge = bankLabel(row.bankPackage)
         )
         Text(
@@ -347,6 +411,7 @@ private fun ReviewTicket(
                 FluxoPillButton("Editar", { edit(row) }, Modifier.weight(1f), FluxoButtonStyle.Secondary)
             }
         }
+    }
     }
 }
 
