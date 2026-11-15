@@ -173,7 +173,7 @@ class PlanningUiTest {
         val vt = 1080L * BenefitCalculator.scheduledDays(month, BenefitCalculator.WORKDAYS)
         fun cents(value: Long) = currency("%d.%02d".format(value / 100, value % 100))
         compose.onNodeWithTag("planning.income").assertIsDisplayed()
-        compose.onNodeWithText("Renda prevista do mês").assertIsDisplayed()
+        compose.onNodeWithText("Renda prevista do mês (salário)").assertIsDisplayed()
         compose.onNodeWithText("Salário ${cents(350000)} + VR ${cents(vr)} + VT ${cents(vt)}").assertIsDisplayed()
         compose.onNodeWithText("= ${cents(350000 + vr + vt)}").assertIsDisplayed()
         compose.onNodeWithTag("planning.salaryShare").assertTextEquals("Gastos do mês: 50% do salário")
@@ -190,7 +190,7 @@ class PlanningUiTest {
         showWithSalary(rows, 0)
         compose.onNodeWithTag("planning.income").assertDoesNotExist()
         compose.onNodeWithTag("planning.salaryShare").assertDoesNotExist()
-        compose.onNodeWithText("Renda prevista do mês").assertDoesNotExist()
+        compose.onNodeWithText("Renda prevista do mês (salário)").assertDoesNotExist()
     }
 
     @Test fun incomeBlockDoesNotChangeTheSpendingHeroOrCategoryTotals() {
