@@ -6,6 +6,11 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -17,6 +22,8 @@ import androidx.compose.foundation.border
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.material3.*
@@ -101,6 +108,13 @@ internal fun RecordsScreen(
             .groupBy { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() }
     }
     val reviewCount = remember(rows) { rows.count { it.status == ReviewStatus.REVIEW } }
+    // Celebrate only the >0 -> 0 transition seen while the screen is open; not persisted.
+    var celebrate by remember { mutableStateOf(false) }
+    var previousReviewCount by remember { mutableIntStateOf(reviewCount) }
+    LaunchedEffect(reviewCount) {
+        celebrate = previousReviewCount > 0 && reviewCount == 0
+        previousReviewCount = reviewCount
+    }
     val dateFormat = remember { DateTimeFormatter.ofPattern("dd/MM/yyyy", ptBr) }
     val timeFormat = remember { DateTimeFormatter.ofPattern("dd/MM HH:mm", ptBr) }
     val weekCap = remember(rows, allRows, allMonths, month, zone, today) {
@@ -202,14 +216,21 @@ internal fun RecordsScreen(
                 item { WeekStrip(weekCap) }
             }
             if (filtered.isEmpty()) item {
-                if (rows.isEmpty()) FluxoEmptyState(
-                    "Nenhum lançamento ainda",
-                    "Ative a captura de notificações em Ajustes ou toque em + para lançar manualmente."
-                ) else Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (rows.isEmpty()) Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.padding(top = 16.dp).size(88.dp).clip(CircleShape).background(FluxoColors.Soft), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.Receipt, null, tint = FluxoColors.Mute, modifier = Modifier.size(44.dp))
+                    }
+                    FluxoEmptyState(
+                        "Nenhum lançamento ainda",
+                        "Ative a captura de notificações em Ajustes ou toque em + para lançar manualmente."
+                    )
+                    CompactAction("Lançar manualmente", FluxoColors.Ink) { add() }
+                } else Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                     FluxoEmptyState("Nenhum resultado com estes filtros", "Altere a busca ou limpe os filtros para ver todos os lançamentos.")
                     CompactAction("Limpar filtros", FluxoColors.Ink) { clearFilters() }
                 }
             }
+            if (celebrate && reviewCount == 0) item(key = "review-done") { ReviewDoneCard(Modifier.animateItem()) }
             if (reviewing.isNotEmpty()) {
                 item {
                     FluxoSectionHeading("Revisar", Modifier.padding(start = 2.dp, top = 6.dp, end = 2.dp, bottom = 2.dp), trailing = "um toque resolve")
@@ -263,6 +284,31 @@ internal fun RecordsScreen(
 private val ROW_FADE_IN = tween<Float>(180, easing = FastOutSlowInEasing)
 private val ROW_FADE_OUT = tween<Float>(120, easing = FastOutSlowInEasing)
 private val ROW_PLACE = tween<androidx.compose.ui.unit.IntOffset>(220, easing = FastOutSlowInEasing)
+
+/** Shown once when the review queue reaches zero; springs in, or appears static with animations off. */
+@Composable
+private fun ReviewDoneCard(modifier: Modifier = Modifier) {
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { shown = true }
+    val animate = rememberAnimationsEnabled()
+    val progress by animateFloatAsState(
+        if (shown) 1f else 0f,
+        if (animate) spring(dampingRatio = 0.55f, stiffness = 300f) else snap(), label = "reviewDone"
+    )
+    Column(
+        modifier.fillMaxWidth().padding(vertical = 8.dp)
+            .graphicsLayer { val k = 0.6f + 0.4f * progress; scaleX = k; scaleY = k; alpha = progress.coerceIn(0f, 1f) }
+            .clip(FluxoShapes.Ticket).background(FluxoColors.Soft).padding(16.dp)
+            .semantics(mergeDescendants = true) {},
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Box(Modifier.size(48.dp).clip(CircleShape).background(FluxoColors.Income), contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.Check, null, tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(28.dp))
+        }
+        Text("Tudo revisado", color = FluxoColors.Ink, style = MaterialTheme.typography.titleMedium)
+        Text("Seus lançamentos estão em dia", color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
+    }
+}
 
 /** Small text action (>= 44dp touch target) for the compact filter line. */
 @Composable
@@ -331,6 +377,8 @@ private fun ReviewTicket(
     }
     val methodOnly = known && row.direction == Direction.EXPENSE && row.method == PaymentMethod.UNKNOWN &&
         row.reason.startsWith(METHOD_ONLY_REASON)
+    val haptic = LocalHapticFeedback.current
+    val saveWithHaptic: (Transaction) -> Unit = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); save(it) }
     fun confirmed(method: PaymentMethod = row.method) = row.copy(status = ReviewStatus.CONFIRMED, reason = "", method = method)
     // Same action as the first button; ambiguous ones (Completar) open the editor.
     val primary: () -> Unit = when {
@@ -353,23 +401,32 @@ private fun ReviewTicket(
             false // snap back; a confirmed row leaves the list through animateItem
         }
     )
+    // One tick each time the drag crosses the commit threshold (target flips), not on every frame.
+    LaunchedEffect(swipe.targetValue) {
+        if (swipe.targetValue != SwipeToDismissBoxValue.Settled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+    }
     SwipeToDismissBox(
         state = swipe,
         enableDismissFromStartToEnd = !saving,
         backgroundContent = {
             val toConfirm = swipe.dismissDirection == SwipeToDismissBoxValue.StartToEnd
             val toEdit = swipe.dismissDirection == SwipeToDismissBoxValue.EndToStart
+            val width = with(LocalDensity.current) { 320.dp.toPx() }
+            val fraction = (kotlin.math.abs(runCatching { swipe.requireOffset() }.getOrDefault(0f)) / (width * 0.35f)).coerceIn(0f, 1f)
+            val reveal = 0.8f + 0.3f * fraction
             if (toConfirm || toEdit) Row(
                 Modifier.fillMaxSize().clip(FluxoShapes.Ticket)
-                    .background(if (toConfirm) FluxoColors.Income else FluxoColors.Petrol).padding(horizontal = 18.dp),
+                    .background((if (toConfirm) FluxoColors.Income else FluxoColors.Petrol).copy(alpha = 0.45f + 0.55f * fraction)).padding(horizontal = 18.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = if (toConfirm) Arrangement.Start else Arrangement.End
             ) {
                 val tint = androidx.compose.ui.graphics.Color.White
-                if (toConfirm) Icon(Icons.Default.Check, null, tint = tint)
-                Text(if (toConfirm) primaryLabel else "Editar", Modifier.padding(horizontal = 8.dp), color = tint,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-                if (toEdit) Icon(Icons.Default.Edit, null, tint = tint)
+                Row(Modifier.graphicsLayer { scaleX = reveal; scaleY = reveal }, verticalAlignment = Alignment.CenterVertically) {
+                    if (toConfirm) Icon(Icons.Default.Check, null, tint = tint)
+                    Text(if (toConfirm) primaryLabel else "Editar", Modifier.padding(horizontal = 8.dp), color = tint,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                    if (toEdit) Icon(Icons.Default.Edit, null, tint = tint)
+                }
             }
         }
     ) {
@@ -402,12 +459,12 @@ private fun ReviewTicket(
                     Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp), itemVerticalAlignment = Alignment.CenterVertically
                 ) {
-                    FluxoPillButton("VR", { save(confirmed(PaymentMethod.MEAL_VOUCHER)) }, Modifier.weight(1f), FluxoButtonStyle.Secondary, enabled = !saving)
-                    FluxoPillButton("Crédito", { save(confirmed(PaymentMethod.CREDIT_CARD)) }, Modifier.weight(1f), FluxoButtonStyle.Primary, enabled = !saving)
+                    FluxoPillButton("VR", { saveWithHaptic(confirmed(PaymentMethod.MEAL_VOUCHER)) }, Modifier.weight(1f), FluxoButtonStyle.Secondary, enabled = !saving)
+                    FluxoPillButton("Crédito", { saveWithHaptic(confirmed(PaymentMethod.CREDIT_CARD)) }, Modifier.weight(1f), FluxoButtonStyle.Primary, enabled = !saving)
                 }
             } else {
                 // Without amount or direction there is nothing to confirm yet: the primary action opens the editor instead.
-                FluxoPillButton(if (known) "Confirmar" else "Completar", { if (known) save(confirmed()) else edit(row) },
+                FluxoPillButton(if (known) "Confirmar" else "Completar", { if (known) saveWithHaptic(confirmed()) else edit(row) },
                     Modifier.weight(1f), FluxoButtonStyle.Primary, enabled = !saving)
                 FluxoPillButton("Editar", { edit(row) }, Modifier.weight(1f), FluxoButtonStyle.Secondary)
             }
