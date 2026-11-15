@@ -87,6 +87,7 @@ internal fun RecordsScreen(
     val filtered = remember(rows, filter, query, bank, method, category) {
         TransactionSearch.filter(rows.filter { when (filter) { 1 -> it.direction == Direction.INCOME; 2 -> it.direction == Direction.EXPENSE; 3 -> it.status == ReviewStatus.REVIEW; else -> true } }, query, bank, method, category).sortedByDescending { it.occurredAt }
     }
+    val clearFilters = { query = ""; bank = null; method = null; category = null; setFilter(0); setAllMonths(false) }
     val zone = ZoneId.systemDefault()
     val today = LocalDate.now(zone)
     val reviewing = remember(filtered) { filtered.filter { it.status == ReviewStatus.REVIEW } }
@@ -95,10 +96,6 @@ internal fun RecordsScreen(
             .groupBy { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() }
     }
     val reviewCount = remember(rows) { rows.count { it.status == ReviewStatus.REVIEW } }
-    val chipBanks = remember(rows, bankOptions) {
-        val present = rows.map { it.bankPackage }.toSet()
-        bankOptions.filterNotNull().filter { it in present }
-    }
     val dateFormat = remember { DateTimeFormatter.ofPattern("dd/MM/yyyy", ptBr) }
     val timeFormat = remember { DateTimeFormatter.ofPattern("dd/MM HH:mm", ptBr) }
     val weekCap = remember(rows, allRows, allMonths, month, zone, today) {
@@ -126,7 +123,7 @@ internal fun RecordsScreen(
                 }
                 if (allMonths) Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Todos os meses", Modifier.weight(1f), color = FluxoColors.Ink, maxLines = 1,
-                        style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.5.sp, fontWeight = FontWeight.Bold))
+                        style = MaterialTheme.typography.titleMedium)
                     addButton()
                 } else FluxoMonthBar(month, previousMonth, nextMonth, trailing = addButton)
             }
@@ -139,7 +136,7 @@ internal fun RecordsScreen(
                     focusedLeadingIconColor = FluxoColors.Ink, unfocusedLeadingIconColor = FluxoColors.Ink,
                     cursorColor = FluxoColors.Ink
                 )
-                val fieldText = MaterialTheme.typography.bodyLarge.copy(fontSize = 13.5.sp, color = FluxoColors.Ink)
+                val fieldText = MaterialTheme.typography.bodyMedium.copy(color = FluxoColors.Ink)
                 androidx.compose.foundation.text.BasicTextField(
                     value = query, onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
@@ -166,33 +163,30 @@ internal fun RecordsScreen(
                 )
             }
             item {
+                // Primary type filter only; bank, method and category live in the collapsible panel.
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    FluxoChip("Todos", filter == 0 && bank == null, { setFilter(0); bank = null })
-                    FluxoChip("Revisar ($reviewCount)", filter == 3, { setFilter(if (filter == 3) 0 else 3) }, tone = FluxoChipTone.Review)
-                    chipBanks.forEach { code ->
-                        FluxoChip(shortBank(code), bank == code, { bank = if (bank == code) null else code })
-                    }
+                    FluxoChip("Todos", filter == 0, { setFilter(0) })
                     FluxoChip("Entradas", filter == 1, { setFilter(if (filter == 1) 0 else 1) })
                     FluxoChip("Saídas", filter == 2, { setFilter(if (filter == 2) 0 else 2) })
-                    FluxoChip("Todos os meses", allMonths, { setAllMonths(!allMonths) })
+                    FluxoChip("Revisar ($reviewCount)", filter == 3, { setFilter(if (filter == 3) 0 else 3) }, tone = FluxoChipTone.Review)
                 }
             }
             item {
-                WeekStrip(weekCap)
-            }
-            item {
                 val anyFilter = query.isNotBlank() || bank != null || method != null || category != null || filter != 0 || allMonths
+                val panelCount = listOf(bank != null, method != null, category != null).count { it }
                 // FlowRow keeps the count and actions readable at large font sizes.
                 FlowRow(
                     Modifier.fillMaxWidth().padding(horizontal = 2.dp), horizontalArrangement = Arrangement.SpaceBetween,
                     itemVerticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("${filtered.size} lançamento(s)", color = FluxoColors.Mute, style = FluxoType.Caption.copy(fontSize = 11.5.sp))
+                    Text("${filtered.size} lançamento(s)", color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (anyFilter) CompactAction("Limpar filtros", FluxoColors.Mute) {
-                            query = ""; bank = null; method = null; category = null; setFilter(0); setAllMonths(false)
-                        }
-                        CompactAction(if (advanced) "Ocultar filtros" else "Filtros", FluxoColors.Ink, description = "Banco, meio e categoria") { advanced = !advanced }
+                        if (anyFilter) CompactAction("Limpar filtros", FluxoColors.Mute) { clearFilters() }
+                        CompactAction(if (allMonths) "Só este mês" else "Todos os meses", FluxoColors.Ink) { setAllMonths(!allMonths) }
+                        CompactAction(
+                            if (advanced) "Ocultar filtros" else if (panelCount > 0) "Filtros ($panelCount)" else "Filtros",
+                            FluxoColors.Ink, description = "Banco, meio e categoria"
+                        ) { advanced = !advanced }
                     }
                 }
             }
@@ -200,9 +194,16 @@ internal fun RecordsScreen(
                 item { Choice("Banco", bank, bankOptions, { it?.let(bankLabel) ?: "Todos" }) { bank = it } }
                 item { Choice("Meio", method, listOf<PaymentMethod?>(null) + PaymentMethod.entries, { it?.let(methodLabel) ?: "Todos" }) { method = it } }
                 item { Choice("Categoria", category, listOf<Category?>(null) + Category.entries, { it?.label ?: "Todas" }) { category = it } }
+                item { WeekStrip(weekCap) }
             }
             if (filtered.isEmpty()) item {
-                FluxoEmptyState("Nenhum lançamento", "Nenhum registro corresponde aos filtros. Altere a busca ou escolha Todos os meses.")
+                if (rows.isEmpty()) FluxoEmptyState(
+                    "Nenhum lançamento ainda",
+                    "Ative a captura de notificações em Ajustes ou toque em + para lançar manualmente."
+                ) else Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    FluxoEmptyState("Nenhum resultado com estes filtros", "Altere a busca ou limpe os filtros para ver todos os lançamentos.")
+                    CompactAction("Limpar filtros", FluxoColors.Ink) { clearFilters() }
+                }
             }
             if (reviewing.isNotEmpty()) {
                 item {
@@ -227,7 +228,7 @@ internal fun RecordsScreen(
                     }
                     Text(
                         title.uppercase(ptBr), color = FluxoColors.Mute,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.08.em),
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.08.em),
                         modifier = Modifier.padding(start = 2.dp, top = 8.dp, end = 2.dp, bottom = 1.dp).semantics { heading() }
                     )
                 }
@@ -254,7 +255,7 @@ private fun CompactAction(text: String, color: androidx.compose.ui.graphics.Colo
             .semantics { if (description != null) contentDescription = description },
         contentAlignment = Alignment.Center
     ) {
-        Text(text, color = color, maxLines = 1, style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold))
+        Text(text, color = color, maxLines = 1, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold))
     }
 }
 
@@ -269,7 +270,7 @@ private fun WeekStrip(days: List<br.com.fluxo.core.DailyExpense>) {
     val stacked = LocalDensity.current.fontScale >= 1.3f
     val label: @Composable () -> Unit = {
         Column {
-            Text("Gastos · 7 dias", color = FluxoColors.Mute, style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold))
+            Text("Gastos · 7 dias", color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold))
             Text(totalText, style = FluxoType.number(16.sp), maxLines = 1)
         }
     }
@@ -321,7 +322,7 @@ private fun ReviewTicket(
         )
         Text(
             row.reason.ifBlank { "Confirme valor e classificação" } + missing,
-            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, lineHeight = 15.sp, fontWeight = FontWeight.Bold)
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold)
         )
         Text(
             directionLabel(row.direction) + " · " + methodLabel(row.method) + " · " +

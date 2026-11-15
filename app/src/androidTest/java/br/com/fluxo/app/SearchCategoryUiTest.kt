@@ -54,7 +54,7 @@ class SearchCategoryUiTest {
         scrollTo("Nenhum lançamento")
         compose.onNodeWithText("Nenhum lançamento").assertIsDisplayed()
         scrollTo("Todos os meses")
-        // The chip sits in the horizontally scrolling filter row.
+        // Month-scope action sits beside the count, apart from the type chips.
         compose.onNodeWithText("Todos os meses").performScrollTo().performClick()
         scrollTo("Mercado histórico sintético")
         compose.onNodeWithText("Mercado histórico sintético").assertIsDisplayed().performClick()
@@ -81,8 +81,8 @@ class SearchCategoryUiTest {
         scrollTo("Categoria: Alimentação")
         compose.onNodeWithText("Categoria: Alimentação").performClick()
         compose.onNodeWithText("Transporte", substring = false).performClick()
-        scrollTo("Nenhum lançamento")
-        compose.onNodeWithText("Nenhum lançamento").assertIsDisplayed()
+        scrollTo("Nenhum resultado com estes filtros")
+        compose.onNodeWithText("Nenhum resultado com estes filtros").assertIsDisplayed()
         compose.onNodeWithText("Mercado histórico sintético").assertDoesNotExist()
     }
 
