@@ -13,7 +13,21 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.delay
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -32,6 +46,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -189,8 +204,9 @@ internal fun OnboardingScreen(
                     // Centred when the page is shorter than the viewport (tall phones), scrolls when it is taller.
                     verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically)
                 ) {
+                    if (page == 0) CaptureDemo()
                     val (title, subtitle) = when (page) {
-                        0 -> "Como podemos te chamar?" to "Seu nome aparece na saudação do início e fica só neste aparelho."
+                        0 -> "Seus gastos se anotam sozinhos" to "Tudo fica no seu aparelho. Para começar, como podemos te chamar?"
                         1 -> "Qual é o seu salário mensal?" to "Com ele, o Planejar mostra quanto da renda do mês já foi gasto."
                         2 -> "Vale-refeição" to "Quanto cai por dia e em quais dias da semana. O Fluxo faz a conta do mês."
                         else -> "Captura de notificações" to "Opcional. O Fluxo lê avisos de bancos neste aparelho para lançar gastos sozinho."
@@ -234,12 +250,20 @@ internal fun OnboardingScreen(
                                 keyboardActions = KeyboardActions(onDone = { primary() }),
                             )
                         }
-                        3 -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        3 -> Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                            DisclosureSummary()
                             Text(if (captureGranted) "Acesso às notificações: ligado" else "Acesso às notificações: desligado",
                                 color = FluxoColors.Ink, modifier = Modifier.testTag("onboarding.captureState"),
                                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold))
-                            if (!captureGranted) FluxoPillButton("Abrir configurações", onClick = onOpenCapture,
-                                modifier = Modifier.fillMaxWidth().testTag("onboarding.captureOpen"))
+                            if (!captureGranted) {
+                                ActivationSteps()
+                                FluxoPillButton("Abrir configurações", onClick = onOpenCapture,
+                                    modifier = Modifier.fillMaxWidth().testTag("onboarding.captureOpen"))
+                                Text("Antes de abrir, você vê o aviso completo e escolhe se concorda.",
+                                    color = FluxoColors.Mute, style = FluxoType.Caption.copy(fontSize = 11.5.sp, lineHeight = 15.sp))
+                            }
+                            Text("Prefere não ativar? Toque em \"Fazer depois\": você lança gastos manualmente e pode ligar a captura em Ajustes quando quiser.",
+                                color = FluxoColors.Mute, style = FluxoType.Caption.copy(fontSize = 11.5.sp, lineHeight = 15.sp))
                         }
                         else -> {
                             BenefitSection(
@@ -326,7 +350,7 @@ private fun SoftText(text: String, tag: String, style: TextStyle, color: Color, 
     }
 }
 
-/** Back arrow (steps 2 and 3), "N de 3" and three progress segments. */
+/** Back arrow (steps 2+), "N de 4" and a pill that grows on the current step. */
 @Composable
 private fun ProgressHeader(step: Int, onBack: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -345,13 +369,130 @@ private fun ProgressHeader(step: Int, onBack: () -> Unit) {
         ) {
             Text("${step + 1} de $STEPS", color = FluxoColors.Mute,
                 style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, fontWeight = FontWeight.Bold))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.fillMaxWidth().height(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically) {
                 repeat(STEPS) { index ->
-                    val fill by animateFloatAsState(if (index <= step) 1f else 0f,
-                        tween(STEP_MILLIS, easing = FastOutSlowInEasing), label = "segment")
-                    Box(Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(2.dp)).background(FluxoColors.Line)) {
-                        Box(Modifier.fillMaxWidth(fill).fillMaxHeight().background(FluxoColors.Petrol))
-                    }
+                    // The current step grows into a pill; finished steps stay filled, upcoming ones are grey dots.
+                    val width by animateDpAsState(if (index == step) 28.dp else 8.dp,
+                        tween(STEP_MILLIS, easing = FastOutSlowInEasing), label = "pillWidth")
+                    val color by animateColorAsState(if (index <= step) FluxoColors.Petrol else FluxoColors.Line,
+                        tween(STEP_MILLIS, easing = FastOutSlowInEasing), label = "pillColor")
+                    Box(Modifier.width(width).height(8.dp).clip(RoundedCornerShape(4.dp)).background(color))
+                }
+            }
+        }
+    }
+}
+
+private const val DEMO_HOLD_MILLIS = 900L
+
+/**
+ * Looping demo: a synthetic bank notification slides in and turns into a categorised entry. Loops only while the
+ * screen is STARTED and animations are on; with animations off it shows the final state.
+ */
+@Composable
+private fun CaptureDemo() {
+    val animated = rememberAnimationsEnabled()
+    val enter = remember { Animatable(if (animated) 0f else 1f) }
+    val morph = remember { Animatable(if (animated) 0f else 1f) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(animated) {
+        if (!animated) { enter.snapTo(1f); morph.snapTo(1f); return@LaunchedEffect }
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                enter.snapTo(0f); morph.snapTo(0f)
+                enter.animateTo(1f, tween(450, easing = FastOutSlowInEasing))
+                delay(DEMO_HOLD_MILLIS)
+                morph.animateTo(1f, tween(400, easing = FastOutSlowInEasing))
+                delay(1400)
+                enter.animateTo(0f, tween(300))
+            }
+        }
+    }
+    Box(
+        Modifier.fillMaxWidth().height(116.dp).testTag("onboarding.demo")
+            .clearAndSetSemantics { contentDescription = "Exemplo: a notificação \"Pix enviado R\$ 42,90, Padaria\" vira o lançamento Alimentação, R\$ 42,90." },
+        contentAlignment = Alignment.Center
+    ) {
+        DemoCard(
+            icon = Icons.Filled.Notifications, iconFill = FluxoColors.Petrol, iconTint = FluxoColors.OnPetrol,
+            title = "Pix enviado R$ 42,90", detail = "Padaria · agora", fill = FluxoColors.Soft,
+            modifier = Modifier.graphicsLayer {
+                val shown = enter.value * (1f - morph.value)
+                alpha = shown
+                translationY = -(1f - enter.value) * 48.dp.toPx()
+                scaleX = .96f + .04f * shown; scaleY = scaleX
+            }
+        )
+        DemoCard(
+            icon = Icons.Filled.Check, iconFill = FluxoColors.Income, iconTint = FluxoColors.OnIncome,
+            title = "Alimentação · R$ 42,90", detail = "Lançado automaticamente", fill = FluxoColors.Pale,
+            modifier = Modifier.graphicsLayer {
+                alpha = enter.value * morph.value
+                scaleX = .96f + .04f * morph.value; scaleY = scaleX
+            }
+        )
+    }
+}
+
+@Composable
+private fun DemoCard(icon: ImageVector, iconFill: Color, iconTint: Color, title: String, detail: String, fill: Color, modifier: Modifier) {
+    Row(
+        modifier.fillMaxWidth().clip(FluxoShapes.Ticket).background(fill).padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(Modifier.size(40.dp).clip(RoundedCornerShape(20.dp)).background(iconFill), contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(22.dp))
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, color = FluxoColors.Ink, style = FluxoType.number(17.sp, FontWeight.ExtraBold))
+            Text(detail, color = FluxoColors.Mute, style = FluxoType.Caption.copy(fontSize = 12.sp))
+        }
+    }
+}
+
+/** What is read, what is kept and where it stays; mirrors the full disclosure shown before the system screen opens. */
+@Composable
+private fun DisclosureSummary() {
+    FluxoTile(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Lock, contentDescription = null, tint = FluxoColors.Petrol, modifier = Modifier.size(18.dp))
+                Text("O que acontece com seus dados", color = FluxoColors.Ink, modifier = Modifier.semantics { heading() },
+                    style = MaterialTheme.typography.titleSmall.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold))
+            }
+            listOf(
+                "Lemos só as notificações de bancos e benefícios (como VR), para reconhecer compras, Pix e depósitos.",
+                "Guardamos apenas o lançamento: valor, data, estabelecimento e categoria. O texto da notificação não é guardado.",
+                "Tudo fica neste aparelho. Nada é enviado: o app não tem permissão de internet.",
+                "Você revoga quando quiser, nas configurações do Android ou pausando a captura.",
+            ).forEach { line ->
+                Text("•  $line", color = FluxoColors.Ink, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp, lineHeight = 17.sp))
+            }
+        }
+    }
+}
+
+/** Three numbered, icon-led steps for turning on "Acesso a notificações" in Android. */
+@Composable
+private fun ActivationSteps() {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Como ativar", color = FluxoColors.Ink, modifier = Modifier.semantics { heading() },
+            style = MaterialTheme.typography.titleSmall.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold))
+        listOf(
+            Triple(Icons.Filled.Settings, "Abra as configurações", "Toque em \"Abrir configurações\" e concorde com o aviso."),
+            Triple(Icons.Filled.Notifications, "Encontre o Fluxo", "Em \"Acesso a notificações\", ache o Fluxo na lista."),
+            Triple(Icons.Filled.Check, "Ligue e volte", "Ative a chave e volte para cá: a etapa confirma sozinha."),
+        ).forEachIndexed { index, (icon, title, detail) ->
+            Row(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}, horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(36.dp).clip(RoundedCornerShape(18.dp)).background(FluxoColors.Soft), contentAlignment = Alignment.Center) {
+                    Icon(icon, contentDescription = null, tint = FluxoColors.Petrol, modifier = Modifier.size(20.dp))
+                }
+                Column(Modifier.weight(1f)) {
+                    Text("${index + 1}. $title", color = FluxoColors.Ink,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold))
+                    Text(detail, color = FluxoColors.Mute, style = FluxoType.Caption.copy(fontSize = 12.sp, lineHeight = 15.sp))
                 }
             }
         }
