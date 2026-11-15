@@ -56,7 +56,8 @@ class BenefitBalanceUiTest {
     @Test fun transportRowAppearsUnderVrAndVoucherSpendingStaysOutOfCash() {
         show(listOf(voucher("a", 3000), voucher("t", 1000, PaymentMethod.TRANSPORT_VOUCHER)), settings(vt = 500))
         compose.onNodeWithTag("dashboard.vt").assertIsDisplayed()
-        compose.onNodeWithText("Entradas ${currency("0.00")} − saídas de caixa ${currency("0.00")}").assertIsDisplayed()
+        // Net, Entradas and Saídas all stay at zero: voucher spending is not a cash outflow.
+        compose.onAllNodes(hasText(currency("0.00")) and hasAnyAncestor(hasTestTag("dashboard.inout")), useUnmergedTree = true).assertCountEquals(3)
     }
 
     @Test fun hideValuesToggleMasksTheBalance() {

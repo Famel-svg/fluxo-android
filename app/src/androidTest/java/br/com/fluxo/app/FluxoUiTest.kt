@@ -4,6 +4,9 @@ import android.os.Build
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasAnySibling
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -87,8 +90,8 @@ class FluxoUiTest {
         compose.onNodeWithText("Excluir lançamento?").assertIsDisplayed()
         compose.onNodeWithText("Excluir", substring = false).performClick()
         compose.waitUntil(10_000) { repository.transactions.value.isEmpty() }
-        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Nenhum lançamento"))
-        compose.onNodeWithText("Nenhum lançamento").performScrollTo().assertIsDisplayed()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Nenhum lançamento ainda"))
+        compose.onNodeWithText("Nenhum lançamento ainda").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Mercado sintético").assertDoesNotExist()
     }
 
@@ -98,10 +101,11 @@ class FluxoUiTest {
         addExpense("80,00", "Crédito sintético", "Cartão de crédito")
         compose.onNodeWithTag("navigation.0").performClick()
 
-        // Hero: only the R$ 20,00 cash outflow feeds the observed result; credit is excluded.
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Resultado observado do mês"))
-        compose.onNodeWithText("Entradas ${currency("0.00")} − saídas de caixa ${currency("20.00")}").assertIsDisplayed()
-        compose.onNodeWithText("R$ −20,00").assertIsDisplayed()
+        // "Entrou x saiu" tile: single outflow total (cash R$ 20 + credit R$ 80), no income.
+        fun inOut(value: String) = hasText(currency(value)) and hasAnyAncestor(hasTestTag("dashboard.inout"))
+        compose.onNodeWithTag("dashboard.inout").performScrollTo().assertIsDisplayed()
+        compose.onAllNodes(inOut("100.00"), useUnmergedTree = true).assertCountEquals(1)
+        compose.onAllNodes(inOut("0.00"), useUnmergedTree = true).assertCountEquals(1)
         // Credit commitments are a separate row, not mixed into cash.
         compose.onNodeWithText("Compras no crédito").performScrollTo().assertIsDisplayed()
         compose.onNode(hasText(currency("80.00")) and hasAnySibling(hasText("Compras no crédito"))).performScrollTo().assertIsDisplayed()
