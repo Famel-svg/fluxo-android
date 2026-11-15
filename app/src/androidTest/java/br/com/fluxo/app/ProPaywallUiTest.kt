@@ -35,7 +35,7 @@ class ProPaywallUiTest {
         compose.setContent { MaterialTheme { ProPaywallScreen(false, null, false, {}, {}, { retried++ }) } }
         compose.onNodeWithTag("paywall.price").assertTextEquals("Preço indisponível")
         compose.onNodeWithTag("paywall.buy").assertIsNotEnabled()
-        compose.onNodeWithTag("paywall.retry").performClick()
+        compose.onNodeWithTag("paywall.retry").performScrollTo().performClick()
         assertEquals(1, retried)
     }
 
