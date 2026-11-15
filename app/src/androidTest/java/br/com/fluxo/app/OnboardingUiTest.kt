@@ -63,7 +63,7 @@ class OnboardingUiTest {
     @After fun restoreStoredProfile() { original?.let { OnboardingTestSupport.restore(repository, it) } }
 
     private fun cents(value: Long) = money(BigDecimal.valueOf(value, 2))
-    private fun step(n: Int) { compose.onNodeWithTag("onboarding.progress").assertTextContains("$n de 3") }
+    private fun step(n: Int) { compose.onNodeWithTag("onboarding.progress").assertTextContains("$n de 4") }
     private fun next() { compose.onNodeWithTag("onboarding.next").assertIsEnabled().performClick(); compose.waitForIdle() }
     private fun back() { compose.onNodeWithTag("onboarding.back").performClick(); compose.waitForIdle() }
     private fun field(tag: String, text: String) { compose.onNodeWithTag(tag).performScrollTo().performTextReplacement(text) }
@@ -94,6 +94,10 @@ class OnboardingUiTest {
         compose.onNodeWithTag("onboarding.preview").performScrollTo()
             .assertTextContains("Estimativa do mês: ${cents(total)}")
 
+        compose.onNodeWithTag("onboarding.next").assertIsEnabled().performClick()
+        compose.waitForIdle()
+        step(4)
+        compose.onNodeWithTag("onboarding.captureState").assertTextContains("desligado")
         compose.onNodeWithTag("onboarding.start").assertIsEnabled().performClick()
         finished()
         compose.onNodeWithTag("navigation.0").assertIsDisplayed()
@@ -128,26 +132,28 @@ class OnboardingUiTest {
         next()
 
         step(3)
-        compose.onNodeWithTag("onboarding.start").assertIsNotEnabled()
+        compose.onNodeWithTag("onboarding.next").assertIsNotEnabled()
         field("onboarding.vrRate", "0")
-        compose.onNodeWithTag("onboarding.start").assertIsNotEnabled()
+        compose.onNodeWithTag("onboarding.next").assertIsNotEnabled()
         field("onboarding.vrRate", "1.50")
         compose.onNodeWithText("Valor inválido", substring = true).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("onboarding.start").assertIsNotEnabled()
+        compose.onNodeWithTag("onboarding.next").assertIsNotEnabled()
         field("onboarding.vrRate", "39,00")
-        compose.onNodeWithTag("onboarding.start").assertIsEnabled()
+        compose.onNodeWithTag("onboarding.next").assertIsEnabled()
         // A rate without any weekday is contradictory input, not a filled benefit.
         for (day in 1..5) compose.onNodeWithTag("onboarding.vrDay.$day").performScrollTo().performClick()
         compose.onNodeWithText("Escolha ao menos um dia.").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("onboarding.start").assertIsNotEnabled()
+        compose.onNodeWithTag("onboarding.next").assertIsNotEnabled()
         compose.onNodeWithTag("onboarding.vrDay.1").performScrollTo().performClick()
-        compose.onNodeWithTag("onboarding.start").assertIsEnabled()
+        compose.onNodeWithTag("onboarding.next").assertIsEnabled()
         // A benefit left blank means "não recebo" as long as the other one is filled.
         field("onboarding.vrRate", "")
-        compose.onNodeWithTag("onboarding.start").assertIsNotEnabled()
+        compose.onNodeWithTag("onboarding.next").assertIsNotEnabled()
         field("onboarding.vtRate", "abc")
-        compose.onNodeWithTag("onboarding.start").assertIsNotEnabled()
+        compose.onNodeWithTag("onboarding.next").assertIsNotEnabled()
         field("onboarding.vtRate", "10,80")
+        compose.onNodeWithTag("onboarding.next").assertIsEnabled().performClick()
+        compose.waitForIdle()
         compose.onNodeWithTag("onboarding.start").assertIsEnabled().performClick()
         finished()
         val saved = repository.benefits.value
@@ -201,6 +207,8 @@ class OnboardingUiTest {
         field("onboarding.vrRate", "39,00")
         compose.onNodeWithTag("onboarding.vtDay.1").performScrollTo().performClick()
         compose.onNodeWithTag("onboarding.skipStep").assertIsEnabled().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("onboarding.skipStep").performClick()
         finished()
         compose.onNodeWithTag("navigation.0").assertIsDisplayed()
         assertEquals(baseline, repository.benefits.value)
@@ -214,6 +222,8 @@ class OnboardingUiTest {
         field("onboarding.salary", "2.750,00")
         next()
         field("onboarding.vrRate", "39,00")
+        compose.onNodeWithTag("onboarding.skipStep").performClick()
+        compose.waitForIdle()
         compose.onNodeWithTag("onboarding.skipStep").performClick()
         finished()
         assertEquals("Caio", repository.profileName.value)
@@ -281,7 +291,7 @@ class OnboardingUiTest {
         compose.onNodeWithTag("onboarding.vtRate").performScrollTo().assertTextContains("10,50")
         compose.onNodeWithTag("onboarding.vtDay.4").performScrollTo().assertIsOn()
         compose.onNodeWithTag("onboarding.vtDay.5").performScrollTo().assertIsOff()
-        compose.onNodeWithTag("onboarding.start").assertIsEnabled()
+        compose.onNodeWithTag("onboarding.next").assertIsEnabled()
     }
 
     @Test fun settingsProfileDialogEditsNameAndSalaryWithTheSameValidationAndBlankClearsIt() {

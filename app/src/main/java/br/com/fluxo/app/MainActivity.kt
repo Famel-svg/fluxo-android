@@ -167,8 +167,13 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
     LaunchedEffect(model) { model.events.collect { snackbar.showSnackbar(it) } }
     val monthly = remember(transactions, month) { transactions.filter { YearMonth.from(Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault())) == month }.sortedByDescending { it.occurredAt } }
     FluxoVisualTheme(themeMode) {
+    val consented by model.disclosureAccepted.collectAsStateWithLifecycle()
+    val openCapture = rememberNotificationAccessOpener(
+        consented, onConsent = model::acceptDisclosure, onOpened = {},
+        open = { CaptureConnection.open(context, SettingsTarget.NOTIFICATION_ACCESS) },
+    )
     if (!onboardingDone) {
-        OnboardingScreen(
+        OnboardingScreen(captureGranted = access, onOpenCapture = openCapture,
             initialName = profileName, initialSalaryCents = salary, initialSettings = benefits, saving = saving, error = editError,
             onStart = { name, salaryCents, vr, vt, vrDays, vtDays -> model.completeOnboarding(name, salaryCents, vr, vt, vrDays, vtDays) }
         )

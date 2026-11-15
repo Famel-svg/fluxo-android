@@ -82,7 +82,7 @@ import java.time.DayOfWeek
 import java.time.YearMonth
 
 private const val MAX_NAME = 40
-private const val STEPS = 3
+private const val STEPS = 4
 private const val STEP_MILLIS = 250
 private const val LINE_MILLIS = 160
 
@@ -115,7 +115,10 @@ internal fun OnboardingScreen(
     onStart: (name: String, salaryCents: Long, vrCents: Long, vtCents: Long, vrWeekdays: Set<DayOfWeek>, vtWeekdays: Set<DayOfWeek>) -> Unit,
     modifier: Modifier = Modifier,
     month: YearMonth = YearMonth.now(),
+    captureGranted: Boolean = false,
+    onOpenCapture: () -> Unit = {},
 ) {
+    var benefitsSkipped by rememberSaveable { mutableStateOf(false) }
     var step by rememberSaveable { mutableIntStateOf(0) }
     var name by rememberSaveable { mutableStateOf(initialName) }
     var salary by rememberSaveable { mutableStateOf(centsFieldText(initialSalaryCents)) }
@@ -139,7 +142,8 @@ internal fun OnboardingScreen(
     val stepValid = when (step) {
         0 -> name.isNotBlank()
         1 -> salaryCents != null
-        else -> benefitsValid
+        2 -> benefitsValid
+        else -> true
     }
     val last = step == STEPS - 1
     val vtFocus = remember { FocusRequester() }
@@ -154,7 +158,8 @@ internal fun OnboardingScreen(
 
     fun primary() {
         if (saving || !stepValid) return
-        if (last) finish(skipBenefits = false) else step++
+        if (step == 2) benefitsSkipped = false
+        if (last) finish(skipBenefits = benefitsSkipped) else step++
     }
 
     fun skip() {
@@ -162,8 +167,9 @@ internal fun OnboardingScreen(
         when (step) {
             0 -> name = initialName
             1 -> salary = centsFieldText(initialSalaryCents)
+            2 -> benefitsSkipped = true
         }
-        if (last) finish(skipBenefits = true) else step++
+        if (last) finish(skipBenefits = benefitsSkipped) else step++
     }
 
     BackHandler(enabled = step > 0 && !saving) { step-- }
@@ -193,7 +199,8 @@ internal fun OnboardingScreen(
                     val (title, subtitle) = when (page) {
                         0 -> "Como podemos te chamar?" to "Seu nome aparece na saudação do início e fica só neste aparelho."
                         1 -> "Qual é o seu salário mensal?" to "Com ele, o Planejar mostra quanto da renda do mês já foi gasto."
-                        else -> "Vale-refeição e vale-transporte" to "Quanto cai por dia e em quais dias da semana. O Fluxo faz a conta do mês."
+                        2 -> "Vale-refeição e vale-transporte" to "Quanto cai por dia e em quais dias da semana. O Fluxo faz a conta do mês."
+                        else -> "Captura de notificações" to "Opcional. O Fluxo lê avisos de bancos neste aparelho para lançar gastos sozinho."
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(title, color = FluxoColors.Ink, modifier = Modifier.semantics { heading() },
@@ -233,6 +240,13 @@ internal fun OnboardingScreen(
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
                                 keyboardActions = KeyboardActions(onDone = { primary() }),
                             )
+                        }
+                        3 -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(if (captureGranted) "Acesso às notificações: ligado" else "Acesso às notificações: desligado",
+                                color = FluxoColors.Ink, modifier = Modifier.testTag("onboarding.captureState"),
+                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold))
+                            if (!captureGranted) FluxoPillButton("Abrir configurações", onClick = onOpenCapture,
+                                modifier = Modifier.fillMaxWidth().testTag("onboarding.captureOpen"))
                         }
                         else -> {
                             BenefitSection(
@@ -300,7 +314,7 @@ internal fun OnboardingScreen(
                         .testTag("onboarding.skipStep").padding(horizontal = 16.dp, vertical = 8.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(if (last) "Não recebo VR nem VT" else "Pular esta etapa",
+                    Text(if (step == 2) "Não recebo VR nem VT" else if (last) "Fazer depois" else "Pular esta etapa",
                         color = FluxoColors.Mute.copy(alpha = if (saving) .38f else 1f), textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, fontWeight = FontWeight.Bold))
                 }
