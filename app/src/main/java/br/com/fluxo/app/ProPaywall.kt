@@ -1,7 +1,21 @@
 package br.com.fluxo.app
 
 import androidx.activity.compose.LocalActivity
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material3.Icon
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +42,12 @@ private val FreeIncludes = listOf(
     "Backup criptografado e exportação CSV",
     "Até ${FeaturePolicy.MAX_CONTAS_FREE} contas ativas",
 )
+private val ProBenefits = listOf(
+    "Contas ativas ilimitadas",
+    "Pagamento único, sem assinatura",
+    "Funciona offline, sem conta e sem nuvem",
+    "Seus dados nunca são ocultados nem apagados",
+)
 private const val ProIncludes = "Tudo do grátis, com contas ativas ilimitadas"
 
 @Composable
@@ -38,31 +58,67 @@ private fun PlanBox(title: String, lines: List<String>, tag: String) {
     }
 }
 
+@Composable
+private fun BenefitRow(text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(Modifier.size(24.dp).clip(CircleShape).background(FluxoColors.Petrol), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.Check, null, tint = FluxoColors.OnPetrol, modifier = Modifier.size(16.dp))
+        }
+        Text(text, color = FluxoColors.Ink, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
 /** Tela "Fluxo Pro". [price] vem do Google Play; null enquanto carrega ou indisponível (então [onRetry] tenta de novo). */
 @Composable
 internal fun ProPaywallScreen(isPro: Boolean, price: String?, proForAll: Boolean, onBuy: () -> Unit, onClose: () -> Unit, onRetry: () -> Unit = {}) {
+    val hero = FluxoColors.Hero
+    val blue = Color(0xFF1F7AC4)
+    val gradient = Brush.linearGradient(listOf(hero, if (hero.luminance() > .2f) blue else lerp(hero, blue, .5f)))
     Surface(Modifier.fillMaxSize().testTag("paywall"), color = FluxoColors.Paper) {
-        Column(
-            Modifier.verticalScroll(rememberScrollState()).safeDrawingPadding().padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text("Fluxo Pro", color = FluxoColors.Ink, style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold))
-            Text("O Fluxo funciona por inteiro sem Pro. O Pro é uma compra única, sem assinatura.", color = FluxoColors.Mute, style = MaterialTheme.typography.bodyMedium)
-            PlanBox("Grátis", FreeIncludes, "paywall.free")
-            PlanBox("Pro", listOf(ProIncludes), "paywall.pro")
-            Text("Seus dados nunca são ocultados nem apagados, e a exportação segue liberada, com ou sem Pro. Tudo continua offline e só no seu aparelho.", color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
-            Text(
-                if (proForAll) "Grátis por enquanto" else price ?: "Preço indisponível",
-                modifier = Modifier.testTag("paywall.price"), color = FluxoColors.Ink,
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
-            )
-            if (!proForAll && !isPro) Text("Cobrança única pelo Google Play. Nada é cobrado ao abrir esta tela.", color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
-            if (isPro) Text("Você já tem o Fluxo Pro.", modifier = Modifier.testTag("paywall.owned"), color = FluxoColors.Income, style = MaterialTheme.typography.bodyLarge)
-            else if (!proForAll) {
-                FluxoWrapButton("Comprar o Fluxo Pro", onBuy, Modifier.testTag("paywall.buy"), enabled = price != null)
-                if (price == null) FluxoWrapButton("Tentar de novo", onRetry, Modifier.testTag("paywall.retry"), quiet = true)
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            Column(
+                Modifier.fillMaxWidth().background(gradient).safeDrawingPadding().padding(horizontal = 20.dp, vertical = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Fluxo Pro", color = FluxoColors.OnHero, style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold))
+                Text("O Fluxo funciona por inteiro sem Pro. O Pro é uma compra única, sem assinatura.", color = FluxoColors.OnHero.copy(alpha = .85f), style = MaterialTheme.typography.bodyMedium)
             }
-            FluxoWrapButton("Fechar", onClose, Modifier.testTag("paywall.close"), quiet = true)
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(FluxoColors.PetrolSoft).padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(Icons.Filled.Notifications, null, tint = FluxoColors.Petrol, modifier = Modifier.size(28.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Captura automática pelas notificações", color = FluxoColors.Ink, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
+                        Text("Tudo no aparelho: nada sai do seu celular.", color = FluxoColors.Mute, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { ProBenefits.forEach { BenefitRow(it) } }
+                PlanBox("Grátis", FreeIncludes, "paywall.free")
+                PlanBox("Pro", listOf(ProIncludes), "paywall.pro")
+                Text("Seus dados nunca são ocultados nem apagados, e a exportação segue liberada, com ou sem Pro. Tudo continua offline e só no seu aparelho.", color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    if (proForAll) "Grátis por enquanto" else price ?: "Preço indisponível",
+                    modifier = Modifier.testTag("paywall.price"), color = FluxoColors.Ink,
+                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold)
+                )
+                if (!proForAll && !isPro) Text("Cobrança única pelo Google Play. Nada é cobrado ao abrir esta tela.", color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
+                if (isPro) Text("Você já tem o Fluxo Pro.", modifier = Modifier.testTag("paywall.owned"), color = FluxoColors.Income, style = MaterialTheme.typography.bodyLarge)
+                else if (!proForAll) {
+                    val enabled = price != null
+                    Box(
+                        Modifier.testTag("paywall.buy").fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(28.dp))
+                            .background(FluxoColors.Petrol.copy(alpha = if (enabled) 1f else .38f))
+                            .clickable(enabled = enabled, role = Role.Button, onClick = onBuy).padding(horizontal = 16.dp, vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Comprar o Fluxo Pro", color = FluxoColors.OnPetrol, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                    }
+                    if (price == null) FluxoWrapButton("Tentar de novo", onRetry, Modifier.testTag("paywall.retry"), quiet = true)
+                }
+                FluxoWrapButton("Fechar", onClose, Modifier.testTag("paywall.close"), quiet = true)
+            }
         }
     }
 }

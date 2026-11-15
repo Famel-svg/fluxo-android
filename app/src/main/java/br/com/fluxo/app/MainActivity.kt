@@ -18,6 +18,17 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -186,9 +197,11 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
             val destinations = listOf("Resumo", "Lançamentos", "Planejamento", "Ajustes")
             val labels = listOf("Início", "Registros", "Planejar", "Ajustes")
             val icons = listOf(Icons.Outlined.Home, Icons.AutoMirrored.Filled.ReceiptLong, Icons.Outlined.BarChart, Icons.Outlined.Tune)
+            val navPill = remember { NavPill() }
             Surface(color = FluxoColors.Paper, tonalElevation = 0.dp) {
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                     HorizontalDivider(color = FluxoColors.Line)
+                    Box(Modifier.fillMaxWidth().slidingNavPill(navPill, tab), contentAlignment = Alignment.TopCenter) {
                     if (largeFont) {
                         Column(Modifier.widthIn(max = NAV_MAX_WIDTH).fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp)) {
                             destinations.chunked(2).forEachIndexed { row, names ->
@@ -196,7 +209,7 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
                                     names.forEachIndexed { column, name ->
                                         val index = row * 2 + column
                                         FluxoNavItem(labels[index], name, icons[index], tab == index, { tab = index },
-                                            Modifier.weight(1f).testTag("navigation.$index"), showIcon = false)
+                                            Modifier.weight(1f).navBounds(navPill, index).testTag("navigation.$index"), showIcon = false)
                                     }
                                 }
                             }
@@ -208,9 +221,10 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
                         ) {
                             destinations.forEachIndexed { index, name ->
                                 FluxoNavItem(labels[index], name, icons[index], tab == index, { tab = index },
-                                    Modifier.testTag("navigation.$index"))
+                                    Modifier.navBounds(navPill, index).testTag("navigation.$index"))
                             }
                         }
+                    }
                     }
                 }
             }
@@ -295,27 +309,65 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
     }
 }
 
-/** Bottom navigation destination: petrol pill with white icon and label when selected. */
+/** Item rects (root coordinates) that the single sliding pill follows. */
+private class NavPill {
+    val bounds = mutableStateMapOf<Int, Rect>()
+    var origin by mutableStateOf(Offset.Zero)
+}
+
+private fun Modifier.navBounds(pill: NavPill, index: Int) = onGloballyPositioned { pill.bounds[index] = it.boundsInRoot() }
+
+/** One petrol pill behind the items; it springs to the selected item instead of fading per item. */
+@Composable
+private fun Modifier.slidingNavPill(pill: NavPill, selectedIndex: Int): Modifier {
+    val animate = rememberAnimationsEnabled()
+    val target = pill.bounds[selectedIndex]
+    var ready by remember { mutableStateOf(false) }
+    LaunchedEffect(target != null) { if (target != null) ready = true }
+    val spec = if (animate && ready) spring<Float>(Spring.DampingRatioLowBouncy, Spring.StiffnessMediumLow) else snap()
+    val x by animateFloatAsState(target?.left ?: 0f, spec, label = "pillX")
+    val y by animateFloatAsState(target?.top ?: 0f, spec, label = "pillY")
+    val w by animateFloatAsState(target?.width ?: 0f, spec, label = "pillW")
+    val h by animateFloatAsState(target?.height ?: 0f, spec, label = "pillH")
+    return this
+        .onGloballyPositioned { pill.origin = it.positionInRoot() }
+        .drawBehind {
+            if (w > 0f && h > 0f) {
+                val r = minOf(22.dp.toPx(), h / 2f, w / 2f)
+                drawRoundRect(FluxoColors.Petrol, Offset(x - pill.origin.x, y - pill.origin.y), androidx.compose.ui.geometry.Size(w, h), CornerRadius(r))
+            }
+        }
+}
+
+/** Bottom navigation destination: icon and label turn white over the sliding petrol pill when selected. */
 @Composable
 private fun FluxoNavItem(
     label: String, description: String, icon: androidx.compose.ui.graphics.vector.ImageVector,
     selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, showIcon: Boolean = true
 ) {
+    val animate = rememberAnimationsEnabled()
+    val haptic = LocalHapticFeedback.current
     // One 0..1 progress drives both colours, so a theme switch (which moves the palette every frame) never retargets it.
     val selection by animateFloatAsState(if (selected) 1f else 0f, tween(180, easing = FastOutSlowInEasing), label = "navSelected")
+    val bounce by animateFloatAsState(
+        if (selected) 1.12f else 1f,
+        if (animate) spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium) else snap(), label = "navBounce"
+    )
     val fg = lerp(FluxoColors.Mute, FluxoColors.OnPetrol, selection)
     Column(
         modifier
             .heightIn(min = 44.dp)
             .widthIn(min = 60.dp)
             .clip(RoundedCornerShape(22.dp))
-            .drawBehind { drawRect(FluxoColors.Petrol.copy(alpha = selection)) }
-            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            .selectable(selected = selected, role = Role.Tab, onClick = {
+                if (!selected) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            })
             .semantics { contentDescription = description }
             .padding(horizontal = 10.dp, vertical = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
     ) {
-        if (showIcon) Icon(icon, null, tint = fg, modifier = Modifier.size(20.dp))
+        if (showIcon) Icon(icon, null, tint = fg, modifier = Modifier.size(20.dp).graphicsLayer { scaleX = bounce; scaleY = bounce })
         Text(label, color = fg, textAlign = TextAlign.Center, maxLines = 1,
             style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold))
     }
