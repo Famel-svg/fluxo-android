@@ -499,7 +499,7 @@ internal fun FluxoHero(
     content: @Composable ColumnScope.() -> Unit = {}
 ) {
     val overlay = LocalDensity.current.fontScale < 1.3f
-    val deep = if (FluxoPaletteHolder.current.isDark) Color(0xFF0A3341) else FluxoColors.PetrolDark
+    val deep = if (FluxoPaletteHolder.current.isDark) Color(0xFF1F5FA8) else Color(0xFF1F7AC4)
     val hero = FluxoColors.Hero
     Box(
         modifier

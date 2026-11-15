@@ -18,7 +18,7 @@ enum class ThemeMode(val key: String) {
 
 /**
  * Complete set of colour roles. [FluxoColors] reads the current instance, so adding a role here is enough to make
- * it available everywhere; [Light] mirrors the approved prototype p1 and [Dark] the "Petróleo escuro" direction (p5).
+ * it available everywhere; [Light] and [Dark] are the "Índigo Pix" palette (indigo primary, honey review accent); role names keep the old petrol wording.
  * Every text/background pair used by the UI is checked by `ContrastTest` for both instances.
  */
 internal data class FluxoPalette(
@@ -81,45 +81,45 @@ internal data class FluxoPalette(
     companion object {
         val Light = FluxoPalette(
             isDark = false,
-            stage = Color(0xFFE9EFF1), paper = Color(0xFFFBFCFC),
-            ink = Color(0xFF14232B), onInk = Color.White,
-            mute = Color(0xFF56676F), line = Color(0xFFDCE5E8),
-            soft = Color(0xFFE3EFF3), pale = Color(0xFFD2E6EC),
-            petrol = Color(0xFF0B5C73), onPetrol = Color.White,
-            petrolDark = Color(0xFF084457), onPetrolDark = Color.White,
-            petrolMid = Color(0xFF1F6F84), petrolLight = Color(0xFF7FB5C2), onPetrolLight = Color(0xFF14232B), petrolSoft = Color(0xFFB5D3DA),
-            hero = Color(0xFF0B5C73), onHero = Color.White, onPetrolSoft = Color(0xFFCFE6EC),
-            income = Color(0xFF17794A), onIncome = Color.White,
-            expense = Color(0xFFBF3F17), onExpense = Color.White,
-            amber = Color(0xFFD9962B), onAmber = Color(0xFF14232B),
-            live = Color(0xFF5FD39A), gray = Color(0xFFA3A8B0),
-            strip = Color(0xFF14232B), onStrip = Color.White,
-            badge = Color(0xFF14232B), onBadge = Color.White,
-            chipBorder = Color(0xFF14232B), thumb = Color.White, scrim = Color.Black,
-            education = Color(0xFF3F8EA3), shopping = Color(0xFF9CC4CE), services = Color(0xFF4B7380),
-            amberContainer = Color(0xFFF6E3BD),
+            stage = Color(0xFFEFEEF8), paper = Color(0xFFF8F7FC),
+            ink = Color(0xFF15162B), onInk = Color.White,
+            mute = Color(0xFF55577A), line = Color(0xFFD9D8EA),
+            soft = Color(0xFFEFEEF8), pale = Color(0xFFE1E0F2),
+            petrol = Color(0xFF3A3FC0), onPetrol = Color.White,
+            petrolDark = Color(0xFF262A8A), onPetrolDark = Color.White,
+            petrolMid = Color(0xFF5157CF), petrolLight = Color(0xFFA9ACFF), onPetrolLight = Color(0xFF15162B), petrolSoft = Color(0xFFC9CBF5),
+            hero = Color(0xFF2E3AAE), onHero = Color.White, onPetrolSoft = Color(0xFFD9DBFF),
+            income = Color(0xFF0F7A5A), onIncome = Color.White,
+            expense = Color(0xFFBE3E0B), onExpense = Color.White,
+            amber = Color(0xFFF2C14E), onAmber = Color(0xFF15162B),
+            live = Color(0xFF4ADE9A), gray = Color(0xFFA3A5B8),
+            strip = Color(0xFF15162B), onStrip = Color.White,
+            badge = Color(0xFF15162B), onBadge = Color.White,
+            chipBorder = Color(0xFF15162B), thumb = Color.White, scrim = Color.Black,
+            education = Color(0xFF6C8BE0), shopping = Color(0xFFB7B9F0), services = Color(0xFF5A5F9E),
+            amberContainer = Color(0xFFFBEBC4),
             errorContainer = Color(0xFFF6DCD2), onErrorContainer = Color(0xFF5E1A05),
         )
 
         val Dark = FluxoPalette(
             isDark = true,
-            stage = Color(0xFF041920), paper = Color(0xFF062028),
-            ink = Color(0xFFEAF2F4), onInk = Color(0xFF062028),
-            mute = Color(0xFF9DB4BC), line = Color(0xFF1D4753),
-            soft = Color(0xFF0B2E39), pale = Color(0xFF123C49),
-            petrol = Color(0xFF3FA7BF), onPetrol = Color(0xFF062028),
-            petrolDark = Color(0xFF2E7F95), onPetrolDark = Color.White,
-            petrolMid = Color(0xFF3A8FA5), petrolLight = Color(0xFF7FB5C2), onPetrolLight = Color(0xFF062028), petrolSoft = Color(0xFFBFDCE3),
-            hero = Color(0xFF0F4C5F), onHero = Color.White, onPetrolSoft = Color(0xFFCFE6EC),
-            income = Color(0xFF4CC38A), onIncome = Color(0xFF062028),
-            expense = Color(0xFFF0825A), onExpense = Color(0xFF062028),
-            amber = Color(0xFFE3A53A), onAmber = Color(0xFF062028),
-            live = Color(0xFF5FD39A), gray = Color(0xFF8A99A0),
-            strip = Color(0xFF123C49), onStrip = Color(0xFFEAF2F4),
-            badge = Color(0xFF1D4753), onBadge = Color(0xFFEAF2F4),
-            chipBorder = Color(0xFF6C98A5), thumb = Color(0xFF062028), scrim = Color.Black,
-            education = Color(0xFF8CC0CD), shopping = Color(0xFFA6CBD4), services = Color(0xFF5A8D9B),
-            amberContainer = Color(0xFF4A3813),
+            stage = Color(0xFF090A16), paper = Color(0xFF0E0F1E),
+            ink = Color(0xFFEDEEFA), onInk = Color(0xFF0E0F1E),
+            mute = Color(0xFFA3A5C8), line = Color(0xFF2C2E52),
+            soft = Color(0xFF171830), pale = Color(0xFF212345),
+            petrol = Color(0xFFA9ACFF), onPetrol = Color(0xFF12134A),
+            petrolDark = Color(0xFF5C61E0), onPetrolDark = Color.White,
+            petrolMid = Color(0xFF7F84F0), petrolLight = Color(0xFFA9ACFF), onPetrolLight = Color(0xFF0E0F1E), petrolSoft = Color(0xFFC9CBF5),
+            hero = Color(0xFF3A3FC0), onHero = Color.White, onPetrolSoft = Color(0xFFD9DBFF),
+            income = Color(0xFF4ADE9A), onIncome = Color(0xFF0E0F1E),
+            expense = Color(0xFFFF9A6B), onExpense = Color(0xFF0E0F1E),
+            amber = Color(0xFFF2C14E), onAmber = Color(0xFF0E0F1E),
+            live = Color(0xFF4ADE9A), gray = Color(0xFF8A8CA8),
+            strip = Color(0xFF212345), onStrip = Color(0xFFEDEEFA),
+            badge = Color(0xFF2C2E52), onBadge = Color(0xFFEDEEFA),
+            chipBorder = Color(0xFF7F84C8), thumb = Color(0xFF0E0F1E), scrim = Color.Black,
+            education = Color(0xFF8FA8F0), shopping = Color(0xFFB7B9F0), services = Color(0xFF7A7FC0),
+            amberContainer = Color(0xFF4A3A12),
             errorContainer = Color(0xFF4D2316), onErrorContainer = Color(0xFFFFD9CC),
         )
     }
