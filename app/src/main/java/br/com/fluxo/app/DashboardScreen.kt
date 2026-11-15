@@ -1,10 +1,13 @@
 package br.com.fluxo.app
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -17,7 +20,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -39,6 +44,7 @@ import br.com.fluxo.core.PaymentMethod
 import br.com.fluxo.core.ReviewStatus
 import br.com.fluxo.core.SpendingAnalytics
 import br.com.fluxo.core.Transaction
+import kotlinx.coroutines.delay
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.time.Instant
@@ -103,35 +109,36 @@ internal fun Dashboard(
         contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        if (greetingName.isNotBlank()) item {
+            Text("Olá, $greetingName", color = FluxoColors.Mute, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                modifier = Modifier.entrance(0).padding(horizontal = 4.dp).testTag("dashboard.greeting"))
+        }
         item {
-            FluxoMonthBar(month, previous, next) {
-                IconButton(onClick = { hidden = !hidden }, modifier = Modifier.size(36.dp, 44.dp).testTag("dashboard.visibility")) {
+            FluxoMonthBar(month, previous, next, Modifier.entrance(1)) {
+                IconButton(onClick = { hidden = !hidden }, modifier = Modifier.size(40.dp, 44.dp).testTag("dashboard.visibility")) {
                     Icon(if (hidden) Icons.Default.VisibilityOff else Icons.Default.Visibility, if (hidden) "Mostrar valores do resumo" else "Ocultar valores do resumo", modifier = Modifier.size(22.dp))
                 }
-                FluxoPillButton("Manual", add, style = FluxoButtonStyle.Quiet, icon = Icons.Default.Add)
-            }
-        }
-        if (greetingName.isNotBlank()) item {
-            Text("Olá, $greetingName", color = FluxoColors.Mute, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
-                modifier = Modifier.padding(horizontal = 4.dp).testTag("dashboard.greeting"))
-        }
-        item {
-            InOutTile(income, cash + credit, hidden)
-        }
-        item {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Column(Modifier.weight(1f)) {
-                    Text("Compras no crédito", style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp))
-                    Text("Compromisso separado do caixa", style = FluxoType.Caption, color = FluxoColors.Mute)
+                IconButton(onClick = add, modifier = Modifier.size(40.dp).clip(CircleShape).background(FluxoColors.Petrol)) {
+                    Icon(Icons.Default.Add, "Adicionar lançamento manual", tint = FluxoColors.OnPetrol, modifier = Modifier.size(22.dp))
                 }
-                Text(amount(credit), style = FluxoType.number(18.sp))
             }
         }
-        if (vrUsage != null) item {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                BenefitBalanceBlock(vrUsage, benefitEstimate.vrDays, benefits.vrDailyCents, hidden)
-                if (vtUsage != null) TransportBalanceRow(vtUsage, hidden)
+        item {
+            val spent = cash + credit
+            FluxoHero(
+                label = "Entrou x saiu no mês",
+                value = if (hidden) HIDDEN else plainMoney(income - spent),
+                currency = if (hidden) null else "R$",
+                equation = if (hidden) "Entradas $HIDDEN · Saídas $HIDDEN" else "Entradas ${cents(income)} · Saídas ${cents(spent)}",
+                note = "Sem VR/VT · não é saldo bancário",
+                modifier = Modifier.entrance(2).testTag("dashboard.inout")
+            ) {
+                val peak = maxOf(income, spent)
+                Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    HeroBar("Entradas", if (hidden) 0f else chartFraction(income, peak), 0.95f)
+                    HeroBar("Saídas", if (hidden) 0f else chartFraction(spent, peak), 0.55f)
+                }
             }
         }
         item {
@@ -142,22 +149,39 @@ internal fun Dashboard(
                 auto == 1 -> "1 lançamento automático este mês"
                 else -> "$auto lançamentos automáticos este mês"
             }
-            FluxoCaptureStrip(
-                title = if (active) "Captura ativa" else "Configure a captura",
-                detail = detail,
-                live = active,
-                modifier = if (active) Modifier else Modifier.clickable(role = Role.Button, onClick = settings),
-                action = if (pending > 0) {
-                    { FluxoPillButton("$pending para revisar", review, style = FluxoButtonStyle.Review) }
-                } else null
-            )
-            if (!active) Text(
-                "Processamento local · texto bruto não armazenado", style = FluxoType.Caption,
-                color = FluxoColors.Mute, modifier = Modifier.padding(start = 6.dp, top = 4.dp)
-            )
+            Column(Modifier.entrance(3)) {
+                FluxoCaptureStrip(
+                    title = if (active) "Captura ativa" else "Configure a captura",
+                    detail = detail,
+                    live = active,
+                    modifier = if (active) Modifier else Modifier.clickable(role = Role.Button, onClick = settings),
+                    action = if (pending > 0) {
+                        { FluxoPillButton("$pending para revisar", review, style = FluxoButtonStyle.Review) }
+                    } else null
+                )
+                if (!active) Text(
+                    "Processamento local · texto bruto não armazenado", style = FluxoType.Caption,
+                    color = FluxoColors.Mute, modifier = Modifier.padding(start = 6.dp, top = 4.dp)
+                )
+            }
         }
         item {
-            Column {
+            Row(Modifier.entrance(4).fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("Compras no crédito", style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp))
+                    Text("Compromisso separado do caixa", style = FluxoType.Caption, color = FluxoColors.Mute)
+                }
+                Text(amount(credit), style = FluxoType.number(18.sp))
+            }
+        }
+        if (vrUsage != null) item {
+            Column(Modifier.entrance(5), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                BenefitBalanceBlock(vrUsage, benefitEstimate.vrDays, benefits.vrDailyCents, hidden)
+                if (vtUsage != null) TransportBalanceRow(vtUsage, hidden)
+            }
+        }
+        item {
+            Column(Modifier.entrance(6)) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                     FluxoSectionHeading("Últimos lançamentos", Modifier.weight(1f))
                     Box(Modifier.heightIn(min = 44.dp).clickable(role = Role.Button, onClick = showAll).padding(horizontal = 6.dp), contentAlignment = Alignment.CenterEnd) {
@@ -251,7 +275,7 @@ internal fun Dashboard(
                 }
             }
             val fontScale = LocalDensity.current.fontScale
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
+            BoxWithConstraints(Modifier.entrance(7).fillMaxWidth()) {
                 // Wider phones give extra width to the donut tile and a little more height to the bars (84dp at 320dp).
                 val available = maxWidth
                 val chartHeight = (84.dp + (available - 320.dp).coerceAtLeast(0.dp) * 0.25f).coerceAtMost(120.dp)
@@ -266,45 +290,35 @@ internal fun Dashboard(
             }
         }
         if (pendingCredit > 0) item {
-            Text("$pendingCredit lançamento(s) de crédito pendente(s) de revisão. Fatura, limite e vencimento não estão disponíveis; confira no emissor do cartão.", style = FluxoType.Caption, color = FluxoColors.Mute, modifier = Modifier.padding(horizontal = 4.dp))
+            Text("$pendingCredit lançamento(s) de crédito pendente(s) de revisão. Fatura, limite e vencimento não estão disponíveis; confira no emissor do cartão.", style = FluxoType.Caption, color = FluxoColors.Mute, modifier = Modifier.entrance(8).padding(horizontal = 4.dp))
         }
     }
 }
 
-/**
- * Entradas x saídas do mês, sem VR/VT: one proportional bar per side, so the owner sees at a glance
- * whether more came in than went out. Zero months show an empty bar instead of a measured-looking zero.
- */
+/** Thin proportional bar on the hero: OnHero tones keep it legible on the petrol fill in both themes. */
 @Composable
-private fun InOutTile(income: BigInteger, spent: BigInteger, hidden: Boolean) {
-    val peak = maxOf(income, spent)
-    val net = income - spent
-    fun v(value: BigInteger) = if (hidden) HIDDEN else cents(value)
-    FluxoTile(Modifier.fillMaxWidth().testTag("dashboard.inout")) {
-        Text("Entrou x saiu no mês", style = TileTitle)
-        Text("Entradas − saídas, sem VR/VT (caixa + crédito)", style = FluxoType.Caption.copy(fontSize = 12.sp), color = FluxoColors.Mute)
-        Text(
-            if (hidden) HIDDEN else cents(net), maxLines = 1,
-            style = FluxoType.number(30.sp), color = if (!hidden && net.signum() < 0) FluxoColors.Expense else FluxoColors.Ink,
-            modifier = Modifier.padding(top = 6.dp)
-        )
-        Text("Cobertura parcial — não é seu saldo bancário.", style = FluxoType.Caption, color = FluxoColors.Mute)
-        listOf(
-            Triple("Entradas", income, FluxoColors.Income),
-            Triple("Saídas", spent, FluxoColors.Petrol),
-        ).forEach { (label, value, color) ->
-            Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-                    Text(label, Modifier.weight(1f), style = LegendStyle.copy(fontSize = 13.sp))
-                    Text(v(value), style = FluxoType.number(16.sp), maxLines = 1)
-                }
-                Box(Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)).background(FluxoColors.Soft)) {
-                    val fraction = if (hidden) 0f else chartFraction(value, peak)
-                    if (fraction > 0f) Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().clip(RoundedCornerShape(5.dp)).background(color))
-                }
-            }
+private fun HeroBar(label: String, fraction: Float, fillAlpha: Float) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(label, Modifier.width(60.dp), maxLines = 1, color = FluxoColors.OnHero, style = LegendStyle.copy(fontSize = 12.sp))
+        Box(Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)).background(FluxoColors.OnHero.copy(alpha = 0.18f))) {
+            if (fraction > 0f) Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().clip(RoundedCornerShape(3.dp)).background(FluxoColors.OnHero.copy(alpha = fillAlpha)))
         }
     }
+}
+
+/** Fade + 12dp slide-up, delayed 40ms per index, played once per item (state survives scrolling off-screen). */
+private fun Modifier.entrance(index: Int): Modifier = composed {
+    var played by rememberSaveable { mutableStateOf(false) }
+    val progress = remember { Animatable(if (played) 1f else 0f) }
+    val offset = with(LocalDensity.current) { 12.dp.toPx() }
+    LaunchedEffect(Unit) {
+        if (!played) {
+            delay(40L * index.coerceAtMost(8))
+            progress.animateTo(1f, tween(240))
+            played = true
+        }
+    }
+    graphicsLayer { alpha = progress.value; translationY = (1f - progress.value) * offset }
 }
 
 /** Short category label that fits the 80dp donut centre without clipping. */
@@ -343,7 +357,10 @@ private fun TransactionRow(row: Transaction, today: LocalDate, edit: (Transactio
         Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button) { edit(row) }.padding(start = 2.dp, end = 0.dp, top = 1.dp, bottom = 1.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        FluxoDot(fluxoCategoryColor(row.category))
+        val tone = fluxoCategoryColor(row.category)
+        Box(Modifier.size(32.dp).clip(CircleShape).background(tone.copy(alpha = 0.18f)), contentAlignment = Alignment.Center) {
+            FluxoDot(tone, size = 10.dp)
+        }
         Column(Modifier.weight(1f)) {
             Text(
                 row.description.ifBlank { row.method.label() }, maxLines = if (largeFont) 2 else 1, overflow = TextOverflow.Ellipsis,
