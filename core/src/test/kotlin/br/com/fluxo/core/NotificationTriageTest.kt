@@ -10,6 +10,15 @@ class NotificationTriageTest {
 
     private fun export(items: List<TriageItem>) = StringWriter().also { NotificationTriage.writeJson(items, it, 0) }.toString()
 
+    @Test fun `deciding erases raw text but keeps verdict and decision`() {
+        val done = NotificationTriage.decided(item("com.x", TriageDecision.PENDING, "Pix de R$ 5,00"), TriageDecision.KEPT, 9)
+        assertEquals("", done.text)
+        assertEquals("", done.title)
+        assertEquals("NO_AMOUNT", done.verdict)
+        assertEquals(TriageDecision.KEPT, done.decision)
+        assertEquals(9L, done.decidedAt)
+    }
+
     @Test fun `approval always needs review and keeps parsed amount`() {
         val parsed = NotificationTriage.approved("com.nu.production", "Pix recebido de R$ 50,00")
         assertEquals(5000L, parsed.amountCents)

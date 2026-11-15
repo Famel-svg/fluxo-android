@@ -30,6 +30,10 @@ object NotificationTriage {
     const val MAX_TEXT = 4_000
     const val APPROVED_REASON = "Autorizada manualmente na triagem; confira valor, direção e meio."
 
+    /** Keeping or discarding ends the need for raw text: it is erased, verdict and decision stay. */
+    fun decided(item: TriageItem, decision: TriageDecision, at: Long): TriageItem =
+        item.copy(title = "", text = "", decision = decision, decidedAt = at)
+
     /** Verdict label for the parser outcome, never content. */
     fun verdict(packageName: String, text: String): String = when (val screening = WalletReceipt.screen(packageName, text)) {
         is NotificationParser.Screening.Accepted -> "ACCEPTED"

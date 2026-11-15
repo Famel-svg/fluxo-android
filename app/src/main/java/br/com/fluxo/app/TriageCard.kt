@@ -161,7 +161,7 @@ fun TriageCard(model: TriageViewModel = viewModel()) {
     if (confirmEnable) AlertDialog(
         onDismissRequest = { confirmEnable = false },
         title = { Text("Ativar triagem?") },
-        text = { Text("Enquanto ativa, o Fluxo guarda neste aparelho o texto completo de todas as notificações recebidas (até ${NotificationTriage.MAX_ITEMS}), inclusive mensagens pessoais. Nada é enviado à internet nem entra no backup. Desative e apague a triagem quando terminar.") },
+        text = { Text("Enquanto ativa, o Fluxo guarda neste aparelho o texto completo das notificações pendentes (até ${NotificationTriage.MAX_ITEMS}), inclusive mensagens pessoais; ao guardar ou descartar, o texto é apagado. Nada é enviado à internet nem entra no backup. Desative e apague a triagem quando terminar.") },
         confirmButton = { TextButton(onClick = { confirmEnable = false; model.setEnabled(true) }) { Text("Ativar") } },
         dismissButton = { TextButton(onClick = { confirmEnable = false }) { Text("Cancelar") } },
     )

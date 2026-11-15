@@ -316,7 +316,7 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
                 ) {
                     Icon(Icons.Default.Lock, contentDescription = null, tint = FluxoColors.Ink, modifier = Modifier.size(22.dp))
                     Text(
-                        if (triage) "Tudo fica no aparelho. Triagem: o texto das notificações fica guardado até você apagar."
+                        if (triage) "Tudo fica no aparelho. Triagem: o texto fica guardado só até você guardar ou descartar a notificação."
                         else "Tudo fica no aparelho. Texto das notificações não é guardado.", color = FluxoColors.Ink,
                         style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold)
                     )

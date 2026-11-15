@@ -8,7 +8,7 @@ Para descobrir por que notificações de bancos e benefícios não viram lançam
 - "Exportar JSON" gera um arquivo com o resumo por app (`packageName`) e a lista completa, para ajustar a captura por app.
 - "Apagar triagem" remove todo o texto guardado; "Apagar histórico" também.
 
-Privacidade: com a triagem ligada, o texto completo das notificações (inclusive mensagens pessoais) fica no armazenamento privado do app até você apagar. Não vai para log, CSV, backup nem internet. O JSON exportado não tem criptografia.
+Privacidade: com a triagem ligada, o texto completo das notificações (inclusive mensagens pessoais) fica no armazenamento privado do app enquanto a notificação está pendente. Ao guardar ou descartar, título e texto são apagados; ficam só o app, o motivo do leitor e a decisão (a migração do banco apaga também o texto de linhas já decididas). Não vai para log, CSV, backup nem internet. O JSON exportado não tem criptografia.
 
 Atualize sem desinstalar. O banco passa para a versão 6 só com uma tabela nova; lançamentos antigos ficam como estavam.
 

@@ -365,6 +365,7 @@ class LedgerRepository(context: Context) {
                     }, SQLiteDatabase.CONFLICT_IGNORE)
                     db.update("notification_triage", ContentValues().apply {
                         put("decision", TriageDecision.KEPT.name); put("decided_at", System.currentTimeMillis())
+                        put("title", ""); put("text", "")
                     }, "id = ?", arrayOf(id.toString()))
                 }
                 db.setTransactionSuccessful()
@@ -379,6 +380,7 @@ class LedgerRepository(context: Context) {
         mutex.withLock {
             database.writableDatabase.update("notification_triage", ContentValues().apply {
                 put("decision", TriageDecision.DISCARDED.name); put("decided_at", System.currentTimeMillis())
+                put("title", ""); put("text", "")
             }, "id = ? AND decision = ?", arrayOf(id.toString(), TriageDecision.PENDING.name))
             readTriage()
         }
@@ -837,7 +839,7 @@ class LedgerRepository(context: Context) {
     }
 }
 
-private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "fluxo.db", null, 7) {
+private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "fluxo.db", null, 8) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
             CREATE TABLE transactions (
@@ -899,6 +901,8 @@ private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "flux
         }
         if (oldVersion < 6) createNotificationTriage(db)
         if (oldVersion < 7) createMerchantCategories(db)
+        // Rows already kept or discarded no longer need raw text; verdict and decision stay.
+        if (oldVersion < 8) db.execSQL("UPDATE notification_triage SET title = '', text = '' WHERE decision IN ('KEPT', 'DISCARDED')")
     }
 
     private fun hasColumn(db: SQLiteDatabase, table: String, column: String): Boolean =

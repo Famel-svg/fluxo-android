@@ -71,14 +71,24 @@ class LedgerRepositoryTest {
         assertEquals("com.example.vr", kept.bankPackage)
         assertEquals(ReviewStatus.REVIEW, kept.status)
         assertEquals(100L, kept.occurredAt)
-        val decided = repository.triage.value.associateBy { it.title }
-        assertEquals(TriageDecision.KEPT, decided.getValue("VR").decision)
-        assertEquals(TriageDecision.DISCARDED, decided.getValue("Ana").decision)
+        val decided = repository.triage.value.associateBy { it.packageName }
+        assertEquals(TriageDecision.KEPT, decided.getValue("com.example.vr").decision)
+        assertEquals(TriageDecision.DISCARDED, decided.getValue("com.example.chat").decision)
         // A decided notification is not reopened by later deliveries, and keeping twice adds nothing.
         repository.recordTriage("t2", "com.example.chat", null, "Ana", "Oi 3", 260, autoStored = false)
-        repository.keepTriage(decided.getValue("VR").id)
-        assertEquals(TriageDecision.DISCARDED, repository.triage.value.single { it.title == "Ana" }.decision)
+        repository.keepTriage(decided.getValue("com.example.vr").id)
+        assertEquals(TriageDecision.DISCARDED, repository.triage.value.single { it.packageName == "com.example.chat" }.decision)
         assertEquals(1, repository.transactions.value.size)
+
+        // Deciding erases raw text and keeps verdict and decision; a pending row keeps its text.
+        repository.recordTriage("t4", "com.example.chat", null, "Bia", "Pendente", 400, autoStored = false)
+        val after = repository.triage.value.associateBy { it.decision to it.packageName }
+        val vr = after.getValue(TriageDecision.KEPT to "com.example.vr")
+        assertEquals("", vr.text); assertEquals("", vr.title); assertTrue(vr.verdict.isNotEmpty())
+        val ana = repository.triage.value.single { it.decision == TriageDecision.DISCARDED }
+        assertEquals("", ana.text); assertEquals("", ana.title)
+        val bia = repository.triage.value.single { it.decision == TriageDecision.PENDING }
+        assertEquals("Pendente", bia.text)
 
         // Triage text never enters the backup payload.
         assertFalse(repository.exportBackupPayload().toString(Charsets.UTF_8).contains("Oi de novo"))
