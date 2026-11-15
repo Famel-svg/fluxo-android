@@ -51,8 +51,8 @@ class SearchCategoryUiTest {
     @Test fun accentInsensitiveSearchFindsOldTransactionAndEditedCategoryCombinesWithFilters() {
         compose.onNodeWithTag("navigation.1").performClick()
         compose.onNodeWithText("Buscar descrição, banco ou categoria").performTextInput("itau")
-        scrollTo("Nenhum lançamento")
-        compose.onNodeWithText("Nenhum lançamento").assertIsDisplayed()
+        scrollTo("Nenhum lançamento ainda")
+        compose.onNodeWithText("Nenhum lançamento ainda").assertIsDisplayed()
         scrollTo("Todos os meses")
         // Month-scope action sits beside the count, apart from the type chips.
         compose.onNodeWithText("Todos os meses").performScrollTo().performClick()
