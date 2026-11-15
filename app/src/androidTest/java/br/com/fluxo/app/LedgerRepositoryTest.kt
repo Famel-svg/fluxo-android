@@ -459,7 +459,7 @@ class LedgerRepositoryTest {
         assertEquals(edited, reopened.transactions.value.single())
         assertEquals(Budget("2026-09", Category.TRANSPORT, 50000), reopened.budgets.value.single())
         context.openOrCreateDatabase("fluxo.db", Context.MODE_PRIVATE, null).use { db ->
-            assertEquals(7, db.version)
+            assertEquals(8, db.version)
             db.rawQuery("SELECT category, amount_cents FROM transactions WHERE id = 'old'", null).use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals("TRANSPORT", cursor.getString(0))
@@ -477,7 +477,7 @@ class LedgerRepositoryTest {
         val target = InstrumentationRegistry.getInstrumentation().targetContext
         fun schema(context: Context): Pair<Set<String>, Map<String, Set<String>>> =
             context.openOrCreateDatabase("fluxo.db", Context.MODE_PRIVATE, null).use { db ->
-                assertEquals(7, db.version)
+                assertEquals(8, db.version)
                 val tables = db.rawQuery("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'android_%' AND name NOT LIKE 'sqlite_%'", null).use { cursor ->
                     generateSequence { if (cursor.moveToNext()) cursor.getString(0) else null }.toSet()
                 }

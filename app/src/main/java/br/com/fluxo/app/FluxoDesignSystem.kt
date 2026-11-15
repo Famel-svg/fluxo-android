@@ -521,7 +521,7 @@ internal fun FluxoHero(
                 Text(
                     buildAnnotatedString {
                         if (unit != null) {
-                            withStyle(SpanStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.sp)) { append("$unit ") }
+                            withStyle(SpanStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.sp)) { append("$unit\u00A0") }
                         }
                         append(amount)
                     },

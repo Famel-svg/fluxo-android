@@ -130,14 +130,14 @@ internal fun Dashboard(
                 label = "Entrou x saiu no mês",
                 value = if (hidden) HIDDEN else plainMoney(income - spent),
                 currency = if (hidden) null else "R$",
-                equation = if (hidden) "Entradas $HIDDEN · Saídas $HIDDEN" else "Entradas ${cents(income)} · Saídas ${cents(spent)}",
+                valueCents = if (hidden) null else (income - spent).toLong(),
                 note = "Sem VR/VT · não é saldo bancário",
                 modifier = Modifier.entrance(2).testTag("dashboard.inout")
             ) {
                 val peak = maxOf(income, spent)
                 Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    HeroBar("Entradas", if (hidden) 0f else chartFraction(income, peak), 0.95f)
-                    HeroBar("Saídas", if (hidden) 0f else chartFraction(spent, peak), 0.55f)
+                    HeroBar("Entradas", if (hidden) HIDDEN else cents(income), if (hidden) 0f else chartFraction(income, peak), 0.95f)
+                    HeroBar("Saídas", if (hidden) HIDDEN else cents(spent), if (hidden) 0f else chartFraction(spent, peak), 0.55f)
                 }
             }
         }
@@ -297,12 +297,13 @@ internal fun Dashboard(
 
 /** Thin proportional bar on the hero: OnHero tones keep it legible on the petrol fill in both themes. */
 @Composable
-private fun HeroBar(label: String, fraction: Float, fillAlpha: Float) {
+private fun HeroBar(label: String, value: String, fraction: Float, fillAlpha: Float) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(label, Modifier.width(60.dp), maxLines = 1, color = FluxoColors.OnHero, style = LegendStyle.copy(fontSize = 12.sp))
         Box(Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)).background(FluxoColors.OnHero.copy(alpha = 0.18f))) {
             if (fraction > 0f) Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().clip(RoundedCornerShape(3.dp)).background(FluxoColors.OnHero.copy(alpha = fillAlpha)))
         }
+        Text(value, maxLines = 1, color = FluxoColors.OnHero, style = FluxoType.number(13.sp))
     }
 }
 
