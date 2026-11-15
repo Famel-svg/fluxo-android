@@ -174,8 +174,9 @@ class PlanningUiTest {
         fun cents(value: Long) = currency("%d.%02d".format(value / 100, value % 100))
         compose.onNodeWithTag("planning.income").assertIsDisplayed()
         compose.onNodeWithText("Renda prevista do mês (salário)").assertIsDisplayed()
-        compose.onNodeWithText("Salário ${cents(350000)} + VR ${cents(vr)} + VT ${cents(vt)}").assertIsDisplayed()
-        compose.onNodeWithText("= ${cents(350000 + vr + vt)}").assertIsDisplayed()
+        // Income is the salary alone; VR/VT are shown only as an estimate line, never summed into it.
+        compose.onNodeWithText(cents(350000)).assertIsDisplayed()
+        compose.onNodeWithText("Benefícios (estimativa): VR ${cents(vr)} · VT ${cents(vt)}").assertIsDisplayed()
         compose.onNodeWithTag("planning.salaryShare").assertTextEquals("Gastos do mês: 50% do salário")
         compose.onNodeWithText("Estimativa para planejamento", substring = true).assertIsDisplayed()
     }
