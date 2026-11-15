@@ -77,29 +77,24 @@ class PlanningUiTest {
         } }
         compose.onNodeWithTag("benefits.configure").performScrollTo().performClick()
         compose.onNodeWithTag("benefits.vrRate").performScrollTo().performTextReplacement("25,50")
-        compose.onNodeWithTag("benefits.vtRate").performScrollTo().performTextReplacement("10,50")
+        compose.onNodeWithTag("benefits.vtRate").assertDoesNotExist()
+        compose.onNodeWithTag("benefits.vtDays").assertDoesNotExist()
         compose.onNodeWithTag("benefits.vrDays").performScrollTo().performTextReplacement("0")
-        compose.onNodeWithTag("benefits.vtDays").performScrollTo().performTextReplacement("12")
         compose.onNodeWithTag("benefits.save").performClick()
         compose.runOnIdle {
             assertEquals(2550L, settings.value.vrDailyCents)
-            assertEquals(1050L, settings.value.vtDailyCents)
-            assertEquals(BenefitDays(0, 12), settings.value.overrides[month])
+            assertEquals(0L, settings.value.vtDailyCents) // stored VT value is written back untouched
+            assertEquals(BenefitDays(0, null), settings.value.overrides[month])
         }
-        compose.onNodeWithTag("benefits.total").assertTextEquals("Total estimado: ${currency("126.00")}")
+        compose.onNodeWithTag("benefits.total").assertTextEquals("Total estimado: ${currency("0.00")}")
         compose.runOnIdle { selected.value = YearMonth.of(2026, 12) }
-        compose.onNodeWithTag("benefits.total").assertTextEquals("Total estimado: ${currency("828.00")}")
+        compose.onNodeWithTag("benefits.total").assertTextEquals("Total estimado: ${currency("586.50")}")
         compose.runOnIdle { selected.value = month }
         compose.onNodeWithTag("benefits.configure").performScrollTo().performClick()
         compose.onNodeWithTag("benefits.vrDays").performScrollTo().performTextClearance()
         compose.onNodeWithTag("benefits.save").performClick()
-        compose.runOnIdle { assertEquals(BenefitDays(null, 12), settings.value.overrides[month]) }
-        compose.onNodeWithTag("benefits.total").assertTextEquals("Total estimado: ${currency("687.00")}")
-        compose.onNodeWithTag("benefits.configure").performScrollTo().performClick()
-        compose.onNodeWithTag("benefits.vtDays").performScrollTo().performTextClearance()
-        compose.onNodeWithTag("benefits.save").performClick()
         compose.runOnIdle { assertEquals(BenefitDays(), settings.value.overrides[month]) }
-        compose.onNodeWithTag("benefits.total").assertTextEquals("Total estimado: ${currency("792.00")}")
+        compose.onNodeWithTag("benefits.total").assertTextEquals("Total estimado: ${currency("561.00")}")
     }
 
     @Test fun benefitEditorRejectsInvalidInputAndKeepsFieldsAndOriginalMonthOnFailure() {
@@ -144,20 +139,20 @@ class PlanningUiTest {
                     done()
                 })
         } }
-        val vrCount = BenefitCalculator.scheduledDays(month, BenefitCalculator.WORKDAYS)
-        val vtCount = BenefitCalculator.scheduledDays(month, monThu)
         compose.onNodeWithTag("benefits.configure").performScrollTo().performClick()
         for (day in 1..5) compose.onNodeWithTag("benefits.vrDay.$day").performScrollTo().assertIsOn()
         compose.onNodeWithTag("benefits.vrDay.6").performScrollTo().assertIsOff()
-        compose.onNodeWithTag("benefits.vtDay.5").performScrollTo().assertIsOn().performClick().assertIsOff()
+        compose.onNodeWithTag("benefits.vtDay.5").assertDoesNotExist()
+        compose.onNodeWithTag("benefits.vrDay.5").performScrollTo().performClick().assertIsOff()
         compose.onNodeWithTag("benefits.save").performClick()
         compose.runOnIdle {
-            assertEquals(BenefitCalculator.WORKDAYS, settings.value.vrWeekdays)
-            assertEquals(monThu, settings.value.vtWeekdays)
+            assertEquals(monThu, settings.value.vrWeekdays)
+            assertEquals(BenefitCalculator.WORKDAYS, settings.value.vtWeekdays) // stored VT schedule untouched
         }
-        compose.onNodeWithText("VR: $vrCount dias (seg–sex) · VT: $vtCount dias (seg–qui)", substring = true)
+        val vrCount = BenefitCalculator.scheduledDays(month, monThu)
+        compose.onNodeWithText("VR: $vrCount dias (seg–qui)", substring = true)
             .performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("benefits.total").assertTextEquals("Total estimado: ${currency("%d.%02d".format((3900L * vrCount + 1080L * vtCount) / 100, (3900L * vrCount + 1080L * vtCount) % 100))}")
+        compose.onNodeWithTag("benefits.total").assertTextEquals("Total estimado: ${currency("%d.%02d".format((3900L * vrCount) / 100, (3900L * vrCount) % 100))}")
     }
 
     private fun showWithSalary(rows: List<Transaction>, salaryCents: Long, settings: BenefitSettings = BenefitSettings(3900, 1080)) {
@@ -170,13 +165,13 @@ class PlanningUiTest {
     @Test fun incomeBlockShowsSalaryPlusBenefitsAndHalfOfTheSalarySpent() {
         showWithSalary(listOf(expense("half", 175000, PaymentMethod.DEBIT_CARD)), 350000)
         val vr = 3900L * BenefitCalculator.scheduledDays(month, BenefitCalculator.WORKDAYS)
-        val vt = 1080L * BenefitCalculator.scheduledDays(month, BenefitCalculator.WORKDAYS)
         fun cents(value: Long) = currency("%d.%02d".format(value / 100, value % 100))
         compose.onNodeWithTag("planning.income").assertIsDisplayed()
         compose.onNodeWithText("Renda prevista do mês (salário)").assertIsDisplayed()
-        // Income is the salary alone; VR/VT are shown only as an estimate line, never summed into it.
+        // Income is the salary alone; VR is shown only as an estimate line, never summed into it.
         compose.onNodeWithText(cents(350000)).assertIsDisplayed()
-        compose.onNodeWithText("Benefícios (estimativa): VR ${cents(vr)} · VT ${cents(vt)}").assertIsDisplayed()
+        compose.onNodeWithText("Benefícios (estimativa): VR ${cents(vr)}").assertIsDisplayed()
+        compose.onNodeWithText("VT", substring = true).assertDoesNotExist()
         compose.onNodeWithTag("planning.salaryShare").assertTextEquals("Gastos do mês: 50% do salário")
         compose.onNodeWithText("Estimativa para planejamento", substring = true).assertIsDisplayed()
     }

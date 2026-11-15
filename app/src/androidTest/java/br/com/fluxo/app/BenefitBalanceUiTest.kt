@@ -53,9 +53,10 @@ class BenefitBalanceUiTest {
         compose.onNodeWithTag("dashboard.vt").assertDoesNotExist()
     }
 
-    @Test fun transportRowAppearsUnderVrAndVoucherSpendingStaysOutOfCash() {
+    @Test fun legacyTransportRowsAreNotShownAndStayOutOfCash() {
         show(listOf(voucher("a", 3000), voucher("t", 1000, PaymentMethod.TRANSPORT_VOUCHER)), settings(vt = 500))
-        compose.onNodeWithTag("dashboard.vt").assertIsDisplayed()
+        compose.onNodeWithTag("dashboard.vt").assertDoesNotExist()
+        compose.onNodeWithText("VT disponível").assertDoesNotExist()
         // Net, Entradas and Saídas all stay at zero: voucher spending is not a cash outflow.
         compose.onAllNodes(hasText(currency("0.00")) and hasAnyAncestor(hasTestTag("dashboard.inout")), useUnmergedTree = true).assertCountEquals(3)
     }

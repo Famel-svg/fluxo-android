@@ -77,7 +77,7 @@ internal fun Dashboard(
     benefits: BenefitSettings = BenefitSettings()
 ) {
     // Baseline accounting: only confirmed, non-transfer records enter totals; credit stays apart from cash.
-    // Voucher (VR/VT) rows stay out of every spending and income figure here: they are read in the VR block.
+    // Voucher (VR, and legacy VT) rows stay out of every spending and income figure here: they are read in the VR block.
     val confirmed = rows.filter { it.status == ReviewStatus.CONFIRMED && it.transferId == null && !it.method.isVoucher }
     fun total(predicate: (Transaction) -> Boolean): BigInteger = confirmed.filter(predicate)
         .fold(BigInteger.ZERO) { sum, row -> sum + BigInteger.valueOf(row.amountCents ?: 0) }
@@ -102,7 +102,6 @@ internal fun Dashboard(
     val benefitEstimate = BenefitCalculator.estimate(month, benefits)
     val zone = ZoneId.systemDefault()
     val vrUsage = if (benefits.vrDailyCents > 0) BenefitBalance.remaining(benefitEstimate.vrCents, rows, PaymentMethod.MEAL_VOUCHER, month, zone) else null
-    val vtUsage = if (benefits.vrDailyCents > 0 && benefits.vtDailyCents > 0) BenefitBalance.remaining(benefitEstimate.vtCents, rows, PaymentMethod.TRANSPORT_VOUCHER, month, zone) else null
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().testTag("dashboard.neon"),
@@ -131,7 +130,7 @@ internal fun Dashboard(
                 value = if (hidden) HIDDEN else plainMoney(income - spent),
                 currency = if (hidden) null else "R$",
                 valueCents = if (hidden) null else (income - spent).toLong(),
-                note = "Sem VR/VT · não é saldo bancário",
+                note = "Sem VR · não é saldo bancário",
                 modifier = Modifier.entrance(2).testTag("dashboard.inout")
             ) {
                 val peak = maxOf(income, spent)
@@ -177,7 +176,6 @@ internal fun Dashboard(
         if (vrUsage != null) item {
             Column(Modifier.entrance(5), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 BenefitBalanceBlock(vrUsage, benefitEstimate.vrDays, benefits.vrDailyCents, hidden)
-                if (vtUsage != null) TransportBalanceRow(vtUsage, hidden)
             }
         }
         item {

@@ -53,9 +53,9 @@ class LargeScreenUiTest {
         val size = DpSize(444.dp, 986.dp)
         show(size)
         compose.onNodeWithTag("dashboard.vr").assertIsDisplayed()
-        compose.onNodeWithTag("dashboard.vt").assertIsDisplayed()
+        compose.onNodeWithTag("dashboard.vt").assertDoesNotExist()
         compose.onNodeWithText("Gastos por dia").assertIsDisplayed()
-        for (tag in listOf("dashboard.vr", "dashboard.vt")) {
+        for (tag in listOf("dashboard.vr")) {
             val bounds = compose.onNodeWithTag(tag).getUnclippedBoundsInRoot()
             assertTrue("$tag must start inside the window", bounds.left >= 0.dp)
             assertTrue("$tag is ${bounds.right} wide but the window is ${size.width}", bounds.right <= size.width)
@@ -65,7 +65,7 @@ class LargeScreenUiTest {
     @Test fun narrowPhoneStillShowsTheSameBlocks() {
         show(DpSize(320.dp, 640.dp))
         compose.onNodeWithTag("dashboard.vr").assertIsDisplayed()
-        compose.onNodeWithTag("dashboard.vt").assertIsDisplayed()
+        compose.onNodeWithTag("dashboard.vt").assertDoesNotExist()
         val bounds = compose.onNodeWithTag("dashboard.vr").getUnclippedBoundsInRoot()
         assertTrue("dashboard.vr overflows 320dp: ${bounds.right}", bounds.right <= 320.dp)
     }

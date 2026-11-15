@@ -24,7 +24,7 @@ import br.com.fluxo.core.FeaturePolicy
 private val FreeIncludes = listOf(
     "Captura por notificação dos bancos que você escolher",
     "Lançamentos, categorias e triagem do que precisa de revisão",
-    "Orçamentos e planejamento com VR/VT",
+    "Orçamentos e planejamento com VR",
     "Backup criptografado e exportação CSV",
     "Até ${FeaturePolicy.MAX_CONTAS_FREE} contas ativas",
 )

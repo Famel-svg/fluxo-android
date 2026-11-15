@@ -31,7 +31,7 @@ internal fun NotificationDisclosureDialog(onAgree: () -> Unit, onDecline: () -> 
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text("Acesso às notificações", style = MaterialTheme.typography.headlineSmall)
-                    Text("O que o Fluxo lê: as notificações de aplicativos de bancos e de benefícios (como VR e VT), " +
+                    Text("O que o Fluxo lê: as notificações de aplicativos de bancos e de benefícios (como VR), " +
                         "só para reconhecer compras, Pix e depósitos.")
                     Text("O que o Fluxo guarda: apenas o lançamento extraído (valor, data, estabelecimento e categoria). " +
                         "O texto da notificação não é guardado.")

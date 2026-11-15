@@ -100,8 +100,8 @@ internal fun salaryError(text: String): String? = when {
 }
 
 /**
- * First-run (and "Rever configuração inicial") wizard with one step per page: name, monthly salary, then VR and VT
- * together. The primary button of each step stays disabled until that step is validly filled; every step can also
+ * First-run (and "Rever configuração inicial") wizard with one step per page: name, monthly salary, then VR
+ * (VT was retired from the UI; its stored value is passed through untouched). The primary button of each step stays disabled until that step is validly filled; every step can also
  * be skipped, which keeps whatever was stored for it. Step and fields survive rotation and process recreation.
  * Everything is computed with integer cents.
  */
@@ -123,21 +123,15 @@ internal fun OnboardingScreen(
     var name by rememberSaveable { mutableStateOf(initialName) }
     var salary by rememberSaveable { mutableStateOf(centsFieldText(initialSalaryCents)) }
     var vr by rememberSaveable { mutableStateOf(centsFieldText(initialSettings.vrDailyCents)) }
-    var vt by rememberSaveable { mutableStateOf(centsFieldText(initialSettings.vtDailyCents)) }
     var vrMask by rememberSaveable { mutableIntStateOf(weekdayMask(initialSettings.vrWeekdays)) }
-    var vtMask by rememberSaveable { mutableIntStateOf(weekdayMask(initialSettings.vtWeekdays)) }
     val vrDays = weekdaysOfMask(vrMask)
-    val vtDays = weekdaysOfMask(vtMask)
     val vrCents = parseRate(vr)
-    val vtCents = parseRate(vt)
     val salaryCents = SalaryPlanner.parseMonthlyCents(salary)
     val vrNeedsDays = vrCents != null && vrCents > 0 && vrDays.isEmpty()
-    val vtNeedsDays = vtCents != null && vtCents > 0 && vtDays.isEmpty()
-    val benefitsFilled = (vrCents != null && vrCents > 0 && vrDays.isNotEmpty()) ||
-        (vtCents != null && vtCents > 0 && vtDays.isNotEmpty())
-    val benefitsValid = vrCents != null && vtCents != null && !vrNeedsDays && !vtNeedsDays && benefitsFilled
-    val total = if (vrCents != null && vtCents != null)
-        BenefitCalculator.estimate(month, BenefitSettings(vrCents, vtCents, emptyMap(), vrDays, vtDays)).totalCents
+    val benefitsFilled = vrCents != null && vrCents > 0 && vrDays.isNotEmpty()
+    val benefitsValid = vrCents != null && !vrNeedsDays && benefitsFilled
+    val total = if (vrCents != null)
+        BenefitCalculator.estimate(month, BenefitSettings(vrCents, 0, emptyMap(), vrDays, initialSettings.vtWeekdays)).totalCents
     else null
     val stepValid = when (step) {
         0 -> name.isNotBlank()
@@ -146,14 +140,13 @@ internal fun OnboardingScreen(
         else -> true
     }
     val last = step == STEPS - 1
-    val vtFocus = remember { FocusRequester() }
 
     fun finish(skipBenefits: Boolean) {
         val salaryValue = salaryCents ?: initialSalaryCents
-        if (skipBenefits || vrCents == null || vtCents == null)
+        if (skipBenefits || vrCents == null)
             onStart(name.trim(), salaryValue, initialSettings.vrDailyCents, initialSettings.vtDailyCents,
                 initialSettings.vrWeekdays, initialSettings.vtWeekdays)
-        else onStart(name.trim(), salaryValue, vrCents, vtCents, vrDays, vtDays)
+        else onStart(name.trim(), salaryValue, vrCents, initialSettings.vtDailyCents, vrDays, initialSettings.vtWeekdays)
     }
 
     fun primary() {
@@ -199,7 +192,7 @@ internal fun OnboardingScreen(
                     val (title, subtitle) = when (page) {
                         0 -> "Como podemos te chamar?" to "Seu nome aparece na saudação do início e fica só neste aparelho."
                         1 -> "Qual é o seu salário mensal?" to "Com ele, o Planejar mostra quanto da renda do mês já foi gasto."
-                        2 -> "Vale-refeição e vale-transporte" to "Quanto cai por dia e em quais dias da semana. O Fluxo faz a conta do mês."
+                        2 -> "Vale-refeição" to "Quanto cai por dia e em quais dias da semana. O Fluxo faz a conta do mês."
                         else -> "Captura de notificações" to "Opcional. O Fluxo lê avisos de bancos neste aparelho para lançar gastos sozinho."
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -255,17 +248,8 @@ internal fun OnboardingScreen(
                                 weekdays = vrDays, onWeekdays = { vrMask = weekdayMask(it) }, dayTag = "onboarding.vrDay",
                                 needsDays = vrNeedsDays,
                                 line = if (vrCents != null) benefitLine(month, vrDays, vrCents) else null, lineTag = "onboarding.vrLine",
-                                enabled = !saving, help = "Quanto cai por dia útil.", imeAction = ImeAction.Next,
-                                onNext = { vtFocus.requestFocus() }
-                            )
-                            BenefitSection(
-                                code = "VT", badge = FluxoColors.PetrolMid, title = "Vale-transporte (VT)",
-                                rate = vt, onRate = { vt = it }, rateInvalid = vtCents == null, rateTag = "onboarding.vtRate",
-                                weekdays = vtDays, onWeekdays = { vtMask = weekdayMask(it) }, dayTag = "onboarding.vtDay",
-                                needsDays = vtNeedsDays,
-                                line = if (vtCents != null) benefitLine(month, vtDays, vtCents) else null, lineTag = "onboarding.vtLine",
-                                enabled = !saving, help = "Some ida e volta no valor diário, como 10,80.",
-                                imeAction = ImeAction.Done, onDone = { primary() }, focusRequester = vtFocus
+                                enabled = !saving, help = "Quanto cai por dia útil.", imeAction = ImeAction.Done,
+                                onDone = { primary() }
                             )
                             Column(
                                 Modifier.fillMaxWidth().clip(FluxoShapes.Hero).background(FluxoColors.Hero)
@@ -287,8 +271,8 @@ internal fun OnboardingScreen(
                                 Text("É só uma estimativa: feriados e ausências não são considerados.",
                                     color = FluxoColors.OnPetrolSoft, style = FluxoType.Caption.copy(fontSize = 11.5.sp, lineHeight = 15.sp))
                             }
-                            if (!benefitsFilled && vrCents != null && vtCents != null && !vrNeedsDays && !vtNeedsDays) {
-                                Text("Preencha ao menos um vale para continuar. Quem deixa um vazio não recebe aquele vale.",
+                            if (!benefitsFilled && vrCents != null && !vrNeedsDays) {
+                                Text("Preencha o valor diário do VR para continuar. Quem não recebe VR pode pular a etapa.",
                                     color = FluxoColors.Mute, style = FluxoType.Caption.copy(fontSize = 11.5.sp, lineHeight = 15.sp),
                                     modifier = Modifier.padding(horizontal = 2.dp))
                             }
@@ -314,7 +298,7 @@ internal fun OnboardingScreen(
                         .testTag("onboarding.skipStep").padding(horizontal = 16.dp, vertical = 8.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(if (step == 2) "Não recebo VR nem VT" else if (last) "Fazer depois" else "Pular esta etapa",
+                    Text(if (step == 2) "Não recebo VR" else if (last) "Fazer depois" else "Pular esta etapa",
                         color = FluxoColors.Mute.copy(alpha = if (saving) .38f else 1f), textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, fontWeight = FontWeight.Bold))
                 }

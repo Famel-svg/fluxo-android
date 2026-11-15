@@ -218,7 +218,7 @@ private fun PlanningHero(total: BigInteger, previousTotal: BigInteger, month: Ye
 }
 
 /**
- * "Renda prevista do mês": salary + VR + VT estimate and the share of the salary already spent. A planning aid
+ * "Renda prevista do mês": salary + VR estimate and the share of the salary already spent. A planning aid
  * only; it never feeds income, expenses, cash or the observed result.
  */
 @Composable
@@ -242,7 +242,7 @@ private fun ExpectedIncomeBlock(month: YearMonth, salaryCents: Long, benefits: B
             contentDescription = "Gastos do mês: $percent% do salário",
             modifier = Modifier.fillMaxWidth().height(10.dp), thickness = 6.dp
         )
-        Text("Benefícios (estimativa): VR ${planningMoney(estimate.vrCents)} · VT ${planningMoney(estimate.vtCents)}",
+        Text("Benefícios (estimativa): VR ${planningMoney(estimate.vrCents)}",
             style = FluxoType.Caption.copy(fontSize = 12.sp, fontFeatureSettings = "tnum"), color = FluxoColors.Mute)
         Text("Estimativa para planejamento: não altera renda, gastos, caixa nem o resultado observado.",
             style = FluxoType.Caption.copy(fontSize = 11.5.sp, lineHeight = 15.sp), color = FluxoColors.Mute)
@@ -352,14 +352,13 @@ internal fun BenefitSummary(month: YearMonth, settings: BenefitSettings, edit: (
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         PlanningSectionTitle("Benefícios") { Text("estimativa", style = FluxoType.Caption.copy(fontSize = 11.5.sp), color = FluxoColors.Mute) }
         BenefitRow("VR", "Vale-refeição", estimate.vrDays, settings.vrDailyCents, estimate.vrCents, FluxoColors.Petrol)
-        BenefitRow("VT", "Vale-transporte", estimate.vtDays, settings.vtDailyCents, estimate.vtCents, FluxoColors.PetrolMid)
-        Text("Dias automáticos em ${planningMonthLabel(month)}: VR: ${daysCountLabel(estimate.vrAutomaticDays)} (${weekdaysLabel(settings.vrWeekdays)}) · VT: ${daysCountLabel(estimate.vtAutomaticDays)} (${weekdaysLabel(settings.vtWeekdays)})", style = FluxoType.Caption, color = FluxoColors.Mute,
+        Text("Dias automáticos em ${planningMonthLabel(month)}: VR: ${daysCountLabel(estimate.vrAutomaticDays)} (${weekdaysLabel(settings.vrWeekdays)})", style = FluxoType.Caption, color = FluxoColors.Mute,
             modifier = Modifier.padding(horizontal = 2.dp))
-        Text("Total estimado: ${planningMoney(estimate.totalCents)}", modifier = Modifier.padding(horizontal = 2.dp).testTag("benefits.total"),
+        Text("Total estimado: ${planningMoney(estimate.vrCents)}", modifier = Modifier.padding(horizontal = 2.dp).testTag("benefits.total"),
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
         Text("Feriados, ausências e escalas não são inferidos. Ajustes de dias valem só para este mês; tarifa diária vale para todos. Estimativa separada de renda, despesas, caixa e saldo.",
             style = FluxoType.Caption, color = FluxoColors.Mute, modifier = Modifier.padding(horizontal = 2.dp))
-        FluxoPillButton("Configurar VR e VT", onClick = edit, style = FluxoButtonStyle.Secondary,
+        FluxoPillButton("Configurar VR", onClick = edit, style = FluxoButtonStyle.Secondary,
             modifier = Modifier.fillMaxWidth().testTag("benefits.configure"))
     }
 }
@@ -387,45 +386,34 @@ internal fun BenefitEditor(
 ) {
     fun rateText(cents: Long) = BigDecimal.valueOf(cents, 2).toPlainString().replace('.', ',')
     var vr by rememberSaveable(month.toString()) { mutableStateOf(rateText(settings.vrDailyCents)) }
-    var vt by rememberSaveable(month.toString()) { mutableStateOf(rateText(settings.vtDailyCents)) }
     var vrDays by rememberSaveable(month.toString()) { mutableStateOf(settings.overrides[month]?.vr?.toString() ?: "") }
-    var vtDays by rememberSaveable(month.toString()) { mutableStateOf(settings.overrides[month]?.vt?.toString() ?: "") }
     var vrMask by rememberSaveable(month.toString()) { mutableStateOf(weekdayMask(settings.vrWeekdays)) }
-    var vtMask by rememberSaveable(month.toString()) { mutableStateOf(weekdayMask(settings.vtWeekdays)) }
     val vrWeekdays = weekdaysOfMask(vrMask)
-    val vtWeekdays = weekdaysOfMask(vtMask)
     val vrCents = BenefitCalculator.parseDailyCents(vr)
-    val vtCents = BenefitCalculator.parseDailyCents(vt)
     val parsedVrDays = runCatching { BenefitCalculator.parseDays(vrDays, month) }
-    val parsedVtDays = runCatching { BenefitCalculator.parseDays(vtDays, month) }
-    val valid = vrCents != null && vtCents != null && parsedVrDays.isSuccess && parsedVtDays.isSuccess
+    // VT left the UI: its stored rate, weekdays and day override are written back unchanged.
+    val storedVtDays = settings.overrides[month]?.vt
+    val valid = vrCents != null && parsedVrDays.isSuccess
     val preview = if (valid) BenefitCalculator.estimate(month, BenefitSettings(
-        vrCents!!, vtCents!!, mapOf(month to BenefitDays(parsedVrDays.getOrNull(), parsedVtDays.getOrNull())),
-        vrWeekdays, vtWeekdays)) else null
+        vrCents!!, 0, mapOf(month to BenefitDays(parsedVrDays.getOrNull(), null)),
+        vrWeekdays, settings.vtWeekdays)) else null
     AlertDialog(
         onDismissRequest = { if (!saving) dismiss() },
-        title = { Text("Configurar VR e VT") },
+        title = { Text("Configurar VR") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Mês dos dias ajustados: ${planningMonthLabel(month)}")
                 Text("Tarifas diárias valem para todos os meses. Ajustes de dias valem somente para o mês indicado.")
-                Text("Dias automáticos: VR: ${daysCountLabel(BenefitCalculator.scheduledDays(month, vrWeekdays))} (${weekdaysLabel(vrWeekdays)}) · VT: ${daysCountLabel(BenefitCalculator.scheduledDays(month, vtWeekdays))} (${weekdaysLabel(vtWeekdays)}). Feriados, ausências e escalas não são inferidos; ajuste os dias quando necessário.")
+                Text("Dias automáticos: VR: ${daysCountLabel(BenefitCalculator.scheduledDays(month, vrWeekdays))} (${weekdaysLabel(vrWeekdays)}). Feriados, ausências e escalas não são inferidos; ajuste os dias quando necessário.")
                 Text("Dias de depósito do VR", style = MaterialTheme.typography.labelLarge)
                 WeekdayChips(vrWeekdays, { vrMask = weekdayMask(it) }, "benefits.vrDay", enabled = !saving)
-                Text("Dias de depósito do VT", style = MaterialTheme.typography.labelLarge)
-                WeekdayChips(vtWeekdays, { vtMask = weekdayMask(it) }, "benefits.vtDay", enabled = !saving)
                 BenefitField("VR diário em R$", "benefits.vrRate", vr, { vr = it }, saving,
                     vrCents == null, "Use 0 ou valor em R$, como 25,50. Máximo: 92.233.720.368.547.758,07.", KeyboardType.Decimal)
-                BenefitField("VT diário em R$", "benefits.vtRate", vt, { vt = it }, saving,
-                    vtCents == null, "Informe o total diário de transporte, incluindo ida e volta. Use vírgula para centavos.", KeyboardType.Decimal)
                 BenefitField("Dias de VR em ${planningMonthLabel(month)}", "benefits.vrDays", vrDays, { vrDays = it }, saving,
                     parsedVrDays.isFailure, "De 0 a ${month.lengthOfMonth()}. Vazio restaura automático.", KeyboardType.Number)
-                BenefitField("Dias de VT em ${planningMonthLabel(month)}", "benefits.vtDays", vtDays, { vtDays = it }, saving,
-                    parsedVtDays.isFailure, "De 0 a ${month.lengthOfMonth()}. Vazio restaura automático.", KeyboardType.Number)
                 if (preview != null) {
                     Text("VR: ${preview.vrDays} dias · ${planningMoney(preview.vrCents)}")
-                    Text("VT: ${preview.vtDays} dias · ${planningMoney(preview.vtCents)}")
-                    Text("Total estimado: ${planningMoney(preview.totalCents)}", modifier = Modifier.testTag("benefits.preview"))
+                    Text("Total estimado: ${planningMoney(preview.vrCents)}", modifier = Modifier.testTag("benefits.preview"))
                 }
                 Text("Estimativa de benefícios; não altera renda, despesas, caixa ou saldo.")
                 if (error != null) Text(error, color = MaterialTheme.colorScheme.error,
@@ -435,9 +423,8 @@ internal fun BenefitEditor(
         confirmButton = {
             TextButton(enabled = !saving && valid, modifier = Modifier.testTag("benefits.save"), onClick = {
                 val vrValue = vrCents ?: return@TextButton
-                val vtValue = vtCents ?: return@TextButton
-                if (parsedVrDays.isSuccess && parsedVtDays.isSuccess)
-                    save(vrValue, vtValue, BenefitDays(parsedVrDays.getOrNull(), parsedVtDays.getOrNull()), vrWeekdays, vtWeekdays)
+                if (parsedVrDays.isSuccess)
+                    save(vrValue, settings.vtDailyCents, BenefitDays(parsedVrDays.getOrNull(), storedVtDays), vrWeekdays, settings.vtWeekdays)
             }) { Text(if (saving) "Salvando…" else "Salvar benefícios") }
         },
         dismissButton = { TextButton(enabled = !saving, onClick = dismiss) { Text("Cancelar") } },

@@ -35,7 +35,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Drives the real first-run wizard (name, salary, then VR and VT, one page each) on a disposable emulator. The stored
+ * Drives the real first-run wizard (name, salary, then VR, one page each) on a disposable emulator. The stored
  * profile is saved before each test and put back afterwards, so a personal installation is never left in a test state.
  */
 @RunWith(AndroidJUnit4::class)
@@ -81,18 +81,16 @@ class OnboardingUiTest {
         next()
         step(3)
         field("onboarding.vrRate", "39,00")
-        field("onboarding.vtRate", "10,80")
-        compose.onNodeWithTag("onboarding.vtDay.5").performScrollTo().assertIsOn().performClick().assertIsOff()
+        compose.onNodeWithTag("onboarding.vtRate").assertDoesNotExist()
+        compose.onNodeWithTag("onboarding.vtDay.5").assertDoesNotExist()
         compose.onNodeWithTag("onboarding.vrDay.5").performScrollTo().assertIsOn()
         compose.onNodeWithTag("onboarding.vrDay.6").performScrollTo().assertIsOff()
 
         val vrDays = BenefitCalculator.scheduledDays(month, BenefitCalculator.WORKDAYS)
-        val vtDays = BenefitCalculator.scheduledDays(month, monThu)
-        val total = 3900L * vrDays + 1080L * vtDays
+        val total = 3900L * vrDays
         compose.onNodeWithTag("onboarding.vrLine").performScrollTo()
             .assertTextContains("$vrDays dias × ${cents(3900)} = ${cents(3900L * vrDays)}", substring = true)
-        compose.onNodeWithTag("onboarding.vtLine").performScrollTo()
-            .assertTextContains("$vtDays dias × ${cents(1080)} = ${cents(1080L * vtDays)}", substring = true)
+        compose.onNodeWithTag("onboarding.vtLine").assertDoesNotExist()
         compose.onNodeWithTag("onboarding.preview").performScrollTo()
             .assertTextContains("Estimativa do mês: ${cents(total)}")
 
@@ -104,7 +102,7 @@ class OnboardingUiTest {
         finished()
         compose.onNodeWithTag("navigation.0").assertIsDisplayed()
         compose.onNodeWithTag("onboarding.start").assertDoesNotExist()
-        assertEquals(BenefitSettings(3900, 1080, baseline.overrides, BenefitCalculator.WORKDAYS, monThu), repository.benefits.value)
+        assertEquals(BenefitSettings(3900, baseline.vtDailyCents, baseline.overrides, BenefitCalculator.WORKDAYS, baseline.vtWeekdays), repository.benefits.value)
         assertEquals("Rafael", repository.profileName.value)
         assertEquals(350000L, repository.salaryMonthlyCents.value)
         compose.onNodeWithTag("dashboard.greeting").assertTextContains("Olá, Rafael")
@@ -148,21 +146,21 @@ class OnboardingUiTest {
         compose.onNodeWithTag("onboarding.next").assertIsNotEnabled()
         compose.onNodeWithTag("onboarding.vrDay.1").performScrollTo().performClick()
         compose.onNodeWithTag("onboarding.next").assertIsEnabled()
-        // A benefit left blank means "não recebo" as long as the other one is filled.
+        // A blank VR means "não recebo": the step stays locked (the skip button covers it).
         field("onboarding.vrRate", "")
         compose.onNodeWithTag("onboarding.next").assertIsNotEnabled()
-        field("onboarding.vtRate", "abc")
+        field("onboarding.vrRate", "abc")
         compose.onNodeWithTag("onboarding.next").assertIsNotEnabled()
-        field("onboarding.vtRate", "10,80")
+        field("onboarding.vrRate", "39,00")
         compose.onNodeWithTag("onboarding.next").assertIsEnabled().performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("onboarding.start").assertIsEnabled().performClick()
         finished()
         val saved = repository.benefits.value
-        assertEquals(0L, saved.vrDailyCents)
-        assertEquals(1080L, saved.vtDailyCents)
+        assertEquals(3900L, saved.vrDailyCents)
+        assertEquals(baseline.vtDailyCents, saved.vtDailyCents)
         assertEquals(setOf(DayOfWeek.MONDAY), saved.vrWeekdays)
-        assertEquals(BenefitCalculator.WORKDAYS, saved.vtWeekdays)
+        assertEquals(baseline.vtWeekdays, saved.vtWeekdays)
         assertEquals(350000L, repository.salaryMonthlyCents.value)
     }
 
@@ -180,14 +178,14 @@ class OnboardingUiTest {
         field("onboarding.salary", "1.234,56")
         next()
         field("onboarding.vrRate", "25,50")
-        compose.onNodeWithTag("onboarding.vtDay.1").performScrollTo().performClick()
+        compose.onNodeWithTag("onboarding.vrDay.1").performScrollTo().performClick()
         back()
         step(2)
         compose.onNodeWithTag("onboarding.salary").assertTextContains("1.234,56")
         next()
         step(3)
         compose.onNodeWithTag("onboarding.vrRate").performScrollTo().assertTextContains("25,50")
-        compose.onNodeWithTag("onboarding.vtDay.1").performScrollTo().assertIsOff()
+        compose.onNodeWithTag("onboarding.vrDay.1").performScrollTo().assertIsOff()
         systemBack()
         compose.waitForIdle()
         step(2)
@@ -207,7 +205,7 @@ class OnboardingUiTest {
         compose.onNodeWithTag("onboarding.skipStep").performClick()
         step(3)
         field("onboarding.vrRate", "39,00")
-        compose.onNodeWithTag("onboarding.vtDay.1").performScrollTo().performClick()
+        compose.onNodeWithTag("onboarding.vrDay.1").performScrollTo().performClick()
         compose.onNodeWithTag("onboarding.skipStep").assertIsEnabled().performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("onboarding.skipStep").performClick()
@@ -256,13 +254,13 @@ class OnboardingUiTest {
         next()
         field("onboarding.salary", "2.000,00")
         next()
-        field("onboarding.vtRate", "10,80")
-        compose.onNodeWithTag("onboarding.vtDay.5").performScrollTo().performClick()
+        field("onboarding.vrRate", "10,80")
+        compose.onNodeWithTag("onboarding.vrDay.5").performScrollTo().performClick()
         compose.activityRule.scenario.recreate()
         compose.waitForIdle()
         step(3)
-        compose.onNodeWithTag("onboarding.vtRate").performScrollTo().assertTextContains("10,80")
-        compose.onNodeWithTag("onboarding.vtDay.5").performScrollTo().assertIsOff()
+        compose.onNodeWithTag("onboarding.vrRate").performScrollTo().assertTextContains("10,80")
+        compose.onNodeWithTag("onboarding.vrDay.5").performScrollTo().assertIsOff()
         back()
         step(2)
         compose.onNodeWithTag("onboarding.salary").assertTextContains("2.000,00")
@@ -291,9 +289,7 @@ class OnboardingUiTest {
         next()
         step(3)
         compose.onNodeWithTag("onboarding.vrRate").performScrollTo().assertTextContains("25,50")
-        compose.onNodeWithTag("onboarding.vtRate").performScrollTo().assertTextContains("10,50")
-        compose.onNodeWithTag("onboarding.vtDay.4").performScrollTo().assertIsOn()
-        compose.onNodeWithTag("onboarding.vtDay.5").performScrollTo().assertIsOff()
+        compose.onNodeWithTag("onboarding.vtRate").assertDoesNotExist()
         compose.onNodeWithTag("onboarding.next").assertIsEnabled()
     }
 

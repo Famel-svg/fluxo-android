@@ -150,7 +150,7 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                     FluxoPanel(accent = FluxoColors.Petrol) {
                         FluxoSectionHeading("Classificação", icon = Icons.Default.PieChart, accent = FluxoColors.Petrol)
                         Choice("Categoria", category, Category.entries, { it.label }) { category = it }
-                        Choice("Meio", method, PaymentMethod.entries, { it.label() }) { method = it }
+                        Choice("Meio", method, PaymentMethod.entries.filter { it != PaymentMethod.TRANSPORT_VOUCHER || existing?.method == it }, { it.label() }) { method = it }
                         Choice("Origem", bank, listOf("manual") + supportedBanks.map { it.packageName }, ::bankName) { bank = it; accountId = null }
                         Choice("Conta", accountId, listOf<String?>(null) + accounts.filter { !it.archived || it.id == accountId }.map { it.id },
                             { id -> accounts.firstOrNull { it.id == id }?.name ?: "Não atribuída" }) { id -> accountId = id; accounts.firstOrNull { it.id == id }?.let { bank = it.bankPackage } }

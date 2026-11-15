@@ -279,7 +279,7 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
                         modifier = Modifier.testTag("settings.salary")
                     )
                     FluxoDataRow(
-                        "Rever configuração inicial", caption = "Nome, salário, VR e VT, dias de depósito.",
+                        "Rever configuração inicial", caption = "Nome, salário, VR, dias de depósito.",
                         onClick = { model.reopenOnboarding() }, modifier = Modifier.testTag("settings.onboarding")
                     )
                 }

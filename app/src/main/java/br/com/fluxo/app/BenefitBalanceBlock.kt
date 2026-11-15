@@ -91,28 +91,3 @@ internal fun BenefitBalanceBlock(
         }
     }
 }
-
-/** One-line VT equivalent shown under the VR block; smaller emphasis, same logic. */
-@Composable
-internal fun TransportBalanceRow(usage: BenefitUsage, hidden: Boolean, modifier: Modifier = Modifier) {
-    val over = usage.overspent
-    val overAmount = usage.remainingCents.abs()
-    fun v(value: BigInteger) = if (hidden) HIDDEN_VALUE else brl(value)
-    val spoken = if (hidden) "Vale-transporte: valores ocultos" else {
-        (if (over) "Vale-transporte: ${brl(overAmount)} acima da estimativa" else "Vale-transporte disponível: ${brl(usage.remainingCents)}") +
-            " de ${brl(usage.depositCents)} no mês. Estimativa do mês."
-    }
-    Row(
-        modifier.fillMaxWidth().padding(horizontal = 4.dp).testTag("dashboard.vt")
-            .semantics(mergeDescendants = true) { contentDescription = spoken },
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Text("VT disponível", Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge.copy(fontSize = 12.sp))
-        Text("de ${v(usage.depositCents)}", color = FluxoColors.Mute, style = FluxoType.Caption)
-        Text(
-            if (hidden) HIDDEN_VALUE else if (over) "${brl(overAmount)} acima da estimativa" else brl(usage.remainingCents),
-            color = if (over && !hidden) FluxoColors.Expense else FluxoColors.Ink,
-            style = FluxoType.number(14.sp)
-        )
-    }
-}

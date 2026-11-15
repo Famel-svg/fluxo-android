@@ -284,6 +284,14 @@ class NotificationParserTest {
         assertNull(NotificationParser.parse("Aproveite: limite de crédito pré-aprovado de R$ 5.000,00"))
     }
 
+    @Test fun `transport voucher notifications are never classified as VT and go to review`() {
+        listOf("Compra aprovada com vale-transporte R$ 4,40", "Uso do benefício de R$ 4,40 no vale transporte").forEach { text ->
+            val result = requireNotNull(NotificationParser.parse(text)) { text }
+            assertEquals(text, PaymentMethod.UNKNOWN, result.method)
+            assertEquals(text, ReviewStatus.REVIEW, result.status)
+        }
+    }
+
     @Test fun `card and voucher purchases without payment verbs are confirmed expenses`() {
         mapOf(
             "Compra aprovada no crédito: R$ 35,00 em PADARIA X" to PaymentMethod.CREDIT_CARD,
