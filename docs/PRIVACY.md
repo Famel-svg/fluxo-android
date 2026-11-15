@@ -10,7 +10,7 @@ O Fluxo é um aplicativo de controle de gastos que funciona sem conexão. Esta p
 
 - O app não exige conta, cadastro ou login.
 - Não há servidor. O app não envia dados para o desenvolvedor nem para terceiros.
-- O app não pede a permissão de internet e não inclui SDKs de analytics ou de relatório de falhas.
+- O app não pede a permissão de internet e não inclui SDKs de analytics ou de relatório de falhas. A versão da Play Store inclui só a biblioteca de cobrança do Google Play (Play Billing), usada para o plano Pro; ela fala com o app da Play Store no aparelho, sem enviar seus lançamentos.
 
 ## 2. Acesso às notificações
 
@@ -45,7 +45,7 @@ O Fluxo não compartilha dados com terceiros. Os únicos arquivos que saem do ap
 ## 7. Exclusão dos dados
 
 - Você pode apagar um lançamento individualmente dentro do app.
-- Em Configurações, a opção "Apagar definitivamente" remove lançamentos, contas, orçamentos e apelidos de notificações. A captura é desativada nesse processo.
+- Em Configurações, a opção "Apagar histórico" (confirmada em "Apagar definitivamente") remove lançamentos, contas, orçamentos e apelidos de notificações. A captura é desativada nesse processo.
 - Desinstalar o app ou limpar os dados do app nas configurações do Android remove todos os dados guardados no aparelho.
 - Arquivos de backup e CSV que você salvou fora do app não são apagados pelo Fluxo. Remova-os pelo gerenciador de arquivos.
 
