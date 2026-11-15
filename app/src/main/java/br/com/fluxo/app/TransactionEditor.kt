@@ -43,9 +43,11 @@ import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editError: String?, accounts: List<Account>, onUnlink: (String) -> Unit, onDismiss: () -> Unit, onSave: (Transaction) -> Unit, onDelete: (String) -> Unit) {
     val transferId = existing?.transferId
@@ -65,6 +67,7 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
     var category by rememberSaveable(existing?.id) { mutableStateOf(existing?.category ?: Category.UNCATEGORIZED) }
     var date by rememberSaveable(existing?.id) { mutableStateOf((existing?.let { Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate() } ?: LocalDate.now()).format(DateTimeFormatter.ofPattern("dd/MM/uuuu"))) }
     var deleting by rememberSaveable { mutableStateOf(false) }
+    var pickingDate by rememberSaveable { mutableStateOf(false) }
     val cents = remember(amount) { parseAmountInput(amount) }
     val parsedDate = remember(date) { runCatching { LocalDate.parse(date, DateTimeFormatter.ofPattern("dd/MM/uuuu").withResolverStyle(java.time.format.ResolverStyle.STRICT)) }.getOrNull() }
     Dialog(onDismissRequest = { if (!saving) onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -122,6 +125,9 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                             shape = RoundedCornerShape(16.dp), colors = editorFieldColors(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             isError = cents == null && (amount.isNotEmpty() || existing != null),
+                            supportingText = if (cents == null && (amount.isNotEmpty() || existing != null)) {
+                                { Text(if (amount.isBlank()) "Informe o valor." else "Valor inválido (ex.: 125,90).") }
+                            } else null,
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -130,7 +136,10 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                         FluxoSectionHeading("Detalhes", icon = Icons.AutoMirrored.Filled.ReceiptLong, accent = FluxoColors.Petrol)
                         OutlinedTextField(value = description, onValueChange = { description = it.take(120) }, label = { Text("Descrição") }, singleLine = true, shape = RoundedCornerShape(16.dp), colors = editorFieldColors(), modifier = Modifier.fillMaxWidth())
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(value = date, onValueChange = { date = formatDateInput(it) }, label = { Text("Data (dd/mm/aaaa)") }, isError = parsedDate == null, singleLine = true, shape = RoundedCornerShape(16.dp), colors = editorFieldColors(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
+                            OutlinedTextField(value = date, onValueChange = {}, readOnly = true, label = { Text("Data") }, isError = parsedDate == null,
+                                supportingText = if (parsedDate == null) { { Text("Informe uma data válida.") } } else null,
+                                trailingIcon = { IconButton(onClick = { pickingDate = true }) { Icon(Icons.Default.DateRange, contentDescription = "Escolher data") } },
+                                singleLine = true, shape = RoundedCornerShape(16.dp), colors = editorFieldColors(), modifier = Modifier.weight(1f))
                             Column(Modifier.width(88.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 val dayFormat = DateTimeFormatter.ofPattern("dd/MM/uuuu")
                                 FluxoChip("Hoje", date == LocalDate.now().format(dayFormat), { date = LocalDate.now().format(dayFormat) }, Modifier.fillMaxWidth())
@@ -147,7 +156,10 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                             { id -> accounts.firstOrNull { it.id == id }?.name ?: "Não atribuída" }) { id -> accountId = id; accounts.firstOrNull { it.id == id }?.let { bank = it.bankPackage } }
                         if (method == PaymentMethod.CREDIT_CARD) Text("Compras no crédito ficam separadas das saídas de caixa.", style = MaterialTheme.typography.bodySmall, color = FluxoColors.Mute)
                         if (method.isVoucher) Text("Gastos com vale ficam fora das saídas de caixa e abatem o saldo estimado do vale.", style = MaterialTheme.typography.bodySmall, color = FluxoColors.Mute)
-                        if (existing != null) TextButton(enabled = !saving, onClick = { deleting = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Excluir lançamento", color = FluxoColors.Expense, style = MaterialTheme.typography.labelLarge) }
+                    }
+                    if (existing != null) {
+                        HorizontalDivider(color = FluxoColors.ChipBorder)
+                        TextButton(enabled = !saving, onClick = { deleting = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Excluir lançamento", color = FluxoColors.Expense, style = MaterialTheme.typography.labelLarge) }
                     }
                     Spacer(Modifier.height(4.dp))
                 }
@@ -177,6 +189,16 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
             }
         }
     }
+    if (pickingDate) {
+        // DatePicker works in UTC midnight millis; convert to/from the same dd/MM/uuuu string used for saving.
+        val pickerState = rememberDatePickerState(initialSelectedDateMillis = (parsedDate ?: LocalDate.now()).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
+        DatePickerDialog(onDismissRequest = { pickingDate = false },
+            confirmButton = { TextButton(onClick = {
+                pickerState.selectedDateMillis?.let { date = Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate().format(DateTimeFormatter.ofPattern("dd/MM/uuuu")) }
+                pickingDate = false
+            }) { Text("OK") } },
+            dismissButton = { TextButton(onClick = { pickingDate = false }) { Text("Cancelar") } }) { DatePicker(pickerState) }
+    }
     if (deleting && existing != null) AlertDialog(onDismissRequest = { if (!saving) deleting = false }, title = { Text("Excluir lançamento?") }, text = { Text(editError ?: "O lançamento será removido dos totais. Sua notificação original não recriará este registro.") }, confirmButton = { TextButton(enabled = !saving, onClick = { onDelete(existing.id) }) { Text(if (saving) "Excluindo…" else "Excluir") } }, dismissButton = { TextButton(enabled = !saving, onClick = { deleting = false }) { Text("Cancelar") } })
 }
 
@@ -201,27 +223,11 @@ internal fun <T> Choice(label: String, selected: T, options: List<T>, display: (
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("$label: ${display(selected)}", modifier = Modifier.weight(1f), color = FluxoColors.Ink,
-                style = MaterialTheme.typography.labelLarge.copy(fontSize = 15.sp))
+                style = MaterialTheme.typography.labelLarge)
             Icon(Icons.Default.ArrowDropDown, null, tint = FluxoColors.Ink)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, containerColor = FluxoColors.Paper) {
             options.forEach { option -> DropdownMenuItem(text = { Text(display(option)) }, onClick = { change(option); expanded = false }) }
-        }
-    }
-}
-
-/**
- * Keeps the date field friendly to the numeric keyboard: only digits and "/" survive, and when the
- * text is digits only the slashes after day and month are inserted automatically (typing "/" still works).
- */
-internal fun formatDateInput(raw: String): String {
-    val kept = raw.filter { it.isDigit() || it == '/' }.take(10)
-    if ('/' in kept) return kept
-    val digits = kept
-    return buildString {
-        digits.forEachIndexed { i, c ->
-            if (i == 2 || i == 4) append('/')
-            append(c)
         }
     }
 }
