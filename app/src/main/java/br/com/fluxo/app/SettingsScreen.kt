@@ -39,6 +39,21 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import br.com.fluxo.core.ListenerState
 import br.com.fluxo.core.SalaryPlanner
 import br.com.fluxo.core.Transaction
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.Dp
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -49,18 +64,18 @@ import java.time.format.DateTimeFormatter
 // AccountsPanel and CaptureHealth).
 // ---------------------------------------------------------------------------------------------
 
-/** Quiet bordered container used by the secondary settings cards. */
+/** Quiet panel used by the settings cards: shared [FluxoPanel] with a neutral hairline border. */
 @Composable
 internal fun FluxoSettingsCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        modifier.fillMaxWidth()
-            .clip(FluxoShapes.Ticket)
-            .background(FluxoColors.Paper)
-            .border(1.5.dp, FluxoColors.Line, FluxoShapes.Ticket)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        content = content
-    )
+    FluxoPanel(modifier, accent = FluxoColors.Line, content = content)
+}
+
+/** Tonal circle holding a section or row icon. */
+@Composable
+internal fun FluxoIconCircle(icon: ImageVector, modifier: Modifier = Modifier, size: Dp = 36.dp, tint: Color = FluxoColors.Ink, fill: Color = FluxoColors.Soft) {
+    Box(modifier.size(size).clip(CircleShape).background(fill), contentAlignment = Alignment.Center) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(size * .5f))
+    }
 }
 
 /** Pill button whose label may wrap (long Portuguese labels, large font scale). */
@@ -89,8 +104,8 @@ internal fun FluxoWrapButton(
 }
 
 /**
- * Prototype "item" row of the Dados section: 14sp semibold title, optional caption, chevron.
- * [destructive] renders the discreet red variant without chevron.
+ * List-style settings row: optional tonal [icon], 14sp semibold title, optional caption and a
+ * [trailing] slot (default chevron). [destructive] renders the discreet red variant without chevron.
  */
 @Composable
 internal fun FluxoDataRow(
@@ -100,35 +115,40 @@ internal fun FluxoDataRow(
     caption: String? = null,
     enabled: Boolean = true,
     destructive: Boolean = false,
+    icon: ImageVector? = null,
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     val alpha = if (enabled) 1f else .38f
-    Column(modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-                .padding(horizontal = 2.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+    val source = remember { MutableInteractionSource() }
+    Row(
+        modifier.fillMaxWidth().heightIn(min = 52.dp)
+            .fluxoPress(source)
+            .clickable(interactionSource = source, indication = LocalIndication.current, enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 2.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        if (icon != null) FluxoIconCircle(
+            icon, Modifier.graphicsLayer { this.alpha = alpha },
+            tint = if (destructive) FluxoColors.Expense else FluxoColors.Ink,
+            fill = if (destructive) FluxoColors.Expense.copy(alpha = .12f) else FluxoColors.Soft
+        )
+        Column(Modifier.weight(1f)) {
             Text(
-                title, modifier = Modifier.weight(1f),
+                title,
                 color = (if (destructive) FluxoColors.Expense else FluxoColors.Ink).copy(alpha = alpha),
                 style = MaterialTheme.typography.bodyMedium.copy(
                     fontSize = if (destructive) 13.sp else 14.sp,
                     fontWeight = if (destructive) FontWeight.Medium else FontWeight.SemiBold
                 )
             )
-            if (!destructive) Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null,
-                tint = FluxoColors.Mute.copy(alpha = alpha), modifier = Modifier.size(20.dp)
-            )
+            if (caption != null) Text(caption, color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
         }
-        if (caption != null) Text(
-            caption, color = FluxoColors.Mute,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(start = 2.dp, end = 2.dp, bottom = 8.dp)
+        if (trailing != null) trailing()
+        else if (!destructive) Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null,
+            tint = FluxoColors.Mute.copy(alpha = alpha), modifier = Modifier.size(20.dp)
         )
-        if (!destructive) HorizontalDivider(color = FluxoColors.Line)
     }
 }
 
@@ -141,15 +161,21 @@ private fun fluxoSwitchColors() = SwitchDefaults.colors(
 private val timeFormat = DateTimeFormatter.ofPattern("HH:mm")
 private val dayFormat = DateTimeFormatter.ofPattern("dd/MM HH:mm")
 
+/** Section header: tonal icon circle plus the shared heading; each section enters staggered. */
 @Composable
-private fun SectionTitle(title: String, hint: String? = null) {
-    FluxoSectionHeading(title, trailing = hint, modifier = Modifier.fillMaxWidth().padding(top = 8.dp, start = 2.dp, end = 2.dp, bottom = 2.dp))
+private fun SettingsSection(index: Int, title: String, icon: ImageVector, content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth().fluxoEnter(index).padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            FluxoIconCircle(icon, size = 32.dp)
+            FluxoSectionHeading(title, Modifier.weight(1f))
+        }
+        content()
+    }
 }
 
 /** One line of the Estado block: check (ok) or warning (not ok) mark plus the state text. */
 @Composable
-private fun StateLine(ok: Boolean, solid: Boolean, text: String) {
-    val fg = if (solid) FluxoColors.OnIncome else FluxoColors.Ink
+private fun StateLine(ok: Boolean, text: String) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 25.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -157,9 +183,9 @@ private fun StateLine(ok: Boolean, solid: Boolean, text: String) {
     ) {
         Icon(
             if (ok) Icons.Default.Check else Icons.Default.Warning, contentDescription = null,
-            tint = if (ok) fg else FluxoColors.Amber, modifier = Modifier.size(16.dp)
+            tint = if (ok) FluxoColors.Income else FluxoColors.Amber, modifier = Modifier.size(16.dp)
         )
-        Text(text, color = fg, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold))
+        Text(text, color = FluxoColors.Ink, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold))
     }
 }
 
@@ -198,151 +224,161 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
             contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            item { SectionTitle("Captura") }
             item {
-                Column(
-                    Modifier.fillMaxWidth()
-                        .clip(FluxoShapes.Hero)
-                        .background(if (allOk) FluxoColors.Income else FluxoColors.Soft)
-                        .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    Text(
-                        "Estado", color = if (allOk) FluxoColors.OnIncome else FluxoColors.Ink,
-                        style = FluxoType.number(20.sp, FontWeight.ExtraBold),
-                        modifier = Modifier.padding(bottom = 4.dp)
-                    )
-                    StateLine(access, allOk, if (access) "Permissão concedida" else "Permissão não concedida")
-                    StateLine(capture, allOk, if (capture) "Captura ativa" else "Captura pausada")
-                    StateLine(listenerState == ListenerState.CONNECTED, allOk, serviceStateText(listenerState))
-                    if (!allOk) {
-                        Spacer(Modifier.height(6.dp))
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (!access) FluxoWrapButton("Abrir configurações do Android", onClick = openNotificationAccess)
-                            if (!capture) FluxoWrapButton("Ativar captura", onClick = { model.capture(true) })
-                            if (canReconnect) {
-                                val busy = listenerState == ListenerState.CONNECTING
-                                FluxoWrapButton(if (busy) "Conectando…" else "Reconectar serviço", enabled = !busy,
-                                    onClick = { CaptureConnection.launchReconnect(context) })
+                SettingsSection(0, "Captura", Icons.Default.Notifications) {
+                    FluxoPanel(accent = if (allOk) FluxoColors.Income else FluxoColors.Amber) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            FluxoDot(if (allOk) FluxoColors.Income else FluxoColors.Amber, size = 12.dp)
+                            Column(Modifier.weight(1f)) {
+                                Text("Estado", color = FluxoColors.Mute, style = MaterialTheme.typography.labelMedium)
+                                Text(
+                                    if (allOk) "Captura saudável" else "Atenção na captura", color = FluxoColors.Ink,
+                                    style = FluxoType.number(20.sp, FontWeight.ExtraBold)
+                                )
                             }
                         }
-                        if (settingsError) Text(
-                            "Abra Configurações do Android → Acesso especial → Acesso às notificações.",
-                            color = FluxoColors.Expense, style = MaterialTheme.typography.bodySmall
-                        )
-                        if (!snapshot.reconnecting) snapshot.lastResult?.let {
-                            Text(it.message, color = FluxoColors.Ink, style = MaterialTheme.typography.bodySmall)
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            StateLine(access, if (access) "Permissão concedida" else "Permissão não concedida")
+                            StateLine(capture, if (capture) "Captura ativa" else "Captura pausada")
+                            StateLine(listenerState == ListenerState.CONNECTED, serviceStateText(listenerState))
                         }
-                        if (access && capture && listenerState == ListenerState.STUCK) ListenerRecoveryGuide()
+                        if (!allOk) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (!access) FluxoWrapButton("Abrir configurações do Android", onClick = openNotificationAccess)
+                                if (!capture) FluxoWrapButton("Ativar captura", onClick = { model.capture(true) })
+                                if (canReconnect) {
+                                    val busy = listenerState == ListenerState.CONNECTING
+                                    FluxoWrapButton(if (busy) "Conectando…" else "Reconectar serviço", enabled = !busy,
+                                        onClick = { CaptureConnection.launchReconnect(context) })
+                                }
+                            }
+                            if (settingsError) Text(
+                                "Abra Configurações do Android → Acesso especial → Acesso às notificações.",
+                                color = FluxoColors.Expense, style = MaterialTheme.typography.bodySmall
+                            )
+                            if (!snapshot.reconnecting) snapshot.lastResult?.let {
+                                Text(it.message, color = FluxoColors.Ink, style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (access && capture && listenerState == ListenerState.STUCK) ListenerRecoveryGuide()
+                        }
                     }
-                }
-            }
-            item {
-                Row(
-                    Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 2.dp).padding(top = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(11.dp)
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Capturar notificações", color = FluxoColors.Ink,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.5.sp, fontWeight = FontWeight.Bold))
-                        Text(
-                            when {
+                    FluxoSettingsCard {
+                        FluxoDataRow(
+                            "Capturar notificações", onClick = { model.capture(!capture) }, icon = Icons.Default.Notifications,
+                            caption = when {
                                 !capture -> "Pausada por você"
                                 !access -> "Aguardando permissão Android"
                                 BuildConfig.STORE_BUILD -> "Ativa para bancos e apps de benefícios"
                                 else -> "Ativa para todos os apps"
                             },
-                            color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall
+                            trailing = {
+                                Switch(
+                                    checked = capture, onCheckedChange = model::capture, colors = fluxoSwitchColors(),
+                                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                        .semantics { contentDescription = "Capturar notificações financeiras" }
+                                )
+                            }
                         )
                     }
-                    Switch(
-                        checked = capture, onCheckedChange = model::capture, colors = fluxoSwitchColors(),
-                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                            .semantics { contentDescription = "Capturar notificações financeiras" }
-                    )
+                    if (!BuildConfig.STORE_BUILD) TriageCard()
+                    CaptureHealthCard(access, capture)
                 }
             }
-            if (!BuildConfig.STORE_BUILD) item { TriageCard() }
-            item { CaptureHealthCard(access, capture) }
-            item { SectionTitle("Perfil") }
             item {
-                Column(Modifier.fillMaxWidth()) {
-                    FluxoDataRow(
-                        "Nome", caption = profileName.ifBlank { "Não informado" },
-                        onClick = { profileDraft = profileName; salaryDraft = centsFieldText(salary); model.resetEditError(); editingProfile = true },
-                        modifier = Modifier.testTag("settings.profile")
-                    )
-                    FluxoDataRow(
-                        "Salário mensal", caption = if (salary > 0) money(salary) else "Não informado",
-                        onClick = { profileDraft = profileName; salaryDraft = centsFieldText(salary); model.resetEditError(); editingProfile = true },
-                        modifier = Modifier.testTag("settings.salary")
-                    )
-                    FluxoDataRow(
-                        "Rever configuração inicial", caption = "Nome, salário, VR, dias de depósito.",
-                        onClick = { model.reopenOnboarding() }, modifier = Modifier.testTag("settings.onboarding")
-                    )
-                }
-            }
-            item { SectionTitle("Dados") }
-            item { BackupCard(backupActions) }
-            item { ExportCsvCard(transactions) }
-            item { AccountsPanel(accounts, transactions, model, saving, editError) }
-            item { SectionTitle("Plano") }
-            item { ProSettingsCard() }
-            item { SectionTitle("Aparência") }
-            item {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 2.dp).selectableGroup().semantics { contentDescription = "Aparência do aplicativo" },
-                    horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically
-                ) {
-                    listOf(
-                        Triple(ThemeMode.SYSTEM, "Sistema", "settings.theme.system"),
-                        Triple(ThemeMode.LIGHT, "Claro", "settings.theme.light"),
-                        Triple(ThemeMode.DARK, "Escuro", "settings.theme.dark"),
-                    ).forEach { (mode, label, tag) ->
-                        FluxoChip(label, selected = themeMode == mode, onClick = { model.setThemeMode(mode) }, modifier = Modifier.testTag(tag))
+                SettingsSection(1, "Perfil", Icons.Default.Person) {
+                    FluxoSettingsCard {
+                        FluxoDataRow(
+                            "Nome", caption = profileName.ifBlank { "Não informado" }, icon = Icons.Default.Person,
+                            onClick = { profileDraft = profileName; salaryDraft = centsFieldText(salary); model.resetEditError(); editingProfile = true },
+                            modifier = Modifier.testTag("settings.profile")
+                        )
+                        FluxoDataRow(
+                            "Salário mensal", caption = if (salary > 0) money(salary) else "Não informado", icon = Icons.Default.Payments,
+                            onClick = { profileDraft = profileName; salaryDraft = centsFieldText(salary); model.resetEditError(); editingProfile = true },
+                            modifier = Modifier.testTag("settings.salary")
+                        )
+                        FluxoDataRow(
+                            "Rever configuração inicial", caption = "Nome, salário, VR, dias de depósito.", icon = Icons.Default.Tune,
+                            onClick = { model.reopenOnboarding() }, modifier = Modifier.testTag("settings.onboarding")
+                        )
                     }
                 }
             }
-            item { SectionTitle("Privacidade e legal") }
             item {
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 1.dp)
-                        .clip(RoundedCornerShape(14.dp)).background(FluxoColors.Pale)
-                        .padding(horizontal = 12.dp, vertical = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Icon(Icons.Default.Lock, contentDescription = null, tint = FluxoColors.Ink, modifier = Modifier.size(22.dp))
-                    Text(
-                        if (triage) "Tudo fica no aparelho. Triagem: o texto fica guardado só até você guardar ou descartar a notificação."
-                        else "Tudo fica no aparelho. Texto das notificações não é guardado.", color = FluxoColors.Ink,
-                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold)
-                    )
+                SettingsSection(2, "Aparência", Icons.Default.Palette) {
+                    FluxoSettingsCard {
+                        Text("Tema", color = FluxoColors.Mute, style = MaterialTheme.typography.labelMedium)
+                        Row(
+                            Modifier.fillMaxWidth().selectableGroup().semantics { contentDescription = "Aparência do aplicativo" },
+                            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            listOf(
+                                Triple(ThemeMode.SYSTEM, "Sistema", "settings.theme.system"),
+                                Triple(ThemeMode.LIGHT, "Claro", "settings.theme.light"),
+                                Triple(ThemeMode.DARK, "Escuro", "settings.theme.dark"),
+                            ).forEach { (mode, label, tag) ->
+                                FluxoChip(label, selected = themeMode == mode, onClick = { model.setThemeMode(mode) }, modifier = Modifier.testTag(tag))
+                            }
+                        }
+                    }
                 }
             }
             item {
-                FluxoSettingsCard {
-                    FluxoSectionHeading("Privacidade e cobertura")
-                    Text(
-                        if (BuildConfig.STORE_BUILD) "O Android permite acesso às notificações. Com a captura ativa, o Fluxo lê notificações de bancos e apps de benefícios e só guarda eventos financeiros reconhecidos. Texto completo não é guardado nem enviado à internet."
-                        else "O Android permite acesso às notificações. Com a captura ativa, o Fluxo lê notificações de todos os apps e só guarda eventos financeiros reconhecidos. Texto completo não é guardado nem enviado à internet, exceto pela triagem provisória, que guarda o texto só neste aparelho enquanto estiver ativa.",
-                        color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
-                    FluxoDataRow("Política de privacidade", modifier = Modifier.testTag("settings.privacy"), onClick = {
-                        try { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.PRIVACY_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                        catch (_: ActivityNotFoundException) { }
-                    })
-                    Spacer(Modifier.height(4.dp))
-                    FluxoSectionHeading("Avisos legais")
-                    Text("Dados no armazenamento privado do aplicativo. Sem login, servidor ou backup automático. A proteção depende também do bloqueio e da segurança do aparelho.",
-                        color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
-                    Text("Bancos podem omitir valores, mudar mensagens ou não notificar. Revise registros ambíguos. Pagamentos de fatura não devem virar novas compras. Totais não substituem o extrato bancário.",
-                        color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
+                SettingsSection(3, "Dados e backup", Icons.Default.Storage) {
+                    BackupCard(backupActions)
+                    ExportCsvCard(transactions)
+                    AccountsPanel(accounts, transactions, model, saving, editError)
                 }
             }
-            item { SectionTitle("Zona de risco") }
-            item { FluxoDataRow("Apagar histórico", onClick = { clear = true }, destructive = true) }
+            item { SettingsSection(4, "Plano", Icons.Default.Star) { ProSettingsCard() } }
+            item {
+                SettingsSection(5, "Privacidade", Icons.Default.Lock) {
+                    FluxoTile(Modifier.fillMaxWidth(), role = FluxoTileRole.Accent) {
+                        Row(
+                            Modifier.padding(horizontal = 2.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(Icons.Default.Lock, contentDescription = null, tint = FluxoColors.Ink, modifier = Modifier.size(22.dp))
+                            Text(
+                                if (triage) "Tudo fica no aparelho. Triagem: o texto fica guardado só até você guardar ou descartar a notificação."
+                                else "Tudo fica no aparelho. Texto das notificações não é guardado.", color = FluxoColors.Ink,
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold)
+                            )
+                        }
+                    }
+                    FluxoSettingsCard {
+                        FluxoSectionHeading("Privacidade e cobertura")
+                        Text(
+                            if (BuildConfig.STORE_BUILD) "O Android permite acesso às notificações. Com a captura ativa, o Fluxo lê notificações de bancos e apps de benefícios e só guarda eventos financeiros reconhecidos. Texto completo não é guardado nem enviado à internet."
+                            else "O Android permite acesso às notificações. Com a captura ativa, o Fluxo lê notificações de todos os apps e só guarda eventos financeiros reconhecidos. Texto completo não é guardado nem enviado à internet, exceto pela triagem provisória, que guarda o texto só neste aparelho enquanto estiver ativa.",
+                            color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
+                        FluxoDataRow("Política de privacidade", icon = Icons.Default.Lock, modifier = Modifier.testTag("settings.privacy"), onClick = {
+                            try { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.PRIVACY_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                            catch (_: ActivityNotFoundException) { }
+                        })
+                    }
+                }
+            }
+            item {
+                SettingsSection(6, "Sobre", Icons.Default.Info) {
+                    FluxoSettingsCard {
+                        FluxoSectionHeading("Avisos legais")
+                        Text("Dados no armazenamento privado do aplicativo. Sem login, servidor ou backup automático. A proteção depende também do bloqueio e da segurança do aparelho.",
+                            color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
+                        Text("Bancos podem omitir valores, mudar mensagens ou não notificar. Revise registros ambíguos. Pagamentos de fatura não devem virar novas compras. Totais não substituem o extrato bancário.",
+                            color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
+                        Text("Fluxo ${BuildConfig.VERSION_NAME}", color = FluxoColors.Mute, style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+            item {
+                SettingsSection(7, "Zona de risco", Icons.Default.Warning) {
+                    FluxoSettingsCard {
+                        FluxoDataRow("Apagar histórico", onClick = { clear = true }, destructive = true, icon = Icons.Default.Delete)
+                    }
+                }
+            }
         }
     }
     val salaryProblem = salaryError(salaryDraft)
