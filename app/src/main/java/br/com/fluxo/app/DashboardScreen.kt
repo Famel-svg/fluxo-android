@@ -157,6 +157,19 @@ internal fun Dashboard(
             )
         }
         item {
+            Column {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    FluxoSectionHeading("Últimos lançamentos", Modifier.weight(1f))
+                    Box(Modifier.heightIn(min = 44.dp).clickable(role = Role.Button, onClick = showAll).padding(horizontal = 6.dp), contentAlignment = Alignment.CenterEnd) {
+                        Text("Todos", style = FluxoType.Caption.copy(fontSize = 12.sp), color = FluxoColors.Mute)
+                    }
+                }
+                if (rows.isEmpty()) FluxoEmptyState("Seu mês começa aqui", "Adicione um lançamento ou configure a captura. Nenhum histórico anterior será importado.")
+                else if (hidden) Text("Lançamentos ocultos neste resumo.", style = MaterialTheme.typography.bodyMedium, color = FluxoColors.Mute)
+                else rows.take(3).forEach { key(it.id) { TransactionRow(it, today, edit) } }
+            }
+        }
+        item {
             val topCategory = byCategory.firstOrNull()
             val shown = if (byCategory.size > 6) byCategory.take(5) else byCategory
             val rest = if (byCategory.size > 6) byCategory.drop(5).fold(BigInteger.ZERO) { s, e -> s + e.value } else BigInteger.ZERO
@@ -250,19 +263,6 @@ internal fun Dashboard(
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) { barTile(chartHeight); splitTile() }
                     }
                 }
-            }
-        }
-        item {
-            Column {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    FluxoSectionHeading("Últimos lançamentos", Modifier.weight(1f))
-                    Box(Modifier.heightIn(min = 44.dp).clickable(role = Role.Button, onClick = showAll).padding(horizontal = 6.dp), contentAlignment = Alignment.CenterEnd) {
-                        Text("Todos", style = FluxoType.Caption.copy(fontSize = 11.5.sp), color = FluxoColors.Mute)
-                    }
-                }
-                if (rows.isEmpty()) FluxoEmptyState("Seu mês começa aqui", "Adicione um lançamento ou configure a captura. Nenhum histórico anterior será importado.")
-                else if (hidden) Text("Lançamentos ocultos neste resumo.", style = MaterialTheme.typography.bodyMedium, color = FluxoColors.Mute)
-                else rows.take(3).forEach { key(it.id) { TransactionRow(it, today, edit) } }
             }
         }
         if (pendingCredit > 0) item {
@@ -360,7 +360,7 @@ private fun TransactionRow(row: Transaction, today: LocalDate, edit: (Transactio
                 FluxoBadge(if (automatic) "automático" else "manual", kind = if (automatic) FluxoBadgeKind.Automatic else FluxoBadgeKind.Manual)
                 if (row.status == ReviewStatus.REVIEW) Text(
                     "revisar", maxLines = 1, color = FluxoColors.Ink,
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 13.sp, fontWeight = FontWeight.Bold),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp, lineHeight = 14.sp, fontWeight = FontWeight.Bold),
                     modifier = Modifier.clip(FluxoShapes.Badge).background(FluxoColors.Amber).padding(horizontal = 6.dp)
                 )
             }
