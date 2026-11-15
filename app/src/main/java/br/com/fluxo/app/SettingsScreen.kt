@@ -198,6 +198,7 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
             contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            item { SectionTitle("Captura") }
             item {
                 Column(
                     Modifier.fillMaxWidth()
@@ -238,7 +239,7 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
             }
             item {
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 2.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 2.dp).padding(top = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(11.dp)
                 ) {
@@ -252,7 +253,7 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
                                 BuildConfig.STORE_BUILD -> "Ativa para bancos e apps de benefícios"
                                 else -> "Ativa para todos os apps"
                             },
-                            color = FluxoColors.Mute, style = FluxoType.Caption.copy(fontSize = 11.5.sp, lineHeight = 14.sp)
+                            color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall
                         )
                     }
                     Switch(
@@ -262,21 +263,8 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
                     )
                 }
             }
-            item { SectionTitle("Aparência") }
-            item {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 2.dp).selectableGroup().semantics { contentDescription = "Aparência do aplicativo" },
-                    horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically
-                ) {
-                    listOf(
-                        Triple(ThemeMode.SYSTEM, "Sistema", "settings.theme.system"),
-                        Triple(ThemeMode.LIGHT, "Claro", "settings.theme.light"),
-                        Triple(ThemeMode.DARK, "Escuro", "settings.theme.dark"),
-                    ).forEach { (mode, label, tag) ->
-                        FluxoChip(label, selected = themeMode == mode, onClick = { model.setThemeMode(mode) }, modifier = Modifier.testTag(tag))
-                    }
-                }
-            }
+            if (!BuildConfig.STORE_BUILD) item { TriageCard() }
+            item { CaptureHealthCard(access, capture) }
             item { SectionTitle("Perfil") }
             item {
                 Column(Modifier.fillMaxWidth()) {
@@ -296,6 +284,28 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
                     )
                 }
             }
+            item { SectionTitle("Dados") }
+            item { BackupCard(backupActions) }
+            item { ExportCsvCard(transactions) }
+            item { AccountsPanel(accounts, transactions, model, saving, editError) }
+            item { SectionTitle("Plano") }
+            item { ProSettingsCard() }
+            item { SectionTitle("Aparência") }
+            item {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 2.dp).selectableGroup().semantics { contentDescription = "Aparência do aplicativo" },
+                    horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically
+                ) {
+                    listOf(
+                        Triple(ThemeMode.SYSTEM, "Sistema", "settings.theme.system"),
+                        Triple(ThemeMode.LIGHT, "Claro", "settings.theme.light"),
+                        Triple(ThemeMode.DARK, "Escuro", "settings.theme.dark"),
+                    ).forEach { (mode, label, tag) ->
+                        FluxoChip(label, selected = themeMode == mode, onClick = { model.setThemeMode(mode) }, modifier = Modifier.testTag(tag))
+                    }
+                }
+            }
+            item { SectionTitle("Privacidade e legal") }
             item {
                 Row(
                     Modifier.fillMaxWidth().padding(top = 1.dp)
@@ -308,21 +318,10 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
                     Text(
                         if (triage) "Tudo fica no aparelho. Triagem: o texto das notificações fica guardado até você apagar."
                         else "Tudo fica no aparelho. Texto das notificações não é guardado.", color = FluxoColors.Ink,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold)
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold)
                     )
                 }
             }
-            item { SectionTitle("Dados") }
-            item { BackupCard(backupActions) }
-            item { ExportCsvCard(transactions) }
-            if (!BuildConfig.STORE_BUILD) item { TriageCard() }
-            item {
-                FluxoDataRow("Apagar histórico", onClick = { clear = true }, destructive = true)
-            }
-            item { Spacer(Modifier.height(8.dp)) }
-            item { CaptureHealthCard(access, capture) }
-            item { AccountsPanel(accounts, transactions, model, saving, editError) }
-            item { ProSettingsCard() }
             item {
                 FluxoSettingsCard {
                     FluxoSectionHeading("Privacidade e cobertura")
@@ -334,10 +333,16 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
                         try { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.PRIVACY_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                         catch (_: ActivityNotFoundException) { }
                     })
-                    Text("Dados no armazenamento privado do aplicativo. Sem login, servidor ou backup automático. A proteção depende também do bloqueio e da segurança do aparelho.\n\nBancos podem omitir valores, mudar mensagens ou não notificar. Revise registros ambíguos. Pagamentos de fatura não devem virar novas compras. Totais não substituem o extrato bancário.",
+                    Spacer(Modifier.height(4.dp))
+                    FluxoSectionHeading("Avisos legais")
+                    Text("Dados no armazenamento privado do aplicativo. Sem login, servidor ou backup automático. A proteção depende também do bloqueio e da segurança do aparelho.",
+                        color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
+                    Text("Bancos podem omitir valores, mudar mensagens ou não notificar. Revise registros ambíguos. Pagamentos de fatura não devem virar novas compras. Totais não substituem o extrato bancário.",
                         color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
                 }
             }
+            item { SectionTitle("Zona de risco") }
+            item { FluxoDataRow("Apagar histórico", onClick = { clear = true }, destructive = true) }
         }
     }
     val salaryProblem = salaryError(salaryDraft)
