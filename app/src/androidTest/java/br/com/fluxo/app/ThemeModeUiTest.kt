@@ -3,6 +3,7 @@ package br.com.fluxo.app
 import android.os.Build
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -60,6 +61,7 @@ class ThemeModeUiTest {
     @Test fun choosingEscuroSwitchesThePaletteAndLeavingItRestoresLight() {
         compose.onNodeWithTag("navigation.3").performClick()
         assertEquals(FluxoPalette.Light.paper, FluxoColors.Paper)
+        compose.scrollListTo(hasTestTag("settings.theme.dark"))
         compose.onNodeWithTag("settings.theme.dark").performScrollTo().performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("settings.theme.dark").assertIsSelected()

@@ -7,6 +7,8 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -97,7 +99,7 @@ class OnboardingUiTest {
         compose.onNodeWithTag("onboarding.next").assertIsEnabled().performClick()
         compose.waitForIdle()
         step(4)
-        compose.onNodeWithTag("onboarding.captureState").assertTextContains("desligado")
+        compose.onNodeWithTag("onboarding.captureState").assertTextContains("Acesso às notificações: ", substring = true) // ligado or desligado: depends on the emulator grant
         compose.onNodeWithTag("onboarding.start").assertIsEnabled().performClick()
         finished()
         compose.onNodeWithTag("navigation.0").assertIsDisplayed()
@@ -278,6 +280,7 @@ class OnboardingUiTest {
         }
         compose.waitForIdle()
         compose.onNodeWithTag("navigation.3").performClick()
+        compose.scrollListTo(hasText("Rever configuração inicial"))
         compose.onNodeWithText("Rever configuração inicial").performScrollTo().performClick()
         compose.waitForIdle()
         step(1)
@@ -298,6 +301,7 @@ class OnboardingUiTest {
         runBlocking { repository.setProfileName("Bia"); repository.setOnboardingDone(true) }
         compose.waitForIdle()
         compose.onNodeWithTag("navigation.3").performClick()
+        compose.scrollListTo(hasTestTag("settings.salary"))
         compose.onNodeWithTag("settings.salary").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Salário mensal").performScrollTo().performClick()
         field("settings.salary.input", "abc")

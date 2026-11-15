@@ -1,5 +1,9 @@
 package br.com.fluxo.app
 
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.junit4.ComposeTestRule
+import androidx.compose.ui.test.performScrollToNode
 import br.com.fluxo.core.BenefitDays
 import br.com.fluxo.core.BenefitSettings
 import java.time.YearMonth
@@ -31,4 +35,9 @@ internal object OnboardingTestSupport {
         repository.setSalaryMonthlyCents(snapshot.salaryCents)
         repository.setOnboardingDone(snapshot.done)
     }
+}
+
+/** Settings is a LazyColumn: performScrollTo() only reaches composed items, so bring the target into the list first. */
+internal fun ComposeTestRule.scrollListTo(matcher: SemanticsMatcher) {
+    onNode(hasScrollToIndexAction()).performScrollToNode(matcher)
 }
