@@ -19,36 +19,49 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import br.com.fluxo.core.ProFeature
+import br.com.fluxo.core.FeaturePolicy
 
-private fun ProFeature.label() = when (this) {
-    ProFeature.UNLIMITED_ACCOUNTS -> "Contas ilimitadas (grátis até 2)"
-    ProFeature.RECURRENCES -> "Lançamentos recorrentes"
-    ProFeature.CASH_PROJECTION -> "Projeção de caixa"
-    ProFeature.WIDGET -> "Widget na tela inicial"
-    ProFeature.AUTO_RULES -> "Regras automáticas de categoria"
-    ProFeature.STATEMENT_IMPORT -> "Importar extrato"
+private val FreeIncludes = listOf(
+    "Captura por notificação dos bancos que você escolher",
+    "Lançamentos, categorias e triagem do que precisa de revisão",
+    "Orçamentos e planejamento com VR/VT",
+    "Backup criptografado e exportação CSV",
+    "Até ${FeaturePolicy.MAX_CONTAS_FREE} contas ativas",
+)
+private const val ProIncludes = "Tudo do grátis, com contas ativas ilimitadas"
+
+@Composable
+private fun PlanBox(title: String, lines: List<String>, tag: String) {
+    Column(Modifier.fillMaxWidth().testTag(tag), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title, color = FluxoColors.Ink, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+        lines.forEach { Text("•  $it", color = FluxoColors.Ink, style = MaterialTheme.typography.bodyMedium) }
+    }
 }
 
-/** Tela "Fluxo Pro". [price] vem do Google Play; null enquanto carrega ou indisponível. */
+/** Tela "Fluxo Pro". [price] vem do Google Play; null enquanto carrega ou indisponível (então [onRetry] tenta de novo). */
 @Composable
-internal fun ProPaywallScreen(isPro: Boolean, price: String?, proForAll: Boolean, onBuy: () -> Unit, onClose: () -> Unit) {
+internal fun ProPaywallScreen(isPro: Boolean, price: String?, proForAll: Boolean, onBuy: () -> Unit, onClose: () -> Unit, onRetry: () -> Unit = {}) {
     Surface(Modifier.fillMaxSize().testTag("paywall"), color = FluxoColors.Paper) {
         Column(
             Modifier.verticalScroll(rememberScrollState()).safeDrawingPadding().padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text("Fluxo Pro", color = FluxoColors.Ink, style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold))
-            Text("Compra única, sem assinatura. Tudo continua offline e só no seu aparelho.", color = FluxoColors.Mute, style = MaterialTheme.typography.bodyMedium)
-            ProFeature.entries.forEach { Text("•  ${it.label()}", color = FluxoColors.Ink, style = MaterialTheme.typography.bodyLarge) }
-            Text("Seus dados nunca são ocultados nem apagados, e a exportação segue liberada, com ou sem Pro.", color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
+            Text("O Fluxo funciona por inteiro sem Pro. O Pro é uma compra única, sem assinatura.", color = FluxoColors.Mute, style = MaterialTheme.typography.bodyMedium)
+            PlanBox("Grátis", FreeIncludes, "paywall.free")
+            PlanBox("Pro", listOf(ProIncludes), "paywall.pro")
+            Text("Seus dados nunca são ocultados nem apagados, e a exportação segue liberada, com ou sem Pro. Tudo continua offline e só no seu aparelho.", color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
             Text(
                 if (proForAll) "Grátis por enquanto" else price ?: "Preço indisponível",
                 modifier = Modifier.testTag("paywall.price"), color = FluxoColors.Ink,
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
             )
+            if (!proForAll && !isPro) Text("Cobrança única pelo Google Play. Nada é cobrado ao abrir esta tela.", color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
             if (isPro) Text("Você já tem o Fluxo Pro.", modifier = Modifier.testTag("paywall.owned"), color = FluxoColors.Income, style = MaterialTheme.typography.bodyLarge)
-            else if (!proForAll) FluxoWrapButton("Comprar o Fluxo Pro", onBuy, Modifier.testTag("paywall.buy"), enabled = price != null)
+            else if (!proForAll) {
+                FluxoWrapButton("Comprar o Fluxo Pro", onBuy, Modifier.testTag("paywall.buy"), enabled = price != null)
+                if (price == null) FluxoWrapButton("Tentar de novo", onRetry, Modifier.testTag("paywall.retry"), quiet = true)
+            }
             FluxoWrapButton("Fechar", onClose, Modifier.testTag("paywall.close"), quiet = true)
         }
     }
@@ -78,8 +91,9 @@ internal fun ProPaywallDialog(onClose: () -> Unit) {
     val isPro by entitlements.isPro.collectAsStateWithLifecycle()
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         var price by remember { mutableStateOf<String?>(null) }
-        LaunchedEffect(Unit) { if (!BuildConfig.PRO_FOR_ALL) price = entitlements.queryPrice() }
-        ProPaywallScreen(isPro, price, BuildConfig.PRO_FOR_ALL, onBuy = { activity?.let(entitlements::launchPurchase) }, onClose = onClose)
+        var attempt by remember { mutableIntStateOf(0) }
+        LaunchedEffect(attempt) { if (!BuildConfig.PRO_FOR_ALL) price = entitlements.queryPrice() }
+        ProPaywallScreen(isPro, price, BuildConfig.PRO_FOR_ALL, onBuy = { activity?.let(entitlements::launchPurchase) }, onClose = onClose, onRetry = { attempt++ })
     }
 }
 

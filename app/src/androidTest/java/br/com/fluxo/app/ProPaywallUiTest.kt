@@ -22,10 +22,21 @@ class ProPaywallUiTest {
         var bought = false
         compose.setContent { MaterialTheme { ProPaywallScreen(false, "R$ 19,90", false, { bought = true }, {}) } }
         compose.onNodeWithText("Fluxo Pro").assertIsDisplayed()
-        compose.onNodeWithText("•  Projeção de caixa").assertIsDisplayed()
+        compose.onNodeWithTag("paywall.free").assertIsDisplayed()
+        compose.onNodeWithText("•  Tudo do grátis, com contas ativas ilimitadas").assertIsDisplayed()
+        compose.onNodeWithTag("paywall.retry").assertDoesNotExist()
         compose.onNodeWithTag("paywall.price").assertTextEquals("R$ 19,90")
         compose.onNodeWithTag("paywall.buy").performClick()
         assertEquals(true, bought)
+    }
+
+    @Test fun paywallWithoutPriceOffersRetry() {
+        var retried = 0
+        compose.setContent { MaterialTheme { ProPaywallScreen(false, null, false, {}, {}, { retried++ }) } }
+        compose.onNodeWithTag("paywall.price").assertTextEquals("Preço indisponível")
+        compose.onNodeWithTag("paywall.buy").assertIsNotEnabled()
+        compose.onNodeWithTag("paywall.retry").performClick()
+        assertEquals(1, retried)
     }
 
     @Test fun paywallFreeForNowHidesBuy() {
