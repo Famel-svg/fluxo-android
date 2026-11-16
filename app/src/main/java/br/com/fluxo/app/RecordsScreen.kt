@@ -255,9 +255,8 @@ internal fun RecordsScreen(
                     }
                 }
                 item {
-                    val known = reviewing.filter { r -> (r.amountCents ?: 0) > 0 && r.direction != Direction.UNKNOWN }
-                    val methodOnlyIds = known.filter { it.isMethodOnly() }.map { it.id }
-                    val completeIds = known.filter { !it.isMethodOnly() }.map { it.id }
+                    val methodOnlyIds = reviewing.filter(BatchConfirm::isMethodOnly).map { it.id }
+                    val completeIds = reviewing.filter(BatchConfirm::isComplete).map { it.id }
                     FlowRow(Modifier.fillMaxWidth().padding(horizontal = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         if (methodOnlyIds.isNotEmpty()) {
                             FluxoPillButton("Confirmar ${methodOnlyIds.size} como Crédito", { batch = "Crédito" to (methodOnlyIds to PaymentMethod.CREDIT_CARD) }, Modifier, FluxoButtonStyle.Secondary, enabled = !saving)
@@ -298,17 +297,17 @@ internal fun RecordsScreen(
             }
         }
     }
+    val context = androidx.compose.ui.platform.LocalContext.current
     batch?.let { (label, pair) ->
         val (ids, method) = pair
         val what = if (label.isEmpty()) "${ids.size} lançamento(s) completos" else "${ids.size} lançamento(s) como $label"
         AlertDialog(onDismissRequest = { batch = null }, title = { Text("Confirmar em lote?") },
             text = { Text("Confirmar $what. Eles entram nos totais.") },
-            confirmButton = { TextButton(onClick = { batch = null; confirmBatch(ids, method) {} }) { Text("Confirmar ${ids.size}") } },
+            confirmButton = { TextButton(onClick = { batch = null; confirmBatch(ids, method) { n -> android.widget.Toast.makeText(context, "$n lançamento(s) confirmados", android.widget.Toast.LENGTH_SHORT).show() } }) { Text("Confirmar ${ids.size}") } },
             dismissButton = { TextButton(onClick = { batch = null }) { Text("Cancelar") } })
     }
 }
 
-private fun Transaction.isMethodOnly() = direction == Direction.EXPENSE && method == PaymentMethod.UNKNOWN && reason.startsWith(METHOD_ONLY_REASON)
 
 // Row insert / remove / reorder motion: short tweens (never springs) so the list settles quickly and predictably.
 private val ROW_FADE_IN = tween<Float>(180, easing = FastOutSlowInEasing)

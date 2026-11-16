@@ -132,6 +132,18 @@ class LedgerRepositoryTest {
         assertEquals(ReviewStatus.REVIEW, repository.transactions.value.single { it.bankPackage == wallet }.status)
     }
 
+    @Test fun confirmBatchSkipsScheduledPixAndWalletReceipts() = runBlocking {
+        repository.setCaptureEnabled(true)
+        repository.ingest("sch", bank, 100, "Pix agendado de R\$ 50,00 para Maria")
+        repository.ingest("w1", br.com.fluxo.core.WalletReceipt.GOOGLE_WALLET, 1_000_000,
+            "MERCADO EXEMPLO\nR\$ 7,98 com Cartão C6 Mastercard ••1234")
+        val rows = repository.transactions.value
+        assertEquals(2, rows.size)
+        assertTrue(rows.all { it.status == ReviewStatus.REVIEW && it.reason.isNotEmpty() })
+        assertEquals(0, repository.confirmBatch(rows.map { it.id }, PaymentMethod.CREDIT_CARD))
+        assertTrue(repository.transactions.value.all { it.status == ReviewStatus.REVIEW })
+    }
+
     @Test fun ownTransfersConserveBalancesAndRestoreWithAccounts() = runBlocking {
         val a = br.com.fluxo.core.Account("a", "Conta A", "manual", 100000, 0)
         val b = br.com.fluxo.core.Account("b", "Conta B", "manual", 20000, 0, type = br.com.fluxo.core.AccountType.SAVINGS)

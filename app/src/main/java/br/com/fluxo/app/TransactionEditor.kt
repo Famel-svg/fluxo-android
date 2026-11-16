@@ -59,7 +59,7 @@ private fun isGenericDescription(d: String) = d.trim().length < 3 || d.trim().lo
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editError: String?, accounts: List<Account>, onUnlink: (String) -> Unit, onDismiss: () -> Unit, onSave: (Transaction) -> Unit, onDelete: (String) -> Unit,
-    tags: Set<String> = emptySet(), onTags: (Set<String>) -> Unit = {}, onRecategorizeAll: (Category, (Int) -> Unit) -> Unit = { _, _ -> }) {
+    tags: Set<String> = emptySet(), onTags: (Set<String>) -> Unit = {}, onSaveAndRecategorizeAll: ((Transaction, (Int) -> Unit) -> Unit)? = null) {
     val transferId = existing?.transferId
     if (transferId != null) {
         AlertDialog(onDismissRequest = { if (!saving) onDismiss() }, title = { Text("Transferência vinculada") },
@@ -232,8 +232,9 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
     }
     askAll?.let { tx ->
         val applyAll = {
-            askAll = null; onSave(tx)
-            onRecategorizeAll(tx.category) { n -> android.widget.Toast.makeText(context, "$n lançamentos atualizados", android.widget.Toast.LENGTH_SHORT).show() }
+            askAll = null
+            // Save first, then recategorize from the saved description (the caller chains them).
+            onSaveAndRecategorizeAll?.invoke(tx) { n -> android.widget.Toast.makeText(context, "$n lançamentos atualizados", android.widget.Toast.LENGTH_SHORT).show() } ?: onSave(tx)
         }
         AlertDialog(onDismissRequest = { askAll = null }, title = { Text("Aplicar a todos?") },
             text = { Text("Aplicar ${tx.category.label} a todos de '${tx.description}'?") },

@@ -835,17 +835,17 @@ class LedgerRepository(context: Context) {
     }
 
     /**
-     * Confirms the listed pending rows that need nothing but the payment method (then [method] is applied) or are
-     * already complete. Anything missing more than that, or missing the method while [method] is null, is skipped.
+     * Confirms the listed pending rows that are complete ([BatchConfirm.isComplete]) or need nothing but the payment
+     * method ([BatchConfirm.isMethodOnly], then [method] is applied). Rows the parser flagged for any other reason
+     * (scheduled, wallet receipt, invoice...) and rows missing the method while [method] is null are skipped.
      * Returns how many were confirmed.
      */
     suspend fun confirmBatch(ids: List<String>, method: PaymentMethod?): Int = withContext(Dispatchers.IO) {
         mutex.withLock {
             val wanted = ids.toSet()
             val eligible = _transactions.value.filter { row ->
-                row.id in wanted && row.status == ReviewStatus.REVIEW && row.transferId == null &&
-                    row.amountCents != null && row.direction != Direction.UNKNOWN &&
-                    (row.method != PaymentMethod.UNKNOWN || method != null)
+                row.id in wanted && ((BatchConfirm.isComplete(row) && (row.method != PaymentMethod.UNKNOWN || method != null)) ||
+                    (BatchConfirm.isMethodOnly(row) && method != null))
             }
             val db = database.writableDatabase
             db.beginTransaction()
@@ -1051,6 +1051,22 @@ class LedgerRepository(context: Context) {
         const val MAX_PROFILE_NAME = 40
         val GENERIC_DESCRIPTIONS = setOf(CAPTURED_DESCRIPTION, "Lançamento manual", "Movimentação autorizada")
     }
+}
+
+/** Single rule for which pending rows a batch may confirm; the repository and the review screen both use it. */
+object BatchConfirm {
+    /** Exact reason [NotificationParser] writes when only the payment method is missing (it has no constant). */
+    const val METHOD_ONLY_REASON = "Meio de pagamento não identificado; confirme a classificação."
+
+    private fun pending(r: Transaction) =
+        r.status == ReviewStatus.REVIEW && r.transferId == null && (r.amountCents ?: 0) > 0 && r.direction != Direction.UNKNOWN
+
+    /** Amount and direction known and the parser raised no concern (empty reason). */
+    fun isComplete(r: Transaction) = pending(r) && r.reason.isEmpty()
+
+    /** An expense whose only open question is the payment method. */
+    fun isMethodOnly(r: Transaction) =
+        pending(r) && r.direction == Direction.EXPENSE && r.method == PaymentMethod.UNKNOWN && r.reason == METHOD_ONLY_REASON
 }
 
 private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "fluxo.db", null, 9) {
