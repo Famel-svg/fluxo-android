@@ -86,7 +86,10 @@ internal fun RecordsScreen(
     nextMonth: () -> Unit = {},
     add: () -> Unit = {},
     model: LedgerViewModel = viewModel(),
-    allRows: List<Transaction> = rows
+    allRows: List<Transaction> = rows,
+    tags: Map<String, Set<String>> = emptyMap(),
+    confirmBatch: (List<String>, PaymentMethod?, (Int) -> Unit) -> Unit = { _, _, _ -> },
+    initialCategory: Category? = null
 ) {
     val shortBank: (String) -> String = { bankLabel(it).removeSuffix(" Bank") }
     val saving by model.saving.collectAsStateWithLifecycle()
@@ -94,12 +97,15 @@ internal fun RecordsScreen(
     var query by rememberSaveable { mutableStateOf("") }
     var bank by rememberSaveable { mutableStateOf<String?>(null) }
     var method by rememberSaveable { mutableStateOf<PaymentMethod?>(null) }
-    var category by rememberSaveable { mutableStateOf<Category?>(null) }
+    var category by rememberSaveable { mutableStateOf<Category?>(initialCategory) }
+    var tag by rememberSaveable { mutableStateOf<String?>(null) }
+    var batch by remember { mutableStateOf<Pair<String, Pair<List<String>, PaymentMethod?>>?>(null) }
+    val allTags = remember(tags) { tags.values.flatten().distinct().sorted() }
     var advanced by rememberSaveable { mutableStateOf(false) }
-    val filtered = remember(rows, filter, query, bank, method, category) {
-        TransactionSearch.filter(rows.filter { when (filter) { 1 -> it.direction == Direction.INCOME; 2 -> it.direction == Direction.EXPENSE; 3 -> it.status == ReviewStatus.REVIEW; else -> true } }, query, bank, method, category).sortedByDescending { it.occurredAt }
+    val filtered = remember(rows, filter, query, bank, method, category, tag, tags) {
+        TransactionSearch.filter(rows.filter { tag == null || tag in tags[it.id].orEmpty() }.filter { when (filter) { 1 -> it.direction == Direction.INCOME; 2 -> it.direction == Direction.EXPENSE; 3 -> it.status == ReviewStatus.REVIEW; else -> true } }, query, bank, method, category).sortedByDescending { it.occurredAt }
     }
-    val clearFilters = { query = ""; bank = null; method = null; category = null; setFilter(0); setAllMonths(false) }
+    val clearFilters = { query = ""; bank = null; method = null; category = null; tag = null; setFilter(0); setAllMonths(false) }
     val zone = ZoneId.systemDefault()
     val today = LocalDate.now(zone)
     val reviewing = remember(filtered) { filtered.filter { it.status == ReviewStatus.REVIEW } }
@@ -191,8 +197,8 @@ internal fun RecordsScreen(
                 }
             }
             item {
-                val anyFilter = query.isNotBlank() || bank != null || method != null || category != null || filter != 0 || allMonths
-                val panelCount = listOf(bank != null, method != null, category != null).count { it }
+                val anyFilter = query.isNotBlank() || bank != null || method != null || category != null || tag != null || filter != 0 || allMonths
+                val panelCount = listOf(bank != null, method != null, category != null, tag != null).count { it }
                 // FlowRow keeps the count and actions readable at large font sizes.
                 FlowRow(
                     Modifier.fillMaxWidth().padding(horizontal = 2.dp), horizontalArrangement = Arrangement.SpaceBetween,
@@ -204,7 +210,7 @@ internal fun RecordsScreen(
                         CompactAction(if (allMonths) "Só este mês" else "Todos os meses", FluxoColors.Ink) { setAllMonths(!allMonths) }
                         CompactAction(
                             if (advanced) "Ocultar filtros" else if (panelCount > 0) "Filtros ($panelCount)" else "Filtros",
-                            FluxoColors.Ink, description = "Banco, meio e categoria"
+                            FluxoColors.Ink, description = "Banco, meio, categoria e etiqueta"
                         ) { advanced = !advanced }
                     }
                 }
@@ -213,6 +219,7 @@ internal fun RecordsScreen(
                 item { Choice("Banco", bank, bankOptions, { it?.let(bankLabel) ?: "Todos" }) { bank = it } }
                 item { Choice("Meio", method, listOf<PaymentMethod?>(null) + PaymentMethod.entries.filter { it != PaymentMethod.TRANSPORT_VOUCHER || method == it || rows.any { r -> r.method == it } }, { it?.let(methodLabel) ?: "Todos" }) { method = it } }
                 item { Choice("Categoria", category, listOf<Category?>(null) + Category.entries, { it?.label ?: "Todas" }) { category = it } }
+                if (allTags.isNotEmpty() || tag != null) item { Choice("Etiqueta", tag, listOf<String?>(null) + allTags, { it ?: "Todas" }) { tag = it } }
                 item { WeekStrip(weekCap) }
             }
             if (filtered.isEmpty()) item {
@@ -244,7 +251,20 @@ internal fun RecordsScreen(
                             progress = { progress }, modifier = Modifier.fillMaxWidth().height(3.dp).clip(FluxoShapes.Pill),
                             color = FluxoColors.Income, trackColor = FluxoColors.Soft, gapSize = 0.dp, drawStopIndicator = {}
                         )
-                        Text("${reviewing.size} para revisar · deslize → para confirmar", color = FluxoColors.Mute, style = FluxoType.Caption)
+                        Text("${reviewing.size} restantes · deslize → para confirmar", color = FluxoColors.Mute, style = FluxoType.Caption)
+                    }
+                }
+                item {
+                    val known = reviewing.filter { r -> (r.amountCents ?: 0) > 0 && r.direction != Direction.UNKNOWN }
+                    val methodOnlyIds = known.filter { it.isMethodOnly() }.map { it.id }
+                    val completeIds = known.filter { !it.isMethodOnly() }.map { it.id }
+                    FlowRow(Modifier.fillMaxWidth().padding(horizontal = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (methodOnlyIds.isNotEmpty()) {
+                            FluxoPillButton("Confirmar ${methodOnlyIds.size} como Crédito", { batch = "Crédito" to (methodOnlyIds to PaymentMethod.CREDIT_CARD) }, Modifier, FluxoButtonStyle.Secondary, enabled = !saving)
+                            FluxoPillButton("Confirmar ${methodOnlyIds.size} como VR", { batch = "VR" to (methodOnlyIds to PaymentMethod.MEAL_VOUCHER) }, Modifier, FluxoButtonStyle.Secondary, enabled = !saving)
+                        }
+                        if (completeIds.isNotEmpty())
+                            FluxoPillButton("Confirmar ${completeIds.size} completas", { batch = "" to (completeIds to null) }, Modifier, FluxoButtonStyle.Secondary, enabled = !saving)
                     }
                 }
                 if (editError != null) item {
@@ -272,13 +292,23 @@ internal fun RecordsScreen(
                 }
                 items(transactions, key = { it.id }) { transaction ->
                     Box(Modifier.animateItem(fadeInSpec = ROW_FADE_IN, placementSpec = ROW_PLACE, fadeOutSpec = ROW_FADE_OUT)) {
-                        RecordRow(transaction, edit, shortBank, moneyLabel)
+                        RecordRow(transaction, edit, shortBank, moneyLabel, tags[transaction.id].orEmpty(), zone)
                     }
                 }
             }
         }
     }
+    batch?.let { (label, pair) ->
+        val (ids, method) = pair
+        val what = if (label.isEmpty()) "${ids.size} lançamento(s) completos" else "${ids.size} lançamento(s) como $label"
+        AlertDialog(onDismissRequest = { batch = null }, title = { Text("Confirmar em lote?") },
+            text = { Text("Confirmar $what. Eles entram nos totais.") },
+            confirmButton = { TextButton(onClick = { batch = null; confirmBatch(ids, method) {} }) { Text("Confirmar ${ids.size}") } },
+            dismissButton = { TextButton(onClick = { batch = null }) { Text("Cancelar") } })
+    }
 }
+
+private fun Transaction.isMethodOnly() = direction == Direction.EXPENSE && method == PaymentMethod.UNKNOWN && reason.startsWith(METHOD_ONLY_REASON)
 
 // Row insert / remove / reorder motion: short tweens (never springs) so the list settles quickly and predictably.
 private val ROW_FADE_IN = tween<Float>(180, easing = FastOutSlowInEasing)
@@ -480,7 +510,9 @@ private fun RecordRow(
     row: Transaction,
     edit: (Transaction) -> Unit,
     bankLabel: (String) -> String,
-    moneyLabel: (Long?) -> String
+    moneyLabel: (Long?) -> String,
+    tags: Set<String> = emptySet(),
+    zone: ZoneId = ZoneId.systemDefault()
 ) {
     val shortMethod = if (row.method == PaymentMethod.UNKNOWN) "meio não informado" else row.method.shortLabel
     val full = moneyLabel(row.amountCents)
@@ -506,7 +538,13 @@ private fun RecordRow(
                     row.category.label + " · " + bankLabel(row.bankPackage) + " · " + shortMethod,
                     color = FluxoColors.Mute, style = FluxoType.Caption
                 )
-                if (row.sourceKey != null) FluxoBadge("automático") else FluxoBadge("manual", kind = FluxoBadgeKind.Manual)
+            }
+            Text(originSeal(row, zone), color = FluxoColors.Mute, style = FluxoType.Caption)
+            if (tags.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                tags.sorted().forEach { t ->
+                    Text(t, Modifier.clip(FluxoShapes.Pill).background(FluxoColors.Soft).padding(horizontal = 6.dp, vertical = 1.dp),
+                        color = FluxoColors.Ink, style = FluxoType.Caption, maxLines = 1)
+                }
             }
         }
         Text(

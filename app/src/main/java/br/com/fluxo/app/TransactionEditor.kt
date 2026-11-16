@@ -47,9 +47,19 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** "Capturado da notificação · Itaú · 15/11 06:30" for captured rows, "Lançado manualmente" otherwise. */
+internal fun originSeal(row: Transaction, zone: ZoneId = ZoneId.systemDefault()): String =
+    if (row.sourceKey == null) "Lançado manualmente"
+    else "Capturado da notificação · " + bankShortName(row.bankPackage) + " · " +
+        Instant.ofEpochMilli(row.occurredAt).atZone(zone).format(DateTimeFormatter.ofPattern("dd/MM HH:mm"))
+
+private val genericDescriptions = setOf("lançamento manual", "pix", "compra", "pagamento", "transferência", "débito", "crédito", "saída", "entrada")
+private fun isGenericDescription(d: String) = d.trim().length < 3 || d.trim().lowercase() in genericDescriptions
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editError: String?, accounts: List<Account>, onUnlink: (String) -> Unit, onDismiss: () -> Unit, onSave: (Transaction) -> Unit, onDelete: (String) -> Unit) {
+internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editError: String?, accounts: List<Account>, onUnlink: (String) -> Unit, onDismiss: () -> Unit, onSave: (Transaction) -> Unit, onDelete: (String) -> Unit,
+    tags: Set<String> = emptySet(), onTags: (Set<String>) -> Unit = {}, onRecategorizeAll: (Category, (Int) -> Unit) -> Unit = { _, _ -> }) {
     val transferId = existing?.transferId
     if (transferId != null) {
         AlertDialog(onDismissRequest = { if (!saving) onDismiss() }, title = { Text("Transferência vinculada") },
@@ -67,6 +77,15 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
     var category by rememberSaveable(existing?.id) { mutableStateOf(existing?.category ?: Category.UNCATEGORIZED) }
     var date by rememberSaveable(existing?.id) { mutableStateOf((existing?.let { Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate() } ?: LocalDate.now()).format(DateTimeFormatter.ofPattern("dd/MM/uuuu"))) }
     var deleting by rememberSaveable { mutableStateOf(false) }
+    var tagList by rememberSaveable(existing?.id) { mutableStateOf(tags.sorted()) }
+    var tagInput by rememberSaveable(existing?.id) { mutableStateOf("") }
+    var askAll by remember { mutableStateOf<Transaction?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val addTag = {
+        val t = tagInput.trim().take(30)
+        if (t.isNotEmpty() && tagList.size < 10 && tagList.none { it.equals(t, ignoreCase = true) }) tagList = tagList + t
+        tagInput = ""
+    }
     var pickingDate by rememberSaveable { mutableStateOf(false) }
     val cents = remember(amount) { parseAmountInput(amount) }
     val parsedDate = remember(date) { runCatching { LocalDate.parse(date, DateTimeFormatter.ofPattern("dd/MM/uuuu").withResolverStyle(java.time.format.ResolverStyle.STRICT)) }.getOrNull() }
@@ -110,6 +129,7 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
                     }
                     if (editError != null) Text(editError, color = MaterialTheme.colorScheme.error)
+                    if (existing != null) Text(if (existing != null) originSeal(existing) else "Lançado manualmente", color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
                     FluxoPanel(accent = FluxoColors.Petrol) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(Direction.EXPENSE, Direction.INCOME).forEach { option ->
@@ -157,6 +177,24 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
                         if (method == PaymentMethod.CREDIT_CARD) Text("Compras no crédito ficam separadas das saídas de caixa.", style = MaterialTheme.typography.bodySmall, color = FluxoColors.Mute)
                         if (method.isVoucher) Text("Gastos com vale ficam fora das saídas de caixa e abatem o saldo estimado do vale.", style = MaterialTheme.typography.bodySmall, color = FluxoColors.Mute)
                     }
+                    if (existing != null) FluxoPanel(accent = FluxoColors.PetrolMid) {
+                        FluxoSectionHeading("Etiquetas", icon = Icons.Default.PieChart, accent = FluxoColors.Petrol)
+                        if (tagList.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            tagList.forEach { t ->
+                                Row(Modifier.clip(FluxoShapes.Pill).background(FluxoColors.Soft).padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(t, color = FluxoColors.Ink, style = MaterialTheme.typography.bodySmall)
+                                    IconButton(onClick = { tagList = tagList - t }, Modifier.size(32.dp)) { Icon(Icons.Default.Close, "Remover etiqueta $t", Modifier.size(16.dp)) }
+                                }
+                            }
+                        }
+                        if (tagList.size < 10) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(value = tagInput, onValueChange = { tagInput = it.take(30) }, label = { Text("Nova etiqueta") }, singleLine = true,
+                                shape = RoundedCornerShape(16.dp), colors = editorFieldColors(), modifier = Modifier.weight(1f),
+                                keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { addTag() }))
+                            TextButton(onClick = { addTag() }, enabled = tagInput.isNotBlank()) { Text("Adicionar") }
+                        } else Text("Limite de 10 etiquetas.", style = MaterialTheme.typography.bodySmall, color = FluxoColors.Mute)
+                    }
                     if (existing != null) {
                         HorizontalDivider(color = FluxoColors.ChipBorder)
                         TextButton(enabled = !saving, onClick = { deleting = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Excluir lançamento", color = FluxoColors.Expense, style = MaterialTheme.typography.labelLarge) }
@@ -182,12 +220,25 @@ internal fun TransactionEditor(existing: Transaction?, saving: Boolean, editErro
         val validDate = parsedDate ?: return@FluxoPillButton
         val originalDate = existing?.let { Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate() }
         val occurred = if (existing != null && originalDate == validDate) existing.occurredAt else validDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        onSave(Transaction(existing?.id ?: UUID.randomUUID().toString(), existing?.sourceKey, bank, cents, direction, method, ReviewStatus.CONFIRMED, occurred, description.ifBlank { "Lançamento manual" }, "", category, accountId))
+        val tx = Transaction(existing?.id ?: UUID.randomUUID().toString(), existing?.sourceKey, bank, cents, direction, method, ReviewStatus.CONFIRMED, occurred, description.ifBlank { "Lançamento manual" }, "", category, accountId)
+        if (existing != null && tagList.toSet() != tags) onTags(tagList.toSet())
+        // Offer the merchant-wide change before saving: the editor closes as soon as the save finishes.
+        if (existing?.sourceKey != null && category != existing.category && category != Category.UNCATEGORIZED && !isGenericDescription(tx.description)) askAll = tx else onSave(tx)
                     }
                 )
             }
             }
         }
+    }
+    askAll?.let { tx ->
+        val applyAll = {
+            askAll = null; onSave(tx)
+            onRecategorizeAll(tx.category) { n -> android.widget.Toast.makeText(context, "$n lançamentos atualizados", android.widget.Toast.LENGTH_SHORT).show() }
+        }
+        AlertDialog(onDismissRequest = { askAll = null }, title = { Text("Aplicar a todos?") },
+            text = { Text("Aplicar ${tx.category.label} a todos de '${tx.description}'?") },
+            confirmButton = { TextButton(onClick = applyAll) { Text("Aplicar a todos") } },
+            dismissButton = { TextButton(onClick = { askAll = null; onSave(tx) }) { Text("Só este") } })
     }
     if (pickingDate) {
         // DatePicker works in UTC midnight millis; convert to/from the same dd/MM/uuuu string used for saving.
