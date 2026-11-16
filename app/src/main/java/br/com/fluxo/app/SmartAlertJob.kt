@@ -31,7 +31,11 @@ class SmartAlertJob : JobService() {
     override fun onStartJob(params: JobParameters?): Boolean {
         scope.launch {
             try {
-                SmartNotifier.run(this@SmartAlertJob, (application as FluxoApplication).repository)
+                val repository = (application as FluxoApplication).repository
+                // Cold process: the repository does not load in init. A failed refresh throws and nothing is evaluated.
+                repository.refresh()
+                SmartNotifier.run(this@SmartAlertJob, repository)
+                FluxoWidget.refresh(this@SmartAlertJob) // rolls the widget over to the new month
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (_: Exception) {

@@ -12,6 +12,7 @@ import br.com.fluxo.core.Direction
 import br.com.fluxo.core.ReviewStatus
 import br.com.fluxo.core.Transaction
 import java.math.BigDecimal
+import java.math.BigInteger
 import java.time.Instant
 import java.time.YearMonth
 import java.time.ZoneId
@@ -55,12 +56,12 @@ object FluxoWidget {
         // Same rules as the Início screen: confirmed, no transfer, no voucher; cash and credit both count as spent.
         val net = monthRows
             .filter { it.status == ReviewStatus.CONFIRMED && it.transferId == null && !it.method.isVoucher }
-            .sumOf {
-                val cents = it.amountCents ?: 0L
-                when (it.direction) { Direction.INCOME -> cents; Direction.EXPENSE -> -cents; else -> 0L }
+            .fold(BigInteger.ZERO) { sum, it ->
+                val cents = BigInteger.valueOf(it.amountCents ?: 0L)
+                when (it.direction) { Direction.INCOME -> sum + cents; Direction.EXPENSE -> sum - cents; else -> sum }
             }
         val review = monthRows.count { it.status == ReviewStatus.REVIEW }
-        val value = money(BigDecimal.valueOf(net, 2)).replace("-", "−")
+        val value = money(BigDecimal(net, 2)).replace("-", "−")
         val open = PendingIntent.getActivity(
             context, 0,
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),

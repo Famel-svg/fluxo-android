@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import br.com.fluxo.core.AlertKind
 
@@ -40,6 +41,11 @@ internal fun SmartAlertsCard(model: LedgerViewModel) {
     val (quietStart, quietEnd) = model.alertQuietHours.collectAsStateWithLifecycle().value
     var allowed by remember { mutableStateOf(SmartNotifier.canPost(context)) }
     var asked by rememberSaveable { mutableStateOf(false) }
+    // Back from system settings the permission or channel may have changed.
+    LifecycleResumeEffect(Unit) {
+        allowed = SmartNotifier.canPost(context)
+        onPauseOrDispose { }
+    }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         allowed = SmartNotifier.canPost(context)
     }

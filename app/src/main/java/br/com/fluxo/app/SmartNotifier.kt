@@ -21,7 +21,7 @@ import java.time.ZoneId
 
 /**
  * Builds the alert input from the ledger, asks the pure engine what to say and posts it. Texts come from the engine
- * (amounts of the owner's own ledger only); nothing from other apps' notifications is copied.
+ * (amounts of the owner's own ledger only, derived from stored rows); the public lock-screen version carries no values.
  */
 object SmartNotifier {
     const val EXTRA_TAB = "fluxo.tab"
@@ -32,7 +32,10 @@ object SmartNotifier {
     fun canPost(context: Context): Boolean {
         if (Build.VERSION.SDK_INT >= 33 &&
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return false
-        return context.getSystemService(NotificationManager::class.java)?.areNotificationsEnabled() == true
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return false
+        if (!manager.areNotificationsEnabled()) return false
+        // A missing channel is fine: it is created on the first post. A blocked one swallows the alert silently.
+        return manager.getNotificationChannel(CHANNEL)?.importance != NotificationManager.IMPORTANCE_NONE
     }
 
     /**
@@ -91,11 +94,15 @@ object SmartNotifier {
         val open = PendingIntent.getActivity(context, id, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         manager.notify(id, Notification.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_fluxo_mark).setContentTitle(alert.title).setContentText(alert.body)
+            .setVisibility(Notification.VISIBILITY_PRIVATE).setPublicVersion(publicVersion(context))
             .setContentIntent(open).setAutoCancel(true).setGroup(GROUP).build())
         true
     } catch (_: Exception) {
         false
     }
+
+    private fun publicVersion(context: Context): Notification = Notification.Builder(context, CHANNEL)
+        .setSmallIcon(R.drawable.ic_fluxo_mark).setContentTitle("Fluxo · Você tem um alerta").build()
 
     private fun postSummary(context: Context) {
         try {
@@ -104,6 +111,7 @@ object SmartNotifier {
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             manager.notify(SUMMARY_ID, Notification.Builder(context, CHANNEL)
                 .setSmallIcon(R.drawable.ic_fluxo_mark).setContentTitle("Fluxo").setContentText("Avisos do Fluxo")
+                .setVisibility(Notification.VISIBILITY_PRIVATE).setPublicVersion(publicVersion(context))
                 .setContentIntent(open).setAutoCancel(true).setGroup(GROUP).setGroupSummary(true).build())
         } catch (_: Exception) {
             // Best effort: the individual alerts are already visible.
