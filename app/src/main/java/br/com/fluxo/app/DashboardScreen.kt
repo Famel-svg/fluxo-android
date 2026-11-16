@@ -13,6 +13,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
@@ -22,6 +27,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
@@ -39,6 +46,11 @@ import androidx.compose.ui.unit.sp
 import br.com.fluxo.core.BenefitBalance
 import br.com.fluxo.core.BenefitCalculator
 import br.com.fluxo.core.BenefitSettings
+import br.com.fluxo.core.Budget
+import br.com.fluxo.core.BudgetPace
+import br.com.fluxo.core.Category
+import br.com.fluxo.core.PaceStatus
+import br.com.fluxo.core.RecurringDetector
 import br.com.fluxo.core.Direction
 import br.com.fluxo.core.PaymentMethod
 import br.com.fluxo.core.ReviewStatus
@@ -74,7 +86,16 @@ internal fun Dashboard(
     edit: (Transaction) -> Unit,
     allRows: List<Transaction> = rows,
     greetingName: String = "",
-    benefits: BenefitSettings = BenefitSettings()
+    benefits: BenefitSettings = BenefitSettings(),
+    budgets: List<Budget> = emptyList(),
+    salaryMonthlyCents: Long = 0,
+    cardClosingDay: Int? = null,
+    cardDueDay: Int? = null,
+    homeCards: List<HomeCard> = HomeCard.entries,
+    hiddenHomeCards: Set<HomeCard> = emptySet(),
+    openCategory: (Category) -> Unit = {},
+    setCardCycle: (Int?, Int?) -> Unit = { _, _ -> },
+    setHomeCards: (List<HomeCard>, Set<HomeCard>) -> Unit = { _, _ -> }
 ) {
     // Baseline accounting: only confirmed, non-transfer records enter totals; credit stays apart from cash.
     // Voucher (VR, and legacy VT) rows stay out of every spending and income figure here: they are read in the VR block.
@@ -102,6 +123,28 @@ internal fun Dashboard(
     val benefitEstimate = BenefitCalculator.estimate(month, benefits)
     val zone = ZoneId.systemDefault()
     val vrUsage = if (benefits.vrDailyCents > 0) BenefitBalance.remaining(benefitEstimate.vrCents, rows, PaymentMethod.MEAL_VOUCHER, month, zone) else null
+    val fontScale = LocalDensity.current.fontScale
+    var chartsOpen by rememberSaveable { mutableStateOf(fontScale < 1.3f) }
+    var customizing by rememberSaveable { mutableStateOf(false) }
+    var cycleDialog by rememberSaveable { mutableStateOf(false) }
+    val monthBudgets = budgets.filter { it.month == month.toString() && it.limitCents > 0 }
+    val budgetSum = monthBudgets.fold(0L) { sum, b -> Math.addExact(sum, b.limitCents) }
+    val paceBudget = if (budgetSum > 0) budgetSum else salaryMonthlyCents.coerceAtLeast(0)
+    val fixedUpcoming = if (currentMonth) {
+        RecurringDetector.detect(allRows, today, zone)
+            .filter { !it.paidThisMonth && YearMonth.from(it.nextDue) == month }
+            .fold(0L) { sum, c -> Math.addExact(sum, c.amountCents) }
+    } else 0L
+    val spentLong = (cash + credit).min(BigInteger.valueOf(Long.MAX_VALUE)).toLong()
+    val pace = BudgetPace.monthPace(spentLong, paceBudget, month, today, fixedUpcoming)
+    val overruns = BudgetPace.overruns(rows, monthBudgets, month, zone)
+    // The open cycle is read from all rows: the visible month may end before today's cycle starts.
+    val openCredit = cardClosingDay?.let { closing ->
+        val start = openCycleStart(today, closing)
+        allRows.filter { it.status == ReviewStatus.CONFIRMED && it.transferId == null && !it.method.isVoucher && it.direction == Direction.EXPENSE && it.method == PaymentMethod.CREDIT_CARD }
+            .filter { r -> Instant.ofEpochMilli(r.occurredAt).atZone(zone).toLocalDate().let { d -> !d.isBefore(start) && !d.isAfter(today) } }
+            .fold(BigInteger.ZERO) { sum, row -> sum + BigInteger.valueOf(row.amountCents ?: 0) }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().testTag("dashboard.neon"),
@@ -115,6 +158,9 @@ internal fun Dashboard(
         }
         item {
             FluxoMonthBar(month, previous, next, Modifier.entrance(1)) {
+                IconButton(onClick = { customizing = true }, modifier = Modifier.size(40.dp, 44.dp).testTag("dashboard.customize")) {
+                    Icon(Icons.Default.Tune, "Personalizar início", modifier = Modifier.size(22.dp))
+                }
                 IconButton(onClick = { hidden = !hidden }, modifier = Modifier.size(40.dp, 44.dp).testTag("dashboard.visibility")) {
                     Icon(if (hidden) Icons.Default.VisibilityOff else Icons.Default.Visibility, if (hidden) "Mostrar valores do resumo" else "Ocultar valores do resumo", modifier = Modifier.size(22.dp))
                 }
@@ -140,7 +186,14 @@ internal fun Dashboard(
                 }
             }
         }
-        item {
+        val shownCards = homeCards.filter { it !in hiddenHomeCards }
+        shownCards.forEachIndexed { index, card ->
+            val order = 4 + index
+            when (card) {
+                HomeCard.PACE -> item(key = "home.PACE") {
+                    PaceCard(pace, paceBudget, budgetSum <= 0, overruns, hidden, openCategory, Modifier.entrance(order))
+                }
+                HomeCard.CAPTURE -> item(key = "home.CAPTURE") {
             val auto = share.automatic
             val detail = when {
                 !active -> "Escolha bancos ou permita outros apps, conceda acesso e ative a captura."
@@ -148,7 +201,7 @@ internal fun Dashboard(
                 auto == 1 -> "1 lançamento automático este mês"
                 else -> "$auto lançamentos automáticos este mês"
             }
-            Column(Modifier.entrance(3)) {
+            Column(Modifier.entrance(order)) {
                 FluxoCaptureStrip(
                     title = if (active) "Captura ativa" else "Configure a captura",
                     detail = detail,
@@ -163,23 +216,17 @@ internal fun Dashboard(
                     color = FluxoColors.Mute, modifier = Modifier.padding(start = 6.dp, top = 4.dp)
                 )
             }
-        }
-        item {
-            Row(Modifier.entrance(4).fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Column(Modifier.weight(1f)) {
-                    Text("Compras no crédito", style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp))
-                    Text("Compromisso separado do caixa", style = FluxoType.Caption, color = FluxoColors.Mute)
                 }
-                Text(amount(credit), style = FluxoType.number(18.sp))
-            }
-        }
-        if (vrUsage != null) item {
-            Column(Modifier.entrance(5), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                HomeCard.CREDIT -> item(key = "home.CREDIT") {
+                    CreditCard(amount(credit), openCredit?.let { amount(it) }, amount(cash), cardClosingDay, cardDueDay, { cycleDialog = true }, Modifier.entrance(order))
+                }
+                HomeCard.VR -> if (vrUsage != null) item(key = "home.VR") {
+            Column(Modifier.entrance(order), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 BenefitBalanceBlock(vrUsage, benefitEstimate.vrDays, benefits.vrDailyCents, hidden)
             }
-        }
-        item {
-            Column(Modifier.entrance(6)) {
+                }
+                HomeCard.RECENT -> item(key = "home.RECENT") {
+            Column(Modifier.entrance(order)) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                     FluxoSectionHeading("Últimos lançamentos", Modifier.weight(1f))
                     Box(Modifier.heightIn(min = 44.dp).clickable(role = Role.Button, onClick = showAll).padding(horizontal = 6.dp), contentAlignment = Alignment.CenterEnd) {
@@ -190,15 +237,24 @@ internal fun Dashboard(
                 else if (hidden) Text("Lançamentos ocultos neste resumo.", style = MaterialTheme.typography.bodyMedium, color = FluxoColors.Mute)
                 else rows.take(3).forEach { key(it.id) { TransactionRow(it, today, edit) } }
             }
-        }
-        item {
+                }
+                HomeCard.CHARTS -> item(key = "home.CHARTS") {
+                    Column(Modifier.entrance(order), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button) { chartsOpen = !chartsOpen }.padding(horizontal = 2.dp).testTag("dashboard.charts"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            FluxoSectionHeading("Gráficos", Modifier.weight(1f))
+                            Icon(if (chartsOpen) Icons.Default.ExpandLess else Icons.Default.ExpandMore, if (chartsOpen) "Recolher gráficos" else "Mostrar gráficos")
+                        }
+                        if (chartsOpen) {
             val topCategory = byCategory.firstOrNull()
             val shown = if (byCategory.size > 6) byCategory.take(5) else byCategory
             val rest = if (byCategory.size > 6) byCategory.drop(5).fold(BigInteger.ZERO) { s, e -> s + e.value } else BigInteger.ZERO
             val legend = shown.map { Triple(it.key.label, it.value, fluxoCategoryColor(it.key)) } +
                 (if (rest.signum() > 0) listOf(Triple("Demais", rest, FluxoColors.Gray)) else emptyList())
             val donutText = if (legend.isEmpty()) "Sem gastos confirmados neste mês" else
-                "Despesas por categoria: " + legend.joinToString(", ") { "${it.first} ${percent(it.second, monthExpenses)}%" }
+                "Despesas por categoria: " + legend.joinToString(", ") { "${it.first} ${percent(it.second, monthExpenses)}%" + if (hidden) "" else " (${cents(it.second)})" }
             val peak = dailyValues.withIndex().maxByOrNull { it.value }?.takeIf { it.value.signum() > 0 }
             val lastDay = daily.last()
             val dayLabels = daily.map { it.day.dayOfWeek.getDisplayName(DayTextStyle.SHORT, ptBr).trimEnd('.').replaceFirstChar { c -> c.titlecase(ptBr) } }
@@ -218,7 +274,8 @@ internal fun Dashboard(
                         slices = legend.map { DonutSlice(it.second, it.third) },
                         contentDescription = donutText + (topCategory?.let { "; maior: ${it.key.label}" } ?: ""),
                         modifier = Modifier.padding(vertical = 4.dp).size(80.dp).align(Alignment.CenterHorizontally),
-                        strokeWidth = 12.dp
+                        strokeWidth = 12.dp,
+                        onSliceClick = { i -> shown.getOrNull(i)?.let { openCategory(it.key) } }
                     ) {
                         if (topCategory != null) Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("${percent(topCategory.value, monthExpenses)}%", style = FluxoType.number(14.sp), color = FluxoColors.Ink)
@@ -233,7 +290,10 @@ internal fun Dashboard(
                         Row(Modifier.fillMaxWidth().heightIn(min = 13.5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Box(Modifier.size(8.dp).clip(RoundedCornerShape(2.dp)).background(color))
                             Text(name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = LegendStyle)
-                            Text("${percent(value, monthExpenses)}%", maxLines = 1, style = LegendStyle.copy(fontWeight = FontWeight.Bold, fontFeatureSettings = "tnum"))
+                            Text(
+                                (if (hidden) "" else "${compactMoney(value.toLong())} · ") + "${percent(value, monthExpenses)}%",
+                                maxLines = 1, style = LegendStyle.copy(fontWeight = FontWeight.Bold, fontFeatureSettings = "tnum")
+                            )
                         }
                     }
                 }
@@ -247,12 +307,13 @@ internal fun Dashboard(
                     }
                     BarChart(
                         entries = daily.mapIndexed { i, d ->
-                            BarEntry(d.totalCents, dayLabels[i], if (!hidden && peak != null && peak.index == i) plainMoney(d.totalCents).removePrefix("−") else null)
+                            BarEntry(d.totalCents, dayLabels[i], if (!hidden && d.totalCents.signum() > 0) compactMoney(d.totalCents.toLong()) else null)
                         },
                         contentDescription = barText,
                         modifier = Modifier.fillMaxWidth().padding(top = 2.dp).height(chartHeight),
                         highlightedIndex = if (currentMonth) daily.lastIndex else null,
-                        showValueLabels = !hidden
+                        showValueLabels = !hidden,
+                        labelAll = true
                     )
                 }
             }
@@ -272,8 +333,7 @@ internal fun Dashboard(
                     }
                 }
             }
-            val fontScale = LocalDensity.current.fontScale
-            BoxWithConstraints(Modifier.entrance(7).fillMaxWidth()) {
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
                 // Wider phones give extra width to the donut tile and a little more height to the bars (84dp at 320dp).
                 val available = maxWidth
                 val chartHeight = (84.dp + (available - 320.dp).coerceAtLeast(0.dp) * 0.25f).coerceAtMost(120.dp)
@@ -286,11 +346,17 @@ internal fun Dashboard(
                     }
                 }
             }
+                        }
+                    }
+                }
+            }
         }
         if (pendingCredit > 0) item {
-            Text("$pendingCredit lançamento(s) de crédito pendente(s) de revisão. Fatura, limite e vencimento não estão disponíveis; confira no emissor do cartão.", style = FluxoType.Caption, color = FluxoColors.Mute, modifier = Modifier.entrance(8).padding(horizontal = 4.dp))
+            Text("$pendingCredit lançamento(s) de crédito pendente(s) de revisão. Fatura, limite e vencimento não estão disponíveis; confira no emissor do cartão.", style = FluxoType.Caption, color = FluxoColors.Mute, modifier = Modifier.padding(horizontal = 4.dp))
         }
     }
+    if (customizing) CustomizeDialog(homeCards, hiddenHomeCards, setHomeCards) { customizing = false }
+    if (cycleDialog) CardCycleDialog(cardClosingDay, cardDueDay, setCardCycle) { cycleDialog = false }
 }
 
 /** Thin proportional bar on the hero: OnHero tones keep it legible on the petrol fill in both themes. */
@@ -386,4 +452,155 @@ private fun TransactionRow(row: Transaction, today: LocalDate, edit: (Transactio
             style = FluxoType.RowNumber, color = if (row.direction == Direction.INCOME) FluxoColors.Income else FluxoColors.Ink
         )
     }
+}
+
+/** First day of the open card cycle: the day after the most recent closing before [today]. */
+internal fun openCycleStart(today: LocalDate, closingDay: Int): LocalDate {
+    fun closing(m: YearMonth) = m.atDay(minOf(closingDay.coerceIn(1, 31), m.lengthOfMonth()))
+    val thisClose = closing(YearMonth.from(today))
+    val last = if (today.isAfter(thisClose)) thisClose else closing(YearMonth.from(today).minusMonths(1))
+    return last.plusDays(1)
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PaceCard(
+    pace: br.com.fluxo.core.Pace, budgetCents: Long, fromSalary: Boolean,
+    overruns: List<br.com.fluxo.core.CategoryOverrun>, hidden: Boolean,
+    openCategory: (Category) -> Unit, modifier: Modifier = Modifier
+) {
+    fun v(cents: Long) = if (hidden) HIDDEN else money(cents)
+    FluxoTile(modifier.fillMaxWidth().testTag("dashboard.pace"), role = FluxoTileRole.Outlined) {
+        Text("Ritmo do mês", style = TileTitle)
+        if (budgetCents <= 0) {
+            Text("Defina orçamentos em Planejar para acompanhar o ritmo do mês.", style = FluxoType.Caption, color = FluxoColors.Mute)
+            return@FluxoTile
+        }
+        Text(
+            "Gasto ${v(pace.spentCents)} de ${v(budgetCents)} · esperado até hoje ${v(pace.expectedByTodayCents)}",
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp)
+        )
+        if (!hidden) PaceBar(pace.spentCents, pace.expectedByTodayCents, budgetCents, Modifier.fillMaxWidth().padding(vertical = 4.dp).height(14.dp))
+        Text(
+            "Projeção do mês: ${v(pace.projectedEndCents)}",
+            style = FluxoType.Caption.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold),
+            color = if (pace.status == PaceStatus.OVER) FluxoColors.Expense else FluxoColors.Ink
+        )
+        if (fromSalary) Text("Sem orçamentos: usando o salário como referência.", style = FluxoType.Caption, color = FluxoColors.Mute)
+        if (overruns.isNotEmpty()) FlowRow(
+            Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            overruns.forEach { o ->
+                val over = o.spentCents >= o.limitCents
+                val pct = percent(BigInteger.valueOf(o.spentCents), BigInteger.valueOf(o.limitCents))
+                Box(Modifier.heightIn(min = 44.dp).clickable(role = Role.Button) { openCategory(o.category) }, contentAlignment = Alignment.Center) {
+                    Text(
+                        "${o.category.label} $pct%", maxLines = 1,
+                        style = LegendStyle.copy(fontWeight = FontWeight.Bold),
+                        color = if (over) FluxoColors.Expense else FluxoColors.Ink,
+                        modifier = Modifier.clip(FluxoShapes.Badge)
+                            .background(if (over) FluxoColors.Expense.copy(alpha = 0.16f) else FluxoColors.Amber)
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CreditCard(
+    credit: String, openCycle: String?, cash: String, closingDay: Int?, dueDay: Int?,
+    configure: () -> Unit, modifier: Modifier = Modifier
+) {
+    Column(modifier.padding(horizontal = 4.dp, vertical = 2.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text("Compras no crédito", style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp))
+                Text("Compromisso separado do caixa", style = FluxoType.Caption, color = FluxoColors.Mute)
+            }
+            Text(credit, style = FluxoType.number(18.sp))
+        }
+        if (closingDay != null && openCycle != null) {
+            Text("Cartão de crédito · fecha dia $closingDay" + (dueDay?.let { " · vence dia $it" } ?: ""), style = FluxoType.Caption, color = FluxoColors.Ink, modifier = Modifier.padding(top = 4.dp))
+            Text("Fatura aberta $openCycle vs caixa do mês $cash", style = FluxoType.Caption, color = FluxoColors.Mute)
+            Box(Modifier.heightIn(min = 44.dp).clickable(role = Role.Button, onClick = configure).padding(end = 8.dp), contentAlignment = Alignment.CenterStart) {
+                Text("Alterar fechamento e vencimento", style = FluxoType.Caption.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold), color = FluxoColors.Ink)
+            }
+        } else {
+            FluxoPillButton("Informar fechamento e vencimento", configure, Modifier.padding(top = 4.dp), style = FluxoButtonStyle.Quiet)
+        }
+    }
+}
+
+@Composable
+private fun CardCycleDialog(closing: Int?, due: Int?, save: (Int?, Int?) -> Unit, dismiss: () -> Unit) {
+    var closingText by rememberSaveable { mutableStateOf(closing?.toString().orEmpty()) }
+    var dueText by rememberSaveable { mutableStateOf(due?.toString().orEmpty()) }
+    val c = closingText.toIntOrNull()?.takeIf { it in 1..31 }
+    val d = dueText.toIntOrNull()?.takeIf { it in 1..31 }
+    val valid = c != null && (dueText.isBlank() || d != null)
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text("Fatura do cartão") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Informe os dias do mês (1 a 31). Fica só neste aparelho.", style = FluxoType.Caption, color = FluxoColors.Mute)
+                OutlinedTextField(
+                    closingText, { closingText = it.filter(Char::isDigit).take(2) }, label = { Text("Dia do fechamento") }, singleLine = true,
+                    isError = closingText.isNotBlank() && c == null, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.testTag("dashboard.cardClosing")
+                )
+                OutlinedTextField(
+                    dueText, { dueText = it.filter(Char::isDigit).take(2) }, label = { Text("Dia do vencimento (opcional)") }, singleLine = true,
+                    isError = dueText.isNotBlank() && d == null, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.testTag("dashboard.cardDue")
+                )
+            }
+        },
+        confirmButton = { TextButton({ save(c, d); dismiss() }, enabled = valid) { Text("Salvar") } },
+        dismissButton = {
+            Row {
+                if (closing != null) TextButton({ save(null, null); dismiss() }) { Text("Remover") }
+                TextButton(dismiss) { Text("Cancelar") }
+            }
+        }
+    )
+}
+
+private fun HomeCard.title(): String = when (this) {
+    HomeCard.PACE -> "Ritmo do mês"
+    HomeCard.CAPTURE -> "Captura e revisão"
+    HomeCard.CREDIT -> "Cartão de crédito"
+    HomeCard.VR -> "Vale-refeição"
+    HomeCard.RECENT -> "Últimos lançamentos"
+    HomeCard.CHARTS -> "Gráficos"
+}
+
+@Composable
+private fun CustomizeDialog(order: List<HomeCard>, hidden: Set<HomeCard>, save: (List<HomeCard>, Set<HomeCard>) -> Unit, dismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text("Personalizar início") },
+        text = {
+            Column {
+                order.forEachIndexed { i, card ->
+                    val off = card in hidden
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(card.title(), Modifier.weight(1f), color = if (off) FluxoColors.Mute else FluxoColors.Ink, style = MaterialTheme.typography.bodyMedium)
+                        IconButton(onClick = { save(order.toMutableList().also { it.add(i - 1, it.removeAt(i)) }, hidden) }, enabled = i > 0, modifier = Modifier.size(44.dp)) {
+                            Icon(Icons.Default.KeyboardArrowUp, "Mover ${card.title()} para cima")
+                        }
+                        IconButton(onClick = { save(order.toMutableList().also { it.add(i + 1, it.removeAt(i)) }, hidden) }, enabled = i < order.lastIndex, modifier = Modifier.size(44.dp)) {
+                            Icon(Icons.Default.KeyboardArrowDown, "Mover ${card.title()} para baixo")
+                        }
+                        IconButton(onClick = { save(order, if (off) hidden - card else hidden + card) }, modifier = Modifier.size(44.dp)) {
+                            Icon(if (off) Icons.Default.VisibilityOff else Icons.Default.Visibility, if (off) "Mostrar ${card.title()}" else "Ocultar ${card.title()}")
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(dismiss) { Text("Concluído") } }
+    )
 }
