@@ -64,6 +64,12 @@ class PlanningUiTest {
         compose.runOnIdle { assertEquals("2026-09" to Category.FOOD, requested) }
     }
 
+    // O bloco de benefícios é um item tardio da LazyColumn: precisa rolar a lista até compor o nó.
+    private fun openBenefitEditor() {
+        compose.onNodeWithTag("planning.list").performScrollToNode(hasTestTag("benefits.configure"))
+        compose.onNodeWithTag("benefits.configure").performClick()
+    }
+
     @Test fun benefitEditorSavesExactRatesAndSeparateMonthlyDaysThenRecalculates() {
         val selected = mutableStateOf(month)
         val settings = mutableStateOf(BenefitSettings())
@@ -75,7 +81,7 @@ class PlanningUiTest {
                     done()
                 })
         } }
-        compose.onNodeWithTag("benefits.configure").performScrollTo().performClick()
+        openBenefitEditor()
         compose.onNodeWithTag("benefits.vrRate").performScrollTo().performTextReplacement("25,50")
         compose.onNodeWithTag("benefits.vtRate").assertDoesNotExist()
         compose.onNodeWithTag("benefits.vtDays").assertDoesNotExist()
@@ -90,7 +96,7 @@ class PlanningUiTest {
         compose.runOnIdle { selected.value = YearMonth.of(2026, 12) }
         compose.onNodeWithTag("benefits.total").assertTextEquals("Total estimado: ${currency("586.50")}")
         compose.runOnIdle { selected.value = month }
-        compose.onNodeWithTag("benefits.configure").performScrollTo().performClick()
+        openBenefitEditor()
         compose.onNodeWithTag("benefits.vrDays").performScrollTo().performTextClearance()
         compose.onNodeWithTag("benefits.save").performClick()
         compose.runOnIdle { assertEquals(BenefitDays(), settings.value.overrides[month]) }
@@ -111,7 +117,7 @@ class PlanningUiTest {
                     error.value = "Falha de gravação"
                 })
         } }
-        compose.onNodeWithTag("benefits.configure").performScrollTo().performClick()
+        openBenefitEditor()
         compose.onNodeWithTag("benefits.vrRate").performScrollTo().performTextReplacement("1.50")
         compose.onNodeWithTag("benefits.save").assertIsNotEnabled()
         compose.onNodeWithTag("benefits.vrRate").performScrollTo().performTextReplacement("1.234,56")
@@ -139,7 +145,7 @@ class PlanningUiTest {
                     done()
                 })
         } }
-        compose.onNodeWithTag("benefits.configure").performScrollTo().performClick()
+        openBenefitEditor()
         for (day in 1..5) compose.onNodeWithTag("benefits.vrDay.$day").performScrollTo().assertIsOn()
         compose.onNodeWithTag("benefits.vrDay.6").performScrollTo().assertIsOff()
         compose.onNodeWithTag("benefits.vtDay.5").assertDoesNotExist()

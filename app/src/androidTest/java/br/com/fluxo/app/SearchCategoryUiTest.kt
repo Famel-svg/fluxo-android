@@ -66,9 +66,9 @@ class SearchCategoryUiTest {
         assertEquals(Category.FOOD, repository.transactions.value.single().category)
         compose.waitForIdle()
 
-        // Compact "Filtros" action; its accessibility label keeps the former wording.
+        // Compact "Filtros" action; its accessibility label also names the tag filter.
         scrollTo("Filtros")
-        compose.onNodeWithContentDescription("Banco, meio e categoria").performClick()
+        compose.onNodeWithContentDescription("Banco, meio, categoria e etiqueta").performClick()
         scrollTo("Meio: Todos")
         compose.onNodeWithText("Meio: Todos").performClick()
         compose.onNodeWithText("Cartão de crédito", substring = false).performClick()

@@ -18,7 +18,7 @@ class RecordsBatchAndTagsUiTest {
 
     private fun pending(id: String) = Transaction(
         id, "key-$id", "com.itau", 1000, Direction.EXPENSE, PaymentMethod.UNKNOWN, ReviewStatus.REVIEW,
-        now, "Pendente $id", reason = "Meio de pagamento não identificado"
+        now, "Pendente $id", reason = BatchConfirm.METHOD_ONLY_REASON
     )
 
     private fun confirmed(id: String, description: String, sourceKey: String?, category: Category = Category.FOOD) = Transaction(

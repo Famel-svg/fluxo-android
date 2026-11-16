@@ -128,7 +128,7 @@ internal fun PlanningScreen(
     var benefitDialogMonth by rememberSaveable { mutableStateOf<String?>(null) }
     val detailCategories = Category.entries.filter { (totals[it] ?: BigInteger.ZERO) > BigInteger.ZERO || monthBudgets.any { budget -> budget.category == it } }
     LazyColumn(
-        modifier = Modifier.background(FluxoColors.Paper),
+        modifier = Modifier.background(FluxoColors.Paper).testTag("planning.list"),
         contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
