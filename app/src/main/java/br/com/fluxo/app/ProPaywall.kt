@@ -19,6 +19,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -75,29 +76,35 @@ internal fun ProPaywallScreen(isPro: Boolean, price: String?, proForAll: Boolean
     val blue = Color(0xFF1F7AC4)
     val gradient = Brush.linearGradient(listOf(hero, if (hero.luminance() > .2f) blue else lerp(hero, blue, .5f)))
     Surface(Modifier.fillMaxSize().testTag("paywall"), color = FluxoColors.Paper) {
-        Column(Modifier.verticalScroll(rememberScrollState())) {
-            Column(
-                Modifier.fillMaxWidth().background(gradient).safeDrawingPadding().padding(horizontal = 20.dp, vertical = 28.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text("Fluxo Pro", color = FluxoColors.OnHero, style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold))
-                Text("O Fluxo funciona por inteiro sem Pro. O Pro é uma compra única, sem assinatura.", color = FluxoColors.OnHero.copy(alpha = .85f), style = MaterialTheme.typography.bodyMedium)
-            }
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(FluxoColors.PetrolSoft).padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
+        // Preço e compra ficam fixos no rodapé: visíveis sem rolar mesmo em 320x640 e fonte grande.
+        Column(Modifier.fillMaxSize()) {
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                Column(
+                    Modifier.fillMaxWidth().background(gradient).safeDrawingPadding().padding(horizontal = 20.dp, vertical = 28.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Filled.Notifications, null, tint = FluxoColors.Petrol, modifier = Modifier.size(28.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("Captura automática pelas notificações", color = FluxoColors.Ink, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
-                        Text("Tudo no aparelho: nada sai do seu celular.", color = FluxoColors.Mute, style = MaterialTheme.typography.bodyMedium)
-                    }
+                    Text("Fluxo Pro", color = FluxoColors.OnHero, style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold))
+                    Text("O Fluxo funciona por inteiro sem Pro. O Pro é uma compra única, sem assinatura.", color = FluxoColors.OnHero.copy(alpha = .85f), style = MaterialTheme.typography.bodyMedium)
                 }
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { ProBenefits.forEach { BenefitRow(it) } }
-                PlanBox("Grátis", FreeIncludes, "paywall.free")
-                PlanBox("Pro", listOf(ProIncludes), "paywall.pro")
-                Text("Seus dados nunca são ocultados nem apagados, e a exportação segue liberada, com ou sem Pro. Tudo continua offline e só no seu aparelho.", color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(FluxoColors.PetrolSoft).padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(Icons.Filled.Notifications, null, tint = FluxoColors.Petrol, modifier = Modifier.size(28.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("Captura automática pelas notificações", color = FluxoColors.Ink, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
+                            Text("Tudo no aparelho: nada sai do seu celular.", color = FluxoColors.Mute, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { ProBenefits.forEach { BenefitRow(it) } }
+                    PlanBox("Grátis", FreeIncludes, "paywall.free")
+                    PlanBox("Pro", listOf(ProIncludes), "paywall.pro")
+                    Text("Seus dados nunca são ocultados nem apagados, e a exportação segue liberada, com ou sem Pro. Tudo continua offline e só no seu aparelho.", color = FluxoColors.Mute, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            HorizontalDivider(color = FluxoColors.Line)
+            Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     if (proForAll) "Grátis por enquanto" else price ?: "Preço indisponível",
                     modifier = Modifier.testTag("paywall.price"), color = FluxoColors.Ink,
