@@ -10,8 +10,8 @@ android {
         applicationId = "br.com.fluxo.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "0.9.0"
+        versionCode = 14
+        versionName = "0.10.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "PRIVACY_URL", "\"https://famel-svg.github.io/fluxo-privacidade/\"")
     }
