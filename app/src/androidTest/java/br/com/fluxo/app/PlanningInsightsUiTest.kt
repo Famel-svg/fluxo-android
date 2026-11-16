@@ -32,7 +32,7 @@ class PlanningInsightsUiTest {
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Recorrentes"))
         compose.onNodeWithText("Recorrentes").assertExists()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Academia"))
-        compose.onNodeWithText("Academia").assertExists()
+        compose.onAllNodesWithText("Academia").onFirst().assertExists()
         compose.onNodeWithTag("planning.recurringTotal").assertExists()
     }
 
