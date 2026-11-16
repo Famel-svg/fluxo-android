@@ -130,13 +130,12 @@ internal fun Dashboard(
     val monthBudgets = budgets.filter { it.month == month.toString() && it.limitCents > 0 }
     val budgetSum = monthBudgets.fold(0L) { sum, b -> Math.addExact(sum, b.limitCents) }
     val paceBudget = if (budgetSum > 0) budgetSum else salaryMonthlyCents.coerceAtLeast(0)
-    val fixedUpcoming = if (currentMonth) {
-        RecurringDetector.detect(allRows, today, zone)
-            .filter { !it.paidThisMonth && YearMonth.from(it.nextDue) == month }
-            .fold(0L) { sum, c -> Math.addExact(sum, c.amountCents) }
-    } else 0L
+    val recurring = if (currentMonth) RecurringDetector.detect(allRows, today, zone) else emptyList()
+    val fixedUpcoming = recurring.filter { !it.paidThisMonth && YearMonth.from(it.nextDue) == month }
+        .fold(0L) { sum, c -> Math.addExact(sum, c.amountCents) }
+    val fixedPaid = recurring.filter { it.paidThisMonth }.fold(0L) { sum, c -> Math.addExact(sum, c.amountCents) }
     val spentLong = (cash + credit).min(BigInteger.valueOf(Long.MAX_VALUE)).toLong()
-    val pace = BudgetPace.monthPace(spentLong, paceBudget, month, today, fixedUpcoming)
+    val pace = BudgetPace.monthPace(spentLong, paceBudget, month, today, fixedUpcoming, fixedPaid)
     val overruns = BudgetPace.overruns(rows, monthBudgets, month, zone)
     // The open cycle is read from all rows: the visible month may end before today's cycle starts.
     val openCredit = cardClosingDay?.let { closing ->

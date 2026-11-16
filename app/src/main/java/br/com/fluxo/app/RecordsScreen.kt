@@ -258,11 +258,11 @@ internal fun RecordsScreen(
                     val methodOnlyIds = reviewing.filter(BatchConfirm::isMethodOnly).map { it.id }
                     val completeIds = reviewing.filter(BatchConfirm::isComplete).map { it.id }
                     FlowRow(Modifier.fillMaxWidth().padding(horizontal = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (methodOnlyIds.isNotEmpty()) {
+                        if (methodOnlyIds.size >= 2) { // one card is quicker to answer in place than through a batch dialog
                             FluxoPillButton("Confirmar ${methodOnlyIds.size} como Crédito", { batch = "Crédito" to (methodOnlyIds to PaymentMethod.CREDIT_CARD) }, Modifier, FluxoButtonStyle.Secondary, enabled = !saving)
                             FluxoPillButton("Confirmar ${methodOnlyIds.size} como VR", { batch = "VR" to (methodOnlyIds to PaymentMethod.MEAL_VOUCHER) }, Modifier, FluxoButtonStyle.Secondary, enabled = !saving)
                         }
-                        if (completeIds.isNotEmpty())
+                        if (completeIds.size >= 2)
                             FluxoPillButton("Confirmar ${completeIds.size} completas", { batch = "" to (completeIds to null) }, Modifier, FluxoButtonStyle.Secondary, enabled = !saving)
                     }
                 }

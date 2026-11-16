@@ -25,7 +25,10 @@ object BudgetPace {
      * Linear pace by day of month. Status: OVER when spent passed the budget or is more than 10% above the expected
      * amount, UNDER when more than 10% below, otherwise ON_TRACK. [fixedUpcomingCents] is added to the projection.
      */
-    fun monthPace(spentCents: Long, budgetCents: Long, month: YearMonth, today: LocalDate, fixedUpcomingCents: Long = 0): Pace {
+    fun monthPace(
+        spentCents: Long, budgetCents: Long, month: YearMonth, today: LocalDate,
+        fixedUpcomingCents: Long = 0, fixedPaidCents: Long = 0,
+    ): Pace {
         val length = month.lengthOfMonth().toLong()
         val day = when {
             YearMonth.from(today) == month -> today.dayOfMonth.toLong()
@@ -35,7 +38,11 @@ object BudgetPace {
         val spent = spentCents.coerceAtLeast(0)
         val expected = if (budgetCents > 0) scale(budgetCents, day, length) else 0L
         val fixed = fixedUpcomingCents.coerceAtLeast(0)
-        val projected = Math.addExact(if (day == 0L) spent else scale(spent, length, day), fixed)
+        // Only variable spending is extrapolated: fixed bills already paid count once, fixed bills still due are added once.
+        val paid = fixedPaidCents.coerceIn(0, spent)
+        val variable = spent - paid
+        val rest = if (day == 0L) 0L else scale(variable, length - day, day)
+        val projected = Math.addExact(Math.addExact(spent, rest), fixed)
         val status = when {
             budgetCents <= 0 -> PaceStatus.NO_BUDGET
             spent > budgetCents || big(spent).multiply(big(100)) > big(expected).multiply(big(110)) -> PaceStatus.OVER

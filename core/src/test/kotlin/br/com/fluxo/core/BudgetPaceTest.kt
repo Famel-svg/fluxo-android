@@ -32,6 +32,12 @@ class BudgetPaceTest {
         assertEquals(130_000, BudgetPace.monthPace(50_000, 100_000, month, today, fixedUpcomingCents = 30_000).projectedEndCents)
     }
 
+    @Test fun `fixed bills already paid are not extrapolated`() {
+        // Day 15 of 30: R$ 500 spent, R$ 300 of it is rent paid on day 1; only the R$ 200 variable part repeats.
+        val today = LocalDate.of(2026, 11, 15)
+        assertEquals(70_000, BudgetPace.monthPace(50_000, 100_000, month, today, fixedPaidCents = 30_000).projectedEndCents)
+    }
+
     @Test fun `overruns list categories at 80 percent or more and ignore other months review transfer and voucher`() {
         val rows = listOf(
             tx("a", "2026-11-03", 8_000, Category.FOOD),
