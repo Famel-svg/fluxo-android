@@ -18,13 +18,14 @@ internal object LedgerBackup {
             "occurred_at", "description", "reason", "deleted", "category", "user_modified", "observation_hash", "last_observed_at", "account_id", "transfer_id"),
         "budgets" to listOf("month", "category", "limit_cents"),
         "notification_aliases" to listOf("identity_key", "source_key"),
+        "transaction_tags" to listOf("transaction_id", "tag"),
     )
     data class Validated(val rows: Map<String, List<ContentValues>>, val summary: BackupSummary, val benefits: BenefitSettings? = null,
         val salaryMonthlyCents: Long? = null)
 
     fun export(db: SQLiteDatabase, benefits: BenefitSettings, salaryMonthlyCents: Long = 0): ByteArray {
         require(salaryMonthlyCents >= 0)
-        val root = JSONObject().put("format", "fluxo-ledger").put("version", 5).put("schema", 4)
+        val root = JSONObject().put("format", "fluxo-ledger").put("version", 6).put("schema", 4)
         columns.forEach { (table, names) ->
             val rows = JSONArray()
             db.query(table, names.toTypedArray(), null, null, null, null, null).use { cursor ->
@@ -84,19 +85,22 @@ internal object LedgerBackup {
             root.put("accounts", JSONArray()).put("version", 2).put("schema", 4)
         }
         val version = number(root, "version")
-        require(version in 2L..5L && number(root, "schema") == 4L)
+        require(version in 2L..6L && number(root, "schema") == 4L)
+        val withTags = version >= 6L
         val withBenefits = version >= 3L
         require(root.keys().asSequence().toSet() ==
-            columns.keys + setOf("format", "version", "schema") + (if (withBenefits) setOf("benefits") else emptySet()) +
+            (if (withTags) columns.keys else columns.keys - "transaction_tags") + setOf("format", "version", "schema") + (if (withBenefits) setOf("benefits") else emptySet()) +
                 (if (version >= 5L) setOf("profile") else emptySet()))
         val benefits = if (withBenefits) parseBenefits(root.get("benefits"), withWeekdays = version >= 4L) else null
         val salary = if (version >= 5L) parseProfile(root.get("profile")) else null
         val allRows = linkedMapOf<String, List<ContentValues>>()
         val sourceKeys = mutableSetOf<String>()
         val accountIds = mutableSetOf<String>()
+        val transactionIds = mutableSetOf<String>()
         var deleted = 0
         columns.forEach { (table, names) ->
-            val rows = root.getJSONArray(table)
+            // Backups before v6 carry no tags.
+            val rows = if (table == "transaction_tags" && !withTags) JSONArray() else root.getJSONArray(table)
             require(rows.length() <= 50_000)
             val identities = mutableSetOf<String>()
             allRows[table] = (0 until rows.length()).map { i ->
@@ -114,6 +118,7 @@ internal object LedgerBackup {
                     }
                     "transactions" -> {
                         require(identities.add(string(row, "id", 200).also { require(it.isNotBlank()) }))
+                        transactionIds += string(row, "id", 200)
                         optionalString(row, "source_key", 256)?.let { require(sourceKeys.add(it)) }
                         string(row, "bank_package", 200)
                         val amount = if (row.isNull("amount_cents")) null else number(row, "amount_cents").also { require(it > 0) }
@@ -143,6 +148,13 @@ internal object LedgerBackup {
                     "notification_aliases" -> {
                         require(identities.add(string(row, "identity_key", 256)))
                         require(string(row, "source_key", 256) in sourceKeys)
+                    }
+                    "transaction_tags" -> {
+                        val owner = string(row, "transaction_id", 200)
+                        require(owner in transactionIds)
+                        val tag = string(row, "tag", MAX_TAG_LENGTH)
+                        require(tag.isNotBlank() && tag == tag.trim())
+                        require(identities.add("$owner|$tag"))
                     }
                 }
                 ContentValues().apply { names.forEach { name -> when (val value = row.get(name)) {

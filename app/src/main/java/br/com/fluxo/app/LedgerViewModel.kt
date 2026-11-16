@@ -8,6 +8,7 @@ import br.com.fluxo.core.Budget
 import br.com.fluxo.core.Account
 import br.com.fluxo.core.FeaturePolicy
 import br.com.fluxo.core.Category
+import br.com.fluxo.core.PaymentMethod
 import br.com.fluxo.core.Transaction
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +38,15 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
     val triageEnabled = repository.triageEnabled
     val disclosureAccepted = repository.disclosureAccepted
     val triage = repository.triage
+    val tags = repository.tags
+    val cardClosingDay = repository.cardClosingDay
+    val cardDueDay = repository.cardDueDay
+    val homeCards = repository.homeCards
+    val hiddenHomeCards = repository.hiddenHomeCards
+    val alertsEnabled = repository.alertsEnabled
+    val alertQuietHours = repository.alertQuietHours
+    val sentAlertKeys = repository.sentAlertKeys
+    val lastCaptureAt = repository.lastCaptureAt
     private val _saving = MutableStateFlow(false)
     val saving = _saving.asStateFlow()
     private val _editError = MutableStateFlow<String?>(null)
@@ -96,6 +106,20 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
     fun saveProfile(name: String, salaryMonthlyCents: Long, onSuccess: () -> Unit) =
         edit(onSuccess) { repository.saveProfile(name, salaryMonthlyCents) }
     fun setThemeMode(mode: ThemeMode) = execute { repository.setThemeMode(mode) }
+    fun setTags(id: String, tags: Set<String>) = execute { repository.setTags(id, tags) }
+    fun recategorizeMerchant(id: String, category: Category, onDone: (Int) -> Unit) = execute {
+        val changed = repository.recategorizeMerchant(id, category)
+        withContext(Dispatchers.Main) { onDone(changed) }
+    }
+    fun confirmBatch(ids: List<String>, method: PaymentMethod?, onDone: (Int) -> Unit) = execute {
+        val confirmed = repository.confirmBatch(ids, method)
+        withContext(Dispatchers.Main) { onDone(confirmed) }
+    }
+    fun setCardCycle(closing: Int?, due: Int?) = execute { repository.setCardCycle(closing, due) }
+    fun setHomeCards(order: List<HomeCard>, hidden: Set<HomeCard>) = execute { repository.setHomeCards(order, hidden) }
+    fun setAlertsEnabled(kinds: Set<String>) = execute { repository.setAlertsEnabled(kinds) }
+    fun setAlertQuietHours(startHour: Int, endHour: Int) = execute { repository.setAlertQuietHours(startHour, endHour) }
+    fun markAlertSent(key: String, at: Long) = execute { repository.markAlertSent(key, at) }
     fun resetEditError() { _editError.value = null }
     fun clear() = execute { repository.clear() }
     fun capture(enabled: Boolean) = execute { repository.setCaptureEnabled(enabled) }

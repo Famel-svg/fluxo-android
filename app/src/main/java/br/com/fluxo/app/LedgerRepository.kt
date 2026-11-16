@@ -56,6 +56,19 @@ sealed interface IngestOutcome {
 class RestoreFailedException(val previousKept: Boolean, cause: Throwable) :
     IllegalStateException("Restauração não concluída.", cause)
 
+/** Cards of the Início tab; the owner reorders and hides them. */
+enum class HomeCard { PACE, CAPTURE, CREDIT, VR, RECENT, CHARTS }
+
+/** Limits of one transaction's tags; the backup validator uses the same numbers. */
+internal const val MAX_TAGS = 10
+internal const val MAX_TAG_LENGTH = 30
+
+// Names of core AlertKind, kept as strings so the data layer does not depend on the alert engine. Default: all on.
+private val ALERT_KIND_NAMES = listOf(
+    "REVIEW_DIGEST", "BUDGET_80", "BUDGET_OVER", "BILL_DUE", "UNUSUAL", "CAPTURE_DOWN", "WEEKLY_SUMMARY",
+)
+private const val ALERT_KEY_KEEP_MS = 60L * 24 * 60 * 60 * 1000
+
 class LedgerRepository(context: Context) {
     private val appPackageName = context.applicationContext.packageName
     private val preferences = context.getSharedPreferences("capture", Context.MODE_PRIVATE)
@@ -101,6 +114,107 @@ class LedgerRepository(context: Context) {
     val triage: StateFlow<List<TriageItem>> = _triage
     private val _captureError = MutableStateFlow<String?>(null)
     val captureError: StateFlow<String?> = _captureError
+    // Tags per live transaction id. Device data: in the backup, never in the CSV or logs.
+    private val _tags = MutableStateFlow<Map<String, Set<String>>>(emptyMap())
+    val tags: StateFlow<Map<String, Set<String>>> = _tags
+    // Device-local preferences (kept by clear(), never in the backup): card cycle, Início layout, alerts.
+    private val _cardClosingDay = MutableStateFlow(storedDay("card_closing_day"))
+    val cardClosingDay: StateFlow<Int?> = _cardClosingDay
+    private val _cardDueDay = MutableStateFlow(storedDay("card_due_day"))
+    val cardDueDay: StateFlow<Int?> = _cardDueDay
+    private val _homeCards = MutableStateFlow(readHomeOrder())
+    val homeCards: StateFlow<List<HomeCard>> = _homeCards
+    private val _hiddenHomeCards = MutableStateFlow(readHiddenHomeCards())
+    val hiddenHomeCards: StateFlow<Set<HomeCard>> = _hiddenHomeCards
+    private val _alertsEnabled = MutableStateFlow(readAlertsEnabled())
+    val alertsEnabled: StateFlow<Set<String>> = _alertsEnabled
+    private val _alertQuietHours = MutableStateFlow(readQuietHours())
+    val alertQuietHours: StateFlow<Pair<Int, Int>> = _alertQuietHours
+    // Alert key -> time sent; entries older than 60 days are dropped on every mark.
+    private val _sentAlertKeys = MutableStateFlow(readSentAlerts())
+    val sentAlertKeys: StateFlow<Map<String, Long>> = _sentAlertKeys
+    // Persisted time of the last notification stored by capture (CaptureHealth only lives for the session).
+    private val _lastCaptureAt = MutableStateFlow((preferences.all["last_capture_at"] as? Long)?.takeIf { it > 0 })
+    val lastCaptureAt: StateFlow<Long?> = _lastCaptureAt
+
+    private fun storedDay(key: String): Int? = (preferences.all[key] as? Int)?.takeIf { it in 1..31 }
+
+    private fun readHomeOrder(): List<HomeCard> {
+        val saved = preferences.getString("home_cards", null).orEmpty().split(',')
+            .mapNotNull { name -> HomeCard.entries.firstOrNull { it.name == name } }.distinct()
+        return saved + HomeCard.entries.filter { it !in saved }
+    }
+
+    private fun readHiddenHomeCards(): Set<HomeCard> = preferences.getStringSet("home_hidden", emptySet())!!
+        .mapNotNull { name -> HomeCard.entries.firstOrNull { it.name == name } }.toSet()
+
+    private fun readAlertsEnabled(): Set<String> =
+        preferences.getStringSet("alerts_enabled", null)?.filter { it in ALERT_KIND_NAMES }?.toSet() ?: ALERT_KIND_NAMES.toSet()
+
+    private fun readQuietHours(): Pair<Int, Int> {
+        val start = (preferences.all["alert_quiet_start"] as? Int)?.takeIf { it in 0..23 }
+        val end = (preferences.all["alert_quiet_end"] as? Int)?.takeIf { it in 0..23 }
+        return if (start != null && end != null) start to end else 22 to 8
+    }
+
+    private fun readSentAlerts(): Map<String, Long> = preferences.getStringSet("alert_sent", emptySet())!!.mapNotNull { entry ->
+        val at = entry.substringBefore('|').toLongOrNull()
+        val key = entry.substringAfter('|', "")
+        if (at == null || key.isEmpty()) null else key to at
+    }.toMap()
+
+    /** Day of the month (1..31) the card invoice closes and is due; null clears. */
+    @Synchronized
+    fun setCardCycle(closing: Int?, due: Int?) {
+        require(closing == null || closing in 1..31) { "Informe um dia entre 1 e 31." }
+        require(due == null || due in 1..31) { "Informe um dia entre 1 e 31." }
+        val editor = preferences.edit()
+        if (closing == null) editor.remove("card_closing_day") else editor.putInt("card_closing_day", closing)
+        if (due == null) editor.remove("card_due_day") else editor.putInt("card_due_day", due)
+        editor.apply()
+        _cardClosingDay.value = closing
+        _cardDueDay.value = due
+    }
+
+    /** [order] may be partial or repeat cards; the stored order is deduplicated and completed with the missing ones. */
+    @Synchronized
+    fun setHomeCards(order: List<HomeCard>, hidden: Set<HomeCard>) {
+        val head = order.distinct()
+        val full = head + HomeCard.entries.filter { it !in head }
+        preferences.edit().putString("home_cards", full.joinToString(",") { it.name })
+            .putStringSet("home_hidden", hidden.map { it.name }.toSet()).apply()
+        _homeCards.value = full
+        _hiddenHomeCards.value = hidden
+    }
+
+    /** [kinds] are AlertKind names; unknown names are dropped. */
+    @Synchronized
+    fun setAlertsEnabled(kinds: Set<String>) {
+        val known = kinds.filter { it in ALERT_KIND_NAMES }.toSet()
+        preferences.edit().putStringSet("alerts_enabled", known).apply()
+        _alertsEnabled.value = known
+    }
+
+    @Synchronized
+    fun setAlertQuietHours(startHour: Int, endHour: Int) {
+        require(startHour in 0..23 && endHour in 0..23) { "Informe horas entre 0 e 23." }
+        preferences.edit().putInt("alert_quiet_start", startHour).putInt("alert_quiet_end", endHour).apply()
+        _alertQuietHours.value = startHour to endHour
+    }
+
+    @Synchronized
+    fun markAlertSent(key: String, at: Long) {
+        require(key.isNotBlank()) { "Chave de aviso vazia." }
+        val kept = (_sentAlertKeys.value + (key to at)).filterValues { it >= at - ALERT_KEY_KEEP_MS }
+        preferences.edit().putStringSet("alert_sent", kept.map { "${it.value}|${it.key}" }.toSet()).apply()
+        _sentAlertKeys.value = kept
+    }
+
+    @Synchronized
+    private fun markCapture(at: Long) {
+        preferences.edit().putLong("last_capture_at", at).apply()
+        _lastCaptureAt.value = at
+    }
 
     private fun readBenefits(): BenefitSettings {
         val stored = benefitPreferences.all
@@ -572,6 +686,7 @@ class LedgerRepository(context: Context) {
                 db.endTransaction()
             }
             _captureError.value = null
+            markCapture(System.currentTimeMillis())
             readAll()
             IngestOutcome.Stored
         }
@@ -643,11 +758,13 @@ class LedgerRepository(context: Context) {
             "AND bank_package IN (${walletPackagesSql()}) ORDER BY abs(occurred_at - ?) LIMIT 1)",
             arrayOf(Direction.EXPENSE.name, WalletReceipt.REASON, cents.toString(),
                 (at - WalletReceipt.MATCH_WINDOW_MS).toString(), (at + WalletReceipt.MATCH_WINDOW_MS).toString(), at.toString()))
+        db.execSQL("DELETE FROM transaction_tags WHERE transaction_id IN (SELECT id FROM transactions WHERE deleted = 1)")
     }
 
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
         mutex.withLock {
             checkNotTransfer(database.writableDatabase, id)
+            database.writableDatabase.delete("transaction_tags", "transaction_id = ?", arrayOf(id))
             database.writableDatabase.update("transactions", ContentValues().apply {
                 put("deleted", 1)
                 putNull("amount_cents")
@@ -656,6 +773,95 @@ class LedgerRepository(context: Context) {
                 put("category", Category.UNCATEGORIZED.name)
             }, "id = ?", arrayOf(id))
             readAll()
+        }
+    }
+
+    /** Replaces the tags of a live transaction; blank entries and case-insensitive repeats are dropped. */
+    suspend fun setTags(id: String, tags: Set<String>) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val clean = tags.map { it.trim() }.filter { it.isNotEmpty() }.distinctBy { it.lowercase() }
+            require(clean.size <= MAX_TAGS) { "Use no máximo $MAX_TAGS etiquetas." }
+            require(clean.all { it.length <= MAX_TAG_LENGTH }) { "Etiqueta muito longa (máximo $MAX_TAG_LENGTH letras)." }
+            val db = database.writableDatabase
+            require(db.query("transactions", arrayOf("id"), "id = ? AND deleted = 0", arrayOf(id), null, null, null)
+                .use { it.moveToFirst() }) { "Lançamento não encontrado." }
+            db.beginTransaction()
+            try {
+                db.delete("transaction_tags", "transaction_id = ?", arrayOf(id))
+                clean.forEach { tag ->
+                    db.insertOrThrow("transaction_tags", null, ContentValues().apply { put("transaction_id", id); put("tag", tag) })
+                }
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+            readAll()
+        }
+    }
+
+    /**
+     * Gives the transaction [id] and every other live, non-transfer one with the same merchant key [category], and
+     * remembers it for future captures. Returns how many rows changed. A generic description (no merchant) only
+     * changes that row and is never learned.
+     */
+    suspend fun recategorizeMerchant(id: String, category: Category): Int = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val anchor = _transactions.value.firstOrNull { it.id == id } ?: throw IllegalArgumentException("Lançamento não encontrado.")
+            require(anchor.transferId == null) { "Desvincule a transferência antes de editar." }
+            val generic = anchor.description.isBlank() || anchor.description in GENERIC_DESCRIPTIONS
+            val key = if (generic) null else MerchantCategorizer.key(anchor.description)
+            val targets = _transactions.value.filter { row ->
+                row.category != category && row.transferId == null &&
+                    (if (key == null) row.id == id else MerchantCategorizer.key(row.description) == key)
+            }
+            val db = database.writableDatabase
+            db.beginTransaction()
+            try {
+                targets.forEach { row ->
+                    db.update("transactions", ContentValues().apply { put("category", category.name) }, "id = ? AND deleted = 0", arrayOf(row.id))
+                }
+                if (key != null && category != Category.UNCATEGORIZED && anchor.method != PaymentMethod.PIX) {
+                    db.insertWithOnConflict("merchant_categories", null, ContentValues().apply {
+                        put("merchant_key", key); put("category", category.name)
+                    }, SQLiteDatabase.CONFLICT_REPLACE)
+                }
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+            readAll()
+            targets.size
+        }
+    }
+
+    /**
+     * Confirms the listed pending rows that need nothing but the payment method (then [method] is applied) or are
+     * already complete. Anything missing more than that, or missing the method while [method] is null, is skipped.
+     * Returns how many were confirmed.
+     */
+    suspend fun confirmBatch(ids: List<String>, method: PaymentMethod?): Int = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val wanted = ids.toSet()
+            val eligible = _transactions.value.filter { row ->
+                row.id in wanted && row.status == ReviewStatus.REVIEW && row.transferId == null &&
+                    row.amountCents != null && row.direction != Direction.UNKNOWN &&
+                    (row.method != PaymentMethod.UNKNOWN || method != null)
+            }
+            val db = database.writableDatabase
+            db.beginTransaction()
+            try {
+                eligible.forEach { row ->
+                    db.update("transactions", ContentValues().apply {
+                        put("status", ReviewStatus.CONFIRMED.name); put("user_modified", 1)
+                        if (row.method == PaymentMethod.UNKNOWN) put("method", method!!.name)
+                    }, "id = ? AND deleted = 0", arrayOf(row.id))
+                }
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+            readAll()
+            eligible.size
         }
     }
 
@@ -671,6 +877,7 @@ class LedgerRepository(context: Context) {
                 db.delete("accounts", null, null)
                 db.delete("notification_triage", null, null)
                 db.delete("merchant_categories", null, null)
+                db.delete("transaction_tags", null, null)
                 db.setTransactionSuccessful()
             } finally {
                 db.endTransaction()
@@ -746,6 +953,12 @@ class LedgerRepository(context: Context) {
                 )
             }
         }
+        val tagMap = linkedMapOf<String, MutableSet<String>>()
+        database.readableDatabase.rawQuery("SELECT transaction_id, tag FROM transaction_tags WHERE transaction_id IN " +
+            "(SELECT id FROM transactions WHERE deleted = 0) ORDER BY tag", null).use { cursor ->
+            while (cursor.moveToNext()) tagMap.getOrPut(cursor.getString(0)) { linkedSetOf() } += cursor.getString(1)
+        }
+        _tags.value = tagMap
         _transactions.value = result
         _budgets.value = limits
         val accountRows = mutableListOf<Account>()
@@ -836,10 +1049,11 @@ class LedgerRepository(context: Context) {
 
     private companion object {
         const val MAX_PROFILE_NAME = 40
+        val GENERIC_DESCRIPTIONS = setOf(CAPTURED_DESCRIPTION, "Lançamento manual", "Movimentação autorizada")
     }
 }
 
-private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "fluxo.db", null, 8) {
+private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "fluxo.db", null, 9) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
             CREATE TABLE transactions (
@@ -868,6 +1082,7 @@ private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "flux
         createAccounts(db)
         createNotificationTriage(db)
         createMerchantCategories(db)
+        createTransactionTags(db)
     }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) {
@@ -903,6 +1118,7 @@ private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "flux
         if (oldVersion < 7) createMerchantCategories(db)
         // Rows already kept or discarded no longer need raw text; verdict and decision stay.
         if (oldVersion < 8) db.execSQL("UPDATE notification_triage SET title = '', text = '' WHERE decision IN ('KEPT', 'DISCARDED')")
+        if (oldVersion < 9) createTransactionTags(db)
     }
 
     private fun hasColumn(db: SQLiteDatabase, table: String, column: String): Boolean =
@@ -922,6 +1138,10 @@ private class LedgerDatabase(context: Context) : SQLiteOpenHelper(context, "flux
     /** Category the owner chose for a merchant; keyed by MerchantCategorizer.key, never raw notification text. */
     private fun createMerchantCategories(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE merchant_categories (merchant_key TEXT PRIMARY KEY NOT NULL, category TEXT NOT NULL)")
+    }
+
+    private fun createTransactionTags(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE transaction_tags (transaction_id TEXT NOT NULL, tag TEXT NOT NULL, PRIMARY KEY(transaction_id, tag))")
     }
 
     private fun createNotificationTriage(db: SQLiteDatabase) {

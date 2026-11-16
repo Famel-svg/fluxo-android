@@ -178,7 +178,7 @@ class LedgerRepositoryTest {
         repository.save(manualTransaction())
         val original = repository.transactions.value
         val old = org.json.JSONObject(repository.exportBackupPayload().toString(Charsets.UTF_8))
-        old.remove("accounts"); old.remove("benefits"); old.remove("profile"); old.put("version", 1); old.put("schema", 3)
+        old.remove("accounts"); old.remove("transaction_tags"); old.remove("benefits"); old.remove("profile"); old.put("version", 1); old.put("schema", 3)
         old.getJSONArray("transactions").getJSONObject(0).apply { remove("account_id"); remove("transfer_id") }
         repository.restoreBackupPayload(old.toString().toByteArray())
         assertEquals(original, repository.transactions.value)
@@ -459,7 +459,7 @@ class LedgerRepositoryTest {
         assertEquals(edited, reopened.transactions.value.single())
         assertEquals(Budget("2026-09", Category.TRANSPORT, 50000), reopened.budgets.value.single())
         context.openOrCreateDatabase("fluxo.db", Context.MODE_PRIVATE, null).use { db ->
-            assertEquals(8, db.version)
+            assertEquals(9, db.version)
             db.rawQuery("SELECT category, amount_cents FROM transactions WHERE id = 'old'", null).use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals("TRANSPORT", cursor.getString(0))
@@ -477,7 +477,7 @@ class LedgerRepositoryTest {
         val target = InstrumentationRegistry.getInstrumentation().targetContext
         fun schema(context: Context): Pair<Set<String>, Map<String, Set<String>>> =
             context.openOrCreateDatabase("fluxo.db", Context.MODE_PRIVATE, null).use { db ->
-                assertEquals(8, db.version)
+                assertEquals(9, db.version)
                 val tables = db.rawQuery("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'android_%' AND name NOT LIKE 'sqlite_%'", null).use { cursor ->
                     generateSequence { if (cursor.moveToNext()) cursor.getString(0) else null }.toSet()
                 }
@@ -752,7 +752,7 @@ class LedgerRepositoryTest {
         val expected = repo.benefits.value
         val payload = repo.exportBackupPayload()
         val json = org.json.JSONObject(payload.toString(Charsets.UTF_8))
-        assertEquals(5, json.getInt("version"))
+        assertEquals(6, json.getInt("version"))
         assertEquals(4, json.getInt("schema"))
         assertEquals(listOf("2026-09", "2026-10"), (0 until 2).map { json.getJSONObject("benefits").getJSONArray("days").getJSONObject(it).getString("month") })
         assertEquals(BackupSummary(1, 0, 0, 0, true), repo.inspectBackupPayload(payload))
@@ -770,7 +770,7 @@ class LedgerRepositoryTest {
     @Test fun backupV2LeavesDeviceBenefitsUntouched() = withBenefitRepository { repo, prefs ->
         repo.save(manualTransaction())
         repo.saveBenefits(YearMonth.of(2026, 9), 2550, 1050, BenefitDays(7, 8))
-        val v2 = mutated(repo.exportBackupPayload()) { it.remove("benefits"); it.remove("profile"); it.put("version", 2) }
+        val v2 = mutated(repo.exportBackupPayload()) { it.remove("benefits"); it.remove("profile"); it.remove("transaction_tags"); it.put("version", 2) }
         assertEquals(BackupSummary(1, 0, 0, 0, false), repo.inspectBackupPayload(v2))
         repo.saveBenefits(YearMonth.of(2026, 10), 100, 200, BenefitDays(1, null))
         val before = repo.benefits.value
@@ -1023,7 +1023,7 @@ class LedgerRepositoryTest {
         val text = payload.toString(Charsets.UTF_8)
         assertFalse("name must not be exported", text.contains("Rafael"))
         val json = org.json.JSONObject(text)
-        assertEquals(5, json.getInt("version"))
+        assertEquals(6, json.getInt("version"))
         assertEquals(4, json.getInt("schema"))
         assertEquals("{\"salary_monthly_cents\":350000}", json.getJSONObject("profile").toString())
         assertEquals(BackupSummary(1, 0, 0, 0, true), repo.inspectBackupPayload(payload))
@@ -1043,7 +1043,7 @@ class LedgerRepositoryTest {
         repo.save(manualTransaction())
         repo.saveBenefits(YearMonth.of(2026, 9), 2550, 1050, BenefitDays(7, 8), monThu, BenefitCalculator.WORKDAYS)
         repo.setSalaryMonthlyCents(350000)
-        val v4 = mutated(repo.exportBackupPayload()) { it.put("version", 4); it.remove("profile") }
+        val v4 = mutated(repo.exportBackupPayload()) { it.put("version", 4); it.remove("profile"); it.remove("transaction_tags") }
         assertEquals(BackupSummary(1, 0, 0, 0, true), repo.inspectBackupPayload(v4))
         repo.setSalaryMonthlyCents(420000)
         repo.saveBenefits(YearMonth.of(2026, 9), 1, 2, BenefitDays())
