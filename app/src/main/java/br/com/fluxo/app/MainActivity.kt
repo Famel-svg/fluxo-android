@@ -341,7 +341,9 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel(), deepTab: Int = -1
     if (adding || editing != null) TransactionEditor(editing, saving, editError, accounts,
         tags = editing?.let { tags[it.id] } ?: emptySet(),
         onTags = { editing?.let { e -> model.setTags(e.id, it) } },
-        onRecategorizeAll = { cat, done -> editing?.let { model.recategorizeMerchant(it.id, cat, done) } },
+        onSaveAndRecategorizeAll = { tx, done ->
+            model.save(tx) { adding = false; editingId = null; model.recategorizeMerchant(tx.id, tx.category, done) }
+        },
         onUnlink = { model.unlinkTransfer(it) { editingId = null } },
         onDismiss = { adding = false; editingId = null }, onSave = { model.save(it) { adding = false; editingId = null } }, onDelete = { model.delete(it) { editingId = null } })
     }
