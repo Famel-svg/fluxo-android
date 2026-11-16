@@ -93,7 +93,7 @@ internal data class FluxoPalette(
             expense = Color(0xFFBE3E0B), onExpense = Color.White,
             amber = Color(0xFFF2C14E), onAmber = Color(0xFF15162B),
             live = Color(0xFF4ADE9A), gray = Color(0xFFA3A5B8),
-            strip = Color(0xFF15162B), onStrip = Color.White,
+            strip = Color(0xFF1E2060), onStrip = Color.White,
             badge = Color(0xFF15162B), onBadge = Color.White,
             chipBorder = Color(0xFF15162B), thumb = Color.White, scrim = Color.Black,
             education = Color(0xFF6C8BE0), shopping = Color(0xFFB7B9F0), services = Color(0xFF5A5F9E),
