@@ -844,6 +844,7 @@ class LedgerRepositoryTest {
         val v3 = mutated(repo.exportBackupPayload()) {
             it.put("version", 3)
             it.remove("profile")
+            it.remove("transaction_tags")
             it.getJSONObject("benefits").remove("vr_weekdays")
             it.getJSONObject("benefits").remove("vt_weekdays")
         }
