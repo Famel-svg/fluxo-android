@@ -168,6 +168,10 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel(), deepTab: Int = -1
     // Category tapped on the home donut; Records reads it as its initial filter (enum name survives recreation).
     var pendingCategory by rememberSaveable { mutableStateOf<String?>(null) }
     val tags by model.tags.collectAsStateWithLifecycle()
+    val cardClosingDay by model.cardClosingDay.collectAsStateWithLifecycle()
+    val cardDueDay by model.cardDueDay.collectAsStateWithLifecycle()
+    val homeCards by model.homeCards.collectAsStateWithLifecycle()
+    val hiddenHomeCards by model.hiddenHomeCards.collectAsStateWithLifecycle()
     LaunchedEffect(deepTab) {
         if (deepTab in 0..3) {
             if (deepTab == 1) filter = 3
@@ -294,7 +298,12 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel(), deepTab: Int = -1
                                 add = { model.resetEditError(); adding = true },
                                 edit = { model.resetEditError(); editingId = it.id },
                                 greetingName = profileName,
-                                benefits = benefits
+                                benefits = benefits,
+                                budgets = budgets, salaryMonthlyCents = salary,
+                                cardClosingDay = cardClosingDay, cardDueDay = cardDueDay,
+                                homeCards = homeCards, hiddenHomeCards = hiddenHomeCards,
+                                openCategory = { cat -> pendingCategory = cat.name; tab = 1 },
+                                setCardCycle = model::setCardCycle, setHomeCards = model::setHomeCards
                             )
                             1 -> key(pendingCategory) { RecordsScreen(
                                 rows = if (allMonths) transactions else monthly,
