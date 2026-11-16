@@ -38,6 +38,7 @@ import java.math.RoundingMode
 import java.text.NumberFormat
 import java.time.DayOfWeek
 import java.time.Instant
+import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 
@@ -98,6 +99,19 @@ internal fun PlanningScreen(
                 YearMonth.from(Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault())) == month
         }.groupingBy { it.category }.eachCount()
     }
+    val zone = remember { ZoneId.systemDefault() }
+    val today = remember { LocalDate.now(zone) }
+    val recurring = remember(transactions) { RecurringDetector.detect(transactions, today, zone) }
+    val projection = remember(transactions, recurring, salaryMonthlyCents) {
+        CashProjection.project(transactions, recurring, salaryMonthlyCents, today = today, zone = zone)
+    }
+    val cashflow = remember(transactions, month) { PeriodComparison.cashflow(transactions, month, 6, zone) }
+    val deltas = remember(transactions, month) { PeriodComparison.monthOverMonth(transactions, month, zone) }
+    val heat = remember(transactions, month) { PeriodComparison.dailyHeat(transactions, month, zone) }
+    val trends = remember(transactions, month, monthBudgets) {
+        monthBudgets.associate { it.category to PeriodComparison.categoryTrend(transactions, it.category, month, 6, zone) }
+    }
+    var heatOpen by rememberSaveable { mutableStateOf(false) }
     var dialogMonth by rememberSaveable { mutableStateOf<String?>(null) }
     var dialogCategory by rememberSaveable { mutableStateOf(Category.UNCATEGORIZED) }
     var dialogLimit by rememberSaveable { mutableStateOf("") }
@@ -123,16 +137,22 @@ internal fun PlanningScreen(
         }
         item(key = "hero") { PlanningHero(total, previousTotal, month) }
         if (salaryMonthlyCents > 0) item(key = "income") { ExpectedIncomeBlock(month, salaryMonthlyCents, benefits, total) }
-        item(key = "monthly") { MonthlyExpensesTile(monthly) }
+        item(key = "projection") { ProjectionBlock(projection) }
         item(key = "budgets-heading") { PlanningSectionTitle("Orçamentos") { BudgetMarkerLegend() } }
         if (monthBudgets.isEmpty()) item(key = "budgets-empty") {
             Text("Nenhum limite definido para este mês.", style = MaterialTheme.typography.bodyMedium, color = FluxoColors.Mute,
                 modifier = Modifier.padding(horizontal = 2.dp, vertical = 4.dp))
         }
         items(monthBudgets, key = { "budget-" + it.category.name }) { budget ->
-            BudgetRow(budget, totals[budget.category] ?: BigInteger.ZERO) { open(budget) }
+            BudgetRow(budget, totals[budget.category] ?: BigInteger.ZERO, trends[budget.category].orEmpty()) { open(budget) }
         }
         item(key = "define") { FluxoPillButton("Definir limite mensal", onClick = { open(null) }, modifier = Modifier.fillMaxWidth()) }
+        item(key = "cashflow") { CashflowBlock(cashflow) }
+        item(key = "comparison") { ComparisonBlock(deltas, month) }
+        item(key = "recurring") { RecurringBlock(recurring) }
+        item(key = "calendar") { BillsCalendarBlock(month, recurring) }
+        item(key = "heat") { HeatBlock(month, heat, heatOpen) { heatOpen = !heatOpen } }
+        item(key = "monthly") { MonthlyExpensesTile(monthly) }
         item(key = "benefits") {
             BenefitSummary(month, benefits) {
                 resetError()
@@ -249,6 +269,122 @@ private fun ExpectedIncomeBlock(month: YearMonth, salaryCents: Long, benefits: B
     }
 }
 
+private fun cents(value: Long): String = planningMoney(BigInteger.valueOf(value))
+
+@Composable
+private fun PlanningBlock(title: String, caption: String? = null, content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
+        PlanningSectionTitle(title) { if (caption != null) Text(caption, style = FluxoType.Caption.copy(fontSize = 11.5.sp), color = FluxoColors.Mute) }
+        FluxoTile(Modifier.fillMaxWidth().fluxoEnter(1), role = FluxoTileRole.Outlined, content = content)
+    }
+}
+
+@Composable
+private fun EmptyNote(text: String) {
+    Text(text, style = MaterialTheme.typography.bodyMedium, color = FluxoColors.Mute)
+}
+
+@Composable
+private fun ProjectionBlock(projection: Projection) {
+    PlanningBlock("Projeção 30 dias", "estimativa") {
+        Text("Hoje ${cents(projection.startNetCents)} → em 30 dias ${cents(projection.endNetCents)}",
+            style = FluxoType.number(15.sp, FontWeight.ExtraBold), modifier = Modifier.testTag("planning.projection"))
+        if (projection.items.isEmpty()) EmptyNote("Sem contas recorrentes previstas nos próximos 30 dias.")
+        projection.items.take(5).forEach { item ->
+            val income = item.direction == Direction.INCOME
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("${item.date.dayOfMonth.toString().padStart(2, '0')}/${item.date.monthValue.toString().padStart(2, '0')}", style = FluxoType.Caption, color = FluxoColors.Mute)
+                Text(item.label, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                Text((if (income) "+" else "−") + cents(item.amountCents), maxLines = 1, style = FluxoType.number(13.sp, FontWeight.SemiBold),
+                    color = if (income) FluxoColors.Income else FluxoColors.Expense)
+            }
+        }
+        Text("Parte do líquido confirmado do mês e soma recorrentes e salário previstos. Não é saldo bancário.", style = FluxoType.Caption.copy(fontSize = 11.5.sp), color = FluxoColors.Mute)
+    }
+}
+
+@Composable
+private fun CashflowBlock(flows: List<MonthFlow>) {
+    PlanningBlock("Fluxo de caixa · 6 meses") {
+        if (flows.none { it.incomeCents > 0 || it.expenseCents > 0 }) EmptyNote("Sem entradas ou saídas confirmadas nos últimos 6 meses.")
+        else CashflowChart(flows.map { planningMonthShort(it.month) }, flows.map { it.incomeCents }, flows.map { it.expenseCents },
+            Modifier.fillMaxWidth().height(160.dp))
+    }
+}
+
+@Composable
+private fun ComparisonBlock(deltas: List<CategoryDelta>, month: YearMonth) {
+    PlanningBlock("Comparado a ${planningMonthName(month.minusMonths(1)).lowercase(ptBr)}") {
+        if (deltas.isEmpty()) EmptyNote("Sem despesas neste mês nem no anterior.")
+        deltas.forEach { d ->
+            val percent = d.deltaPercent
+            val (label, color) = when {
+                percent == null -> "novo" to FluxoColors.Mute
+                percent > 0 -> "▲ +$percent%" to FluxoColors.Expense
+                percent < 0 -> "▼ −${-percent}%" to FluxoColors.Income
+                else -> "= 0%" to FluxoColors.Mute
+            }
+            Row(Modifier.fillMaxWidth().heightIn(min = 32.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                FluxoDot(fluxoCategoryColor(d.category))
+                Text(d.category.label, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                Text(cents(d.currentCents), maxLines = 1, style = FluxoType.number(13.sp, FontWeight.SemiBold))
+                Text(label, color = color, maxLines = 1, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    modifier = Modifier.widthIn(min = 64.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecurringBlock(recurring: List<RecurringCharge>) {
+    PlanningBlock("Recorrentes") {
+        if (recurring.isEmpty()) EmptyNote("Recorrentes aparecem depois de 2 meses de lançamentos.")
+        else {
+            recurring.forEach { r ->
+                Row(Modifier.fillMaxWidth().heightIn(min = 36.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(r.label, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+                        Text("dia ${r.dayOfMonth} · ${if (r.paidThisMonth) "pago este mês" else "previsto"}", style = FluxoType.Caption,
+                            color = if (r.paidThisMonth) FluxoColors.Income else FluxoColors.Mute)
+                    }
+                    Text(cents(r.amountCents), maxLines = 1, style = FluxoType.number(13.sp, FontWeight.SemiBold))
+                }
+            }
+            val sum = recurring.fold(BigInteger.ZERO) { acc, r -> acc + BigInteger.valueOf(r.amountCents) }
+            Text("Total mensal: ${planningMoney(sum)}", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                modifier = Modifier.testTag("planning.recurringTotal"))
+        }
+    }
+}
+
+@Composable
+private fun BillsCalendarBlock(month: YearMonth, recurring: List<RecurringCharge>) {
+    val marks = remember(month, recurring) {
+        recurring.filter { YearMonth.from(it.nextDue) == month }.groupBy({ it.nextDue }, { it.label })
+    }
+    PlanningBlock("Contas do mês") {
+        if (recurring.isEmpty()) EmptyNote("Recorrentes aparecem depois de 2 meses de lançamentos.")
+        else BillCalendar(month, marks, Modifier.fillMaxWidth())
+    }
+}
+
+@Composable
+private fun HeatBlock(month: YearMonth, heat: Map<LocalDate, Long>, open: Boolean, toggle: () -> Unit) {
+    var picked by remember(month) { mutableStateOf<LocalDate?>(null) }
+    PlanningBlock("Gastos por dia") {
+        TextButton(onClick = toggle, modifier = Modifier.heightIn(min = 48.dp).testTag("planning.heatToggle")) {
+            Text(if (open) "Ocultar mapa de calor" else "Mostrar mapa de calor", color = FluxoColors.Petrol)
+        }
+        if (open) {
+            if (heat.values.none { it > 0 }) EmptyNote("Sem despesas confirmadas neste mês.")
+            else {
+                DailyHeatmap(month, heat, { picked = it }, Modifier.fillMaxWidth())
+                picked?.let { Text("Dia ${it.dayOfMonth}: ${cents(heat[it] ?: 0)}", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)) }
+            }
+        }
+    }
+}
+
 @Composable
 private fun MonthlyExpensesTile(monthly: List<MonthlyExpense>) {
     val last = monthly.lastIndex
@@ -277,7 +413,7 @@ private fun MonthlyExpensesTile(monthly: List<MonthlyExpense>) {
 }
 
 @Composable
-private fun BudgetRow(budget: Budget, spent: BigInteger, edit: () -> Unit) {
+private fun BudgetRow(budget: Budget, spent: BigInteger, trend: List<Long>, edit: () -> Unit) {
     val limit = BigInteger.valueOf(budget.limitCents)
     val over = spent - limit
     val percent = if (limit.signum() > 0) spent.multiply(BigInteger.valueOf(100)).divide(limit) else BigInteger.ZERO
@@ -313,6 +449,7 @@ private fun BudgetRow(budget: Budget, spent: BigInteger, edit: () -> Unit) {
             contentDescription = "${budget.category.label} a $percent% do orçamento",
             modifier = Modifier.fillMaxWidth().height(14.dp).padding(top = 2.dp)
         )
+        if (trend.size > 1 && trend.any { it > 0 }) MiniTrend(trend, Modifier.fillMaxWidth().height(24.dp).padding(top = 2.dp))
     }
 }
 
