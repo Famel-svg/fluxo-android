@@ -1,6 +1,8 @@
 package br.com.fluxo.app
 
 import android.content.ComponentName
+import android.content.Intent
+import br.com.fluxo.core.Category
 import android.content.res.Configuration
 import android.graphics.drawable.ColorDrawable
 import android.os.Build
@@ -83,8 +85,18 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 class MainActivity : ComponentActivity() {
+    /** Tab requested by a notification tap; -1 when none. Consumed by FluxoScreen. */
+    private var deepTab by mutableIntStateOf(-1)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        deepTab = intent.getIntExtra(SmartNotifier.EXTRA_TAB, -1)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Only on a fresh launch: after rotation the same intent would override the tab the user is on.
+        if (savedInstanceState == null) deepTab = intent.getIntExtra(SmartNotifier.EXTRA_TAB, -1)
         // The stored choice is read synchronously so the window background and the bar icons are right from the
         // first frame (no light flash when the app is set to dark).
         val mode = (application as FluxoApplication).repository.themeMode.value
@@ -96,7 +108,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = if (dark) SystemBarStyle.dark(paper) else SystemBarStyle.light(paper, paper)
         )
         window.setBackgroundDrawable(ColorDrawable(paper))
-        setContent { FluxoScreen() }
+        setContent { FluxoScreen(deepTab = deepTab, onDeepTabConsumed = { deepTab = -1 }) }
     }
 
     override fun onResume() {
@@ -125,7 +137,7 @@ private fun notificationAccess(): Boolean {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
+internal fun FluxoScreen(model: LedgerViewModel = viewModel(), deepTab: Int = -1, onDeepTabConsumed: () -> Unit = {}) {
     val transactions by model.transactions.collectAsStateWithLifecycle()
     val accounts by model.accounts.collectAsStateWithLifecycle()
     val budgets by model.budgets.collectAsStateWithLifecycle()
@@ -153,6 +165,17 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
 
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var filter by rememberSaveable { mutableIntStateOf(0) }
+    // Category tapped on the home donut; Records reads it as its initial filter (enum name survives recreation).
+    var pendingCategory by rememberSaveable { mutableStateOf<String?>(null) }
+    val tags by model.tags.collectAsStateWithLifecycle()
+    LaunchedEffect(deepTab) {
+        if (deepTab in 0..3) {
+            if (deepTab == 1) filter = 3
+            tab = deepTab
+        }
+        if (deepTab != -1) onDeepTabConsumed()
+    }
+    LaunchedEffect(tab) { if (tab != 1) pendingCategory = null }
     var allMonths by rememberSaveable { mutableStateOf(false) }
     var monthText by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
     val month = YearMonth.parse(monthText)
@@ -273,7 +296,7 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
                                 greetingName = profileName,
                                 benefits = benefits
                             )
-                            1 -> RecordsScreen(
+                            1 -> key(pendingCategory) { RecordsScreen(
                                 rows = if (allMonths) transactions else monthly,
                                 allRows = transactions,
                                 filter = filter,
@@ -289,8 +312,11 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
                                 bankLabel = ::bankName,
                                 moneyLabel = ::money,
                                 directionLabel = { it.label() },
-                                methodLabel = { it.label() }
-                            )
+                                methodLabel = { it.label() },
+                                tags = tags,
+                                confirmBatch = { ids, method, done -> model.confirmBatch(ids, method, done) },
+                                initialCategory = pendingCategory?.let { n -> Category.entries.firstOrNull { it.name == n } }
+                            ) }
                             2 -> PlanningScreen(transactions, budgets, month, saving, editError, model::resetEditError, model::saveBudget, model::deleteBudget, benefits, model::saveBenefits,
                                 previousMonth = { monthText = month.minusMonths(1).toString() }, nextMonth = { monthText = month.plusMonths(1).toString() },
                                 salaryMonthlyCents = salary)
@@ -304,6 +330,9 @@ internal fun FluxoScreen(model: LedgerViewModel = viewModel()) {
     }
     // Inside the theme: the editor dialog window reads the same palette and Material scheme.
     if (adding || editing != null) TransactionEditor(editing, saving, editError, accounts,
+        tags = editing?.let { tags[it.id] } ?: emptySet(),
+        onTags = { editing?.let { e -> model.setTags(e.id, it) } },
+        onRecategorizeAll = { cat, done -> editing?.let { model.recategorizeMerchant(it.id, cat, done) } },
         onUnlink = { model.unlinkTransfer(it) { editingId = null } },
         onDismiss = { adding = false; editingId = null }, onSave = { model.save(it) { adding = false; editingId = null } }, onDelete = { model.delete(it) { editingId = null } })
     }
