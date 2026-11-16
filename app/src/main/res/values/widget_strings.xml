@@ -1,0 +1,8 @@
+<resources>
+    <string name="widget_description">Entrou x saiu do mês e lançamentos para revisar.</string>
+    <string name="widget_title">Fluxo</string>
+    <string name="widget_label_inout">Entrou x saiu</string>
+    <string name="widget_preview_month">novembro</string>
+    <string name="widget_preview_value">R$ 1.284,60</string>
+    <string name="widget_preview_review">3 para revisar</string>
+</resources>
