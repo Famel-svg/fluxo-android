@@ -14,5 +14,6 @@ class FluxoApplication : Application() {
         super.onCreate()
         CaptureConnection.ensureComponentEnabled(this)
         CaptureKeeper.schedule(this)
+        SmartAlertScheduler.schedule(this)
     }
 }

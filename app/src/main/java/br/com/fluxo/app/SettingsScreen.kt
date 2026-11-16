@@ -153,7 +153,7 @@ internal fun FluxoDataRow(
 }
 
 @Composable
-private fun fluxoSwitchColors() = SwitchDefaults.colors(
+internal fun fluxoSwitchColors() = SwitchDefaults.colors(
     checkedThumbColor = FluxoColors.Thumb, checkedTrackColor = FluxoColors.Income, checkedBorderColor = FluxoColors.Income,
     uncheckedThumbColor = FluxoColors.Ink, uncheckedTrackColor = FluxoColors.Paper, uncheckedBorderColor = FluxoColors.ChipBorder,
 )
@@ -323,6 +323,7 @@ internal fun SettingsScreen(capture: Boolean, access: Boolean, model: LedgerView
                     }
                 }
             }
+            item { SettingsSection(3, "Notificações inteligentes", Icons.Default.Notifications) { SmartAlertsCard(model) } }
             item {
                 SettingsSection(3, "Dados e backup", Icons.Default.Storage) {
                     BackupCard(backupActions)

@@ -43,6 +43,10 @@ class BankNotificationListener : NotificationListenerService() {
                                 candidate.timestamp, candidate.text, candidate.fallbackIdentity, event.notification.postTime)
                             // Replayed active notifications were not counted as observed; keep counters consistent.
                             if (!event.replay && outcome is IngestOutcome.Stored) CaptureForeground.captured(this@BankNotificationListener, System.currentTimeMillis())
+                            // Light check for "unusual" spending; a separate coroutine never delays the event queue.
+                            if (!event.replay && outcome is IngestOutcome.Stored) scope.launch {
+                                try { SmartNotifier.run(this@BankNotificationListener, repository) } catch (_: Exception) {}
+                            }
                             if (!event.replay) when (outcome) {
                                 is IngestOutcome.Stored -> CaptureHealth.stored(pkg)
                                 is IngestOutcome.Ignored -> CaptureHealth.ignored(pkg, outcome.reason)
