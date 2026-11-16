@@ -28,7 +28,7 @@ object CashProjection {
             } else if (it.countableExpense() && it.method.affectsCash) net = Math.subtractExact(net, it.amountCents!!)
         }
         val items = mutableListOf<ProjectedItem>()
-        recurring.forEach {
+        recurring.filter { it.affectsCash }.forEach {
             if (!it.nextDue.isAfter(limit)) items += ProjectedItem(maxOf(it.nextDue, today), it.label, it.amountCents, Direction.EXPENSE)
         }
         if (salaryMonthlyCents > 0) {

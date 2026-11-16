@@ -31,6 +31,16 @@ class RecurringDetectorTest {
         assertEquals(LocalDate.of(2026, 11, 20), found.nextDue)
     }
 
+    @Test fun `day tolerance wraps around month end`() {
+        val rows = listOf(tx("1", "2026-09-30", 5_000), tx("2", "2026-11-01", 5_000), tx("3", "2026-10-02", 5_000))
+        assertEquals(3, RecurringDetector.detect(rows, today, utc).single().occurrences)
+    }
+
+    @Test fun `credit card charge is flagged as not affecting cash and huge amounts do not overflow`() {
+        val rows = listOf(tx("1", "2026-10-10", Long.MAX_VALUE / 2), tx("2", "2026-11-10", Long.MAX_VALUE / 2))
+        assertFalse(RecurringDetector.detect(rows, today, utc).single().affectsCash)
+    }
+
     @Test fun `single occurrence is not recurring`() {
         assertTrue(RecurringDetector.detect(listOf(tx("1", "2026-10-10", 5_000)), today, utc).isEmpty())
     }

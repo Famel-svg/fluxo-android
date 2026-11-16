@@ -42,6 +42,13 @@ class CashProjectionTest {
         assertEquals(200_000, p.endNetCents)
     }
 
+    @Test fun `credit card recurring does not reduce the cash projection`() {
+        val netflix = bill("Netflix", 5_000, "2026-11-20").copy(affectsCash = false)
+        val p = CashProjection.project(emptyList(), listOf(netflix), 0, 5, today, utc, 30)
+        assertTrue(p.items.isEmpty())
+        assertEquals(0, p.endNetCents)
+    }
+
     @Test fun `overdue unpaid bill lands on today and no salary means no income item`() {
         val p = CashProjection.project(emptyList(), listOf(bill("Luz", 8_000, "2026-11-10")), 0, 5, today, utc, 30)
         assertEquals(today, p.items.single().date)

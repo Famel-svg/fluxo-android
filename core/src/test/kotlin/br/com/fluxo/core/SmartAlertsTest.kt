@@ -59,6 +59,8 @@ class SmartAlertsTest {
             java.time.LocalDate.of(2026, 11, 13), 3, false)
         val alert = SmartAlerts.evaluate(input(recurring = listOf(bill))).single()
         assertEquals(AlertKind.BILL_DUE, alert.kind)
+        assertEquals("Moradia: R$ 1.200,00 vence amanhã.", alert.body)
+        assertFalse(alert.body.contains("Aluguel"))
         assertTrue(SmartAlerts.evaluate(input(recurring = listOf(bill), sent = setOf(alert.key))).isEmpty())
         assertTrue(SmartAlerts.evaluate(input(recurring = listOf(bill.copy(nextDue = java.time.LocalDate.of(2026, 11, 14))))).isEmpty())
     }

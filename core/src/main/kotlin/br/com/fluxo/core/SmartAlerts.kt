@@ -1,5 +1,6 @@
 package br.com.fluxo.core
 
+import java.math.BigInteger
 import java.time.DayOfWeek
 import java.time.LocalDateTime
 import java.time.YearMonth
@@ -74,7 +75,7 @@ object SmartAlerts {
         }
 
         input.recurring.filter { it.nextDue == today.plusDays(1) }.forEach {
-            add("bill:${it.key}:${it.nextDue}", AlertKind.BILL_DUE, "Conta vence amanhã", "${it.label}: ${brl(it.amountCents)}.", 80)
+            add("bill:${it.key}:${it.nextDue}", AlertKind.BILL_DUE, "Conta vence amanhã", "${if (it.category == Category.UNCATEGORIZED) "Conta recorrente" else it.category.label}: ${brl(it.amountCents)} vence amanhã.", 80)
         }
 
         val since = today.minusDays(90)
@@ -83,7 +84,7 @@ object SmartAlerts {
             val prior = history.filter {
                 it.id != row.id && it.category == row.category && it.occurredAt < row.occurredAt && it.localDate(input.zone) >= since
             }.map { it.amountCents!! }
-            if (prior.size >= UNUSUAL_MIN_SAMPLES && row.amountCents!! > median(prior) * 3) {
+            if (prior.size >= UNUSUAL_MIN_SAMPLES && BigInteger.valueOf(row.amountCents!!) > BigInteger.valueOf(median(prior)).multiply(BigInteger.valueOf(3))) {
                 add("unusual:${row.id}", AlertKind.UNUSUAL, "Gasto incomum",
                     "${row.category.label}: ${brl(row.amountCents!!)}, bem acima do habitual.", 50)
             }
